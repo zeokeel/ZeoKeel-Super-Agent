@@ -114,8 +114,18 @@ func TestEndToEndFromChatToReply(t *testing.T) {
 		t.Fatalf("the Worker never reported ready: %+v", tk.LastReport())
 	}
 
-	// 5. The answer goes back to the conversation it came from.
-	replies := rt.Replies()
+	// 5. The answer goes back to the conversation it came from. The Worker reports
+	// `ready` before it queues the outbound reply, so wait for the reply instead of
+	// assuming the two are visible in the same instant (CI -race is slower).
+	replyDeadline := time.Now().Add(15 * time.Second)
+	var replies []runtime.Reply
+	for time.Now().Before(replyDeadline) {
+		replies = rt.Replies()
+		if len(replies) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	if len(replies) == 0 {
 		t.Fatal("no reply was produced")
 	}
