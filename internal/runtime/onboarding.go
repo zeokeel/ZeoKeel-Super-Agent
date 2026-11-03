@@ -199,8 +199,8 @@ func (r *Runtime) addOnboardWorkspace(v map[string]string) error {
 	if name == "" {
 		return nil
 	}
-	id := domain.WorkspaceID("ws_" + slug(name))
-	root := strings.TrimSpace(v["ws_root"])
+	id := newWorkspaceID()
+	root := normalizedRoot(v["ws_root"])
 	if root == "" {
 		root = "~/" + name
 	}
@@ -229,6 +229,38 @@ func (r *Runtime) addOnboardWorkspace(v map[string]string) error {
 	}
 	r.eng.Register(w, policy)
 	return nil
+}
+
+// applyOnboardSource turns the wizard's 来源 step into real source settings and
+// lets the runtime's settings hook start/stop the channel (P1-15). It never
+// invents credentials: enabling a channel without them produces the honest
+// "配置不完整" row until the person fills them in.
+func (r *Runtime) applyOnboardSource(values map[string]string) error {
+	kind := strings.TrimSpace(strings.ToLower(values["source_kind"]))
+	settings := map[string]string{}
+	switch kind {
+	case "", "local":
+		return nil
+	case "github":
+		if repo := strings.TrimSpace(values["source_repo"]); repo != "" {
+			settings["github_repo"] = repo
+		}
+	case "feishu":
+		settings["feishu_enabled"] = "1"
+		settings["feishu_transport"] = "longpoll"
+	case "dingtalk":
+		settings["dingtalk_enabled"] = "1"
+	case "im", "chat":
+		settings["feishu_enabled"] = "1"
+		settings["dingtalk_enabled"] = "1"
+	default:
+		return fmt.Errorf("来源 %q 不支持（local/github/feishu/dingtalk）", kind)
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	_, err := r.SaveSettings(string(view.SettingsSource), settings)
+	return err
 }
 
 func slug(s string) string {

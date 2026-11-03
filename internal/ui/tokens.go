@@ -48,7 +48,32 @@ const (
 	// baseFontSize and baseSpacing are the panel's scale, on mygo's units.
 	baseFontSize = 15
 	baseSpacing  = 4
+	// minViewScale/maxViewScale bound the ui.font_scale setting.
+	minViewScale = 0.8
+	maxViewScale = 1.4
 )
+
+// viewScale is the panel's one text scale, read from the ui.font_scale setting
+// (0.9 / 1.0 / 1.1 today). It replaces the magic "+2 at every number": the
+// explicit sizes go through fs(), and the theme's FontSize through here.
+var viewScale float32 = 1
+
+// fs scales one explicit text size: the design's number times the panel's scale.
+func fs(n float32) float32 { return n * viewScale }
+
+// ViewScale is the scale the last frame used (for tests and the settings page).
+func ViewScale() float32 { return viewScale }
+
+// clampViewScale keeps a hand-edited setting from making the panel unusable.
+func clampViewScale(f float32) float32 {
+	if f < minViewScale {
+		return minViewScale
+	}
+	if f > maxViewScale {
+		return maxViewScale
+	}
+	return f
+}
 
 // brand is ZeoKeel's palette around mygo's theme: the colors the framework has
 // no field for, in the two appearances. brandFor picks one, theme applies it to
@@ -161,7 +186,7 @@ func (b brand) theme(base *mui.Theme) *mui.Theme {
 	t.Focus = b.focus
 	t.Radius = controlRadius
 	t.Spacing = baseSpacing
-	t.FontSize = baseFontSize
+	t.FontSize = baseFontSize * viewScale
 	return &t
 }
 

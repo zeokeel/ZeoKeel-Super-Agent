@@ -1142,3 +1142,219 @@ func TestReaderAPIsDoNotAlias(t *testing.T) {
 		t.Fatal("PolicyOf aliases engine authorization data")
 	}
 }
+
+// A driver that leaves the event time at the epoch must not poison ordering or
+// deadlines: the engine normalizes the timestamp on receipt (domain.EnsureAt).
+func TestReceiveNormalizesEpochTimestamps(t *testing.T) {
+	e := newTestEngine(basePolicy())
+	tr := ghTrigger("ep1", "lin", "webapp: change the timeout", true, true)
+	tr.At = time.Unix(0, 0)
+	if _, err := e.Receive(tr); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := e.Trigger(tr.ID)
+	if !ok {
+		t.Fatal("trigger was not stored")
+	}
+	if got.At.Year() < 2000 {
+		t.Fatalf("an epoch timestamp must be normalized on receipt, got %s", got.At)
+	}
+}
+
+// ---- Release policy: every inbound IM message is a pending approval ---------
+
+func imPolicy() Policy {
+	p := basePolicy()
+	p.Allowed["dingtalk"] = map[string]bool{"ding": true}
+	p.Admissions["dingtalk|chat"] = domain.AdmissionRow{Source: "dingtalk", Scope: "chat", Observed: true,
+		ListedUnaddressed: domain.CellInferred, UnlistedAddressed: domain.CellIgnore, UnlistedUnaddressed: domain.CellIgnore}
+	return p
+}
+
+func imTrigger(id, actor, thread, text string) domain.Trigger {
+	return domain.Trigger{
+		ID:               domain.Key(domain.Global, "dingtalk", id),
+		Scope:            domain.Global,
+		Source:           "dingtalk",
+		Threads:          []domain.ThreadRef{{Source: "dingtalk", ID: thread}},
+		Actor:            domain.Actor{ID: actor},
+		Human:            true,
+		Addressed:        domain.Addressed{Mention: true},
+		Conversation:     domain.Conversation{Kind: domain.ConvGroup, ID: thread, Name: "运维群"},
+		Row:              "chat",
+		ScopeReceivesAll: true,
+		Text:             text,
+		At:               time.Now(),
+	}
+}
+
+// evaluateOnce receives one Trigger and runs the due Eval, returning the Outcome.
+func evaluateOnce(t *testing.T, e *Engine, tr domain.Trigger) Outcome {
+	t.Helper()
+	if _, err := e.Receive(tr); err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	outs, err := e.EvaluateDue(time.Now())
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if len(outs) == 0 {
+		t.Fatalf("no outcome for %s", tr.ID)
+	}
+	return outs[len(outs)-1]
+}
+
+func TestIMExplicitBecomesProposal(t *testing.T) {
+	e := New(RuleAssessor{})
+	e.Register(repoWS("ws_web"), imPolicy())
+	out := evaluateOnce(t, e, imTrigger("im1", "ding", "chat-1", "webapp: change the timeout"))
+	if out.Kind != domain.DispDecided {
+		t.Fatalf("disposition %q", out.Kind)
+	}
+	if out.Ticket != "" {
+		t.Fatal("an IM message must not create a Ticket before approval")
+	}
+	if len(e.AllTickets()) != 0 {
+		t.Fatal("an IM message must not create a Ticket before approval")
+	}
+	ps := e.Proposals()
+	if len(ps) != 1 {
+		t.Fatalf("want one pending approval, got %d", len(ps))
+	}
+	if ps[0].Kind != domain.DecPropose {
+		t.Fatalf("decision kind %q, want propose", ps[0].Kind)
+	}
+	if ps[0].Proposal == nil || ps[0].Proposal.From != "ding" {
+		t.Fatalf("proposal must name the requester: %+v", ps[0].Proposal)
+	}
+	if ps[0].Reply.Route != domain.ReplyNone {
+		t.Fatalf("a proposal must not reply on its own, route %q", ps[0].Reply.Route)
+	}
+	if len(e.Replies()) != 0 {
+		t.Fatal("a proposal must not queue an outbound reply")
+	}
+	// The gate's strength is still recorded for the audit, even though the message
+	// waits for the operator.
+	disp, _ := e.Disposition(domain.Key(domain.Global, "dingtalk", "im1"))
+	if disp.Strength != domain.StrengthExplicit {
+		t.Fatalf("the gate must record explicit strength, got %q", disp.Strength)
+	}
+}
+
+func TestIMApproveCreatesTicketRejectCreatesNothing(t *testing.T) {
+	e := New(RuleAssessor{})
+	e.Register(repoWS("ws_web"), imPolicy())
+	evaluateOnce(t, e, imTrigger("im2", "ding", "chat-2", "webapp: change the timeout"))
+	ps := e.Proposals()
+	if len(ps) != 1 {
+		t.Fatalf("want one proposal, got %d", len(ps))
+	}
+	out, err := e.Approve(ps[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Ticket == "" {
+		t.Fatal("Approve must create the Ticket")
+	}
+	if _, ok := e.TicketSnapshot(out.Ticket); !ok {
+		t.Fatal("the approved Ticket must exist")
+	}
+	if len(e.Proposals()) != 0 {
+		t.Fatal("the approved proposal must leave the pending list")
+	}
+
+	// Reject leaves nothing running.
+	e2 := New(RuleAssessor{})
+	e2.Register(repoWS("ws_web"), imPolicy())
+	evaluateOnce(t, e2, imTrigger("im3", "ding", "chat-3", "webapp: change the timeout"))
+	ps = e2.Proposals()
+	if err := e2.Reject(ps[0].ID, "no"); err != nil {
+		t.Fatal(err)
+	}
+	if len(e2.Proposals()) != 0 || len(e2.AllTickets()) != 0 {
+		t.Fatal("Reject must leave no ticket and no pending item")
+	}
+}
+
+func TestNonIMExplicitStillAccepts(t *testing.T) {
+	// GitHub explicit keeps the prototype behavior.
+	e := newTestEngine(basePolicy())
+	tk := accept(t, e, ghTrigger("gp1", "lin", "webapp: change the timeout", true, true))
+	if tk.Mandate.Strength != domain.StrengthExplicit {
+		t.Fatalf("GitHub explicit strength %q", tk.Mandate.Strength)
+	}
+	if len(e.Proposals()) != 0 {
+		t.Fatal("GitHub must not require approval")
+	}
+	// The local panel keeps the prototype behavior too.
+	e2 := newTestEngine(basePolicy())
+	if _, err := e2.Dispatch(DispatchInput{Text: "change the timeout", Workspace: "ws_web"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e2.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(e2.AllTickets()) != 1 || len(e2.Proposals()) != 0 {
+		t.Fatal("a local panel task must still start work directly")
+	}
+}
+
+// Two IM messages on one Thread produce two separate approvals, never one batched
+// item.
+func TestIMMessagesAreSeparateProposals(t *testing.T) {
+	e := New(RuleAssessor{})
+	e.Register(repoWS("ws_web"), imPolicy())
+	for _, id := range []string{"imb1", "imb2"} {
+		if _, err := e.Receive(imTrigger(id, "ding", "chat-9", "webapp: "+id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ps := e.Proposals()
+	if len(ps) != 2 {
+		t.Fatalf("two messages must become two approvals, got %d", len(ps))
+	}
+	seen := map[domain.ID]bool{}
+	for _, p := range ps {
+		if seen[p.ID] {
+			t.Fatalf("duplicate proposal id %s", p.ID)
+		}
+		seen[p.ID] = true
+		if p.Proposal == nil || len(p.TriggerIDs) != 1 {
+			t.Fatalf("each approval must cover exactly one message: %+v", p)
+		}
+	}
+	if len(e.AllTickets()) != 0 {
+		t.Fatal("no Ticket may exist before approval")
+	}
+	// Approving one leaves the other waiting and creates exactly one Ticket.
+	if _, err := e.Approve(ps[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.AllTickets()) != 1 || len(e.Proposals()) != 1 {
+		t.Fatalf("approving one must leave the other pending: tickets=%d proposals=%d",
+			len(e.AllTickets()), len(e.Proposals()))
+	}
+}
+
+// The gate still decides who may ask: an unlisted sender's IM message is filtered,
+// not turned into an approval.
+func TestIMStrangerIsNotProposed(t *testing.T) {
+	e := New(RuleAssessor{})
+	p := imPolicy()
+	row := p.Admissions["dingtalk|chat"]
+	row.UnlistedAddressed = domain.CellIgnore
+	p.Admissions["dingtalk|chat"] = row
+	e.Register(repoWS("ws_web"), p)
+	if _, err := e.Receive(imTrigger("ims1", "stranger", "chat-4", "webapp: change the timeout")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Proposals()) != 0 {
+		t.Fatal("an unlisted sender must be filtered, not proposed")
+	}
+}

@@ -29,7 +29,7 @@ func (a *App) settingsPage(c *mui.Context) {
 			}
 		})
 		if vm == nil {
-			mui.Text(c, "等待运行时发布设置快照…").FontSize(15).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布设置快照…").FontSize(fs(15)).TextColor(tk.TextMuted)
 			return
 		}
 
@@ -124,9 +124,9 @@ func (a *App) settingsRail(c *mui.Context, groups []view.SettingsGroup) {
 				a.settingsErr = ""
 			}
 			row.Children(func() {
-				mui.Icon(c, settingsIcon(g.ID)).FontSize(14).
+				mui.Icon(c, settingsIcon(g.ID)).FontSize(fs(14)).
 					TextColor(ifColor(on, tk.Accent, tk.TextMuted))
-				mui.Text(c, g.Label).FontSize(14).TextColor(ifColor(on, tk.Accent, tk.Text))
+				mui.Text(c, g.Label).FontSize(fs(14)).TextColor(ifColor(on, tk.Accent, tk.Text))
 				mui.Spacer(c)
 				if dirty > 0 {
 					dot(c, tk.Amber, 6)
@@ -135,7 +135,7 @@ func (a *App) settingsRail(c *mui.Context, groups []view.SettingsGroup) {
 		}
 		mui.Spacer(c)
 		mui.Row(c).Padding(6, 8).Children(func() {
-			mui.Text(c, "改完只影响之后的运行。").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, "改完只影响之后的运行。").FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 	})
 }
@@ -147,9 +147,9 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 	tk := a.tk
 	card(c, tk, 16, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, g.Label).FontSize(17).Bold().TextColor(tk.Text)
+			mui.Text(c, g.Label).FontSize(fs(17)).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, g.Note).FontSize(12).TextAlign(mui.End).TextColor(tk.TextFaint)
+			mui.Text(c, g.Note).FontSize(fs(12)).TextAlign(mui.End).TextColor(tk.TextFaint)
 		})
 		if g.ID == view.SettingsPrompt {
 			a.promptGroup(c, g)
@@ -168,7 +168,7 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 			// again below (the generic loop skips channel keys).
 			a.channelCards(c, g)
 			if a.channelErr != "" {
-				mui.Text(c, a.channelErr).FontSize(11).TextColor(tk.Red)
+				mui.Text(c, a.channelErr).FontSize(fs(11)).TextColor(tk.Red)
 			}
 		}
 		if g.ID == view.SettingsExecution {
@@ -177,8 +177,8 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 		if g.Placeholder != "" {
 			mui.Row(c).Padding(9, 12).Radius(8).Background(tk.SurfaceAlt).Gap(8).
 				AlignItems(mui.Start).Children(func() {
-				mui.Icon(c, icClock).FontSize(12).TextColor(tk.TextMuted)
-				mui.Text(c, g.Placeholder).FontSize(13).Grow(1).TextColor(tk.TextMuted)
+				mui.Icon(c, icClock).FontSize(fs(12)).TextColor(tk.TextMuted)
+				mui.Text(c, g.Placeholder).FontSize(fs(13)).Grow(1).TextColor(tk.TextMuted)
 			})
 		}
 		a.pendingBlock(c, *g)
@@ -201,7 +201,7 @@ func (a *App) pendingBlock(c *mui.Context, g view.SettingsGroup) {
 	tk := a.tk
 	mui.Row(c).Padding(9, 12).Radius(8).Background(tk.SurfaceAlt).Gap(8).
 		AlignItems(mui.Start).Children(func() {
-		mui.Icon(c, icClock).FontSize(12).TextColor(tk.TextMuted)
+		mui.Icon(c, icClock).FontSize(fs(12)).TextColor(tk.TextMuted)
 		mui.Text(c, "等待运行时投影："+strings.Join(g.Pending, " · ")).
 			FontSize(11).Grow(1).TextColor(tk.TextMuted)
 	})
@@ -212,7 +212,7 @@ func (a *App) pendingBlock(c *mui.Context, g view.SettingsGroup) {
 // projection. It shows no editable field, so it carries no save bar.
 func (a *App) deploymentSection(c *mui.Context, g view.SettingsGroup) {
 	tk := a.tk
-	mui.Text(c, "运维面（命令行）").FontSize(14).Bold().TextColor(tk.Text)
+	mui.Text(c, "运维面（命令行）").FontSize(fs(14)).Bold().TextColor(tk.Text)
 	mui.Text(c, "以下路径与退出码是命令行的固定契约；运行状态以健康行为准。").
 		FontSize(10).TextColor(tk.TextFaint)
 	for _, fact := range [][2]string{
@@ -228,7 +228,7 @@ func (a *App) deploymentSection(c *mui.Context, g view.SettingsGroup) {
 	// The machine, as the runtime reports it: OS/arch and timezone. Without the
 	// projection the page says so instead of writing "linux" from a guess.
 	ov := a.snap.Overview()
-	mui.Text(c, "运行环境").FontSize(14).Bold().TextColor(tk.Text)
+	mui.Text(c, "运行环境").FontSize(fs(14)).Bold().TextColor(tk.Text)
 	if ov == nil || !ov.System.Known() {
 		mui.Text(c, "等待运行时投影操作系统与时区（Runtime.System）").
 			FontSize(11).TextColor(tk.TextMuted)
@@ -241,25 +241,73 @@ func (a *App) deploymentSection(c *mui.Context, g view.SettingsGroup) {
 		kv(c, tk, "时区", tz)
 	}
 
+	// The panel's own scale: the "global +2" became one setting (ui.font_scale),
+	// applied through fs() rather than baked into 300 numbers (P2).
+	mui.Text(c, "界面").FontSize(fs(12)).Bold().TextColor(tk.Text)
+	a.fontScaleControl(c, g)
+
 	// The live part: the same health rows the overview draws, so the two cannot
 	// disagree about whether the system is well.
-	mui.Text(c, "健康").FontSize(14).Bold().TextColor(tk.Text)
+	mui.Text(c, "健康").FontSize(fs(14)).Bold().TextColor(tk.Text)
 	if ov == nil {
-		mui.Text(c, "等待运行时发布健康快照…").FontSize(13).TextColor(tk.TextMuted)
+		mui.Text(c, "等待运行时发布健康快照…").FontSize(fs(13)).TextColor(tk.TextMuted)
 		return
 	}
 	if len(ov.Health) == 0 {
-		mui.Text(c, "运行时还没有投影任何健康项。").FontSize(13).TextColor(tk.TextMuted)
+		mui.Text(c, "运行时还没有投影任何健康项。").FontSize(fs(13)).TextColor(tk.TextMuted)
 		return
 	}
 	for _, h := range ov.Health {
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			dot(c, ifColor(h.OK, tk.Green, tk.Amber), 7)
-			mui.Text(c, h.Name).FontSize(13).TextColor(tk.Text)
+			mui.Text(c, h.Name).FontSize(fs(13)).TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, h.Detail).FontSize(12).TextColor(tk.TextMuted)
+			mui.Text(c, h.Detail).FontSize(fs(12)).TextColor(tk.TextMuted)
 		})
 	}
+}
+
+// fontScaleControl is 设置 › 部署's 界面字号: it reads ui.font_scale from the
+// published settings and writes an edit through the one save protocol. A runtime
+// that has not projected the field gets an honest read-only line instead of a
+// control that saves nothing.
+func (a *App) fontScaleControl(c *mui.Context, g view.SettingsGroup) {
+	tk := a.tk
+	scales := []float32{0.9, 1.0, 1.1}
+	labels := []string{"90%", "100%", "110%"}
+	field, ok := settingFieldOf(&g, "ui.font_scale")
+	if !ok {
+		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
+			mui.Text(c, "界面字号").FontSize(fs(12)).TextColor(tk.Text)
+			mui.Text(c, fmt.Sprintf("当前 %d%%", int(a.viewScale()*100))).
+				FontSize(12).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时投影：ui.font_scale（0.9 / 1.0 / 1.1）").
+				FontSize(10).TextColor(tk.Amber)
+		})
+		return
+	}
+	ptr := a.settingsPtr(g.ID, field)
+	cur := a.viewScale()
+	idx := 1
+	for i, v := range scales {
+		if abs32(v-cur) < 0.001 {
+			idx = i
+		}
+	}
+	mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
+		mui.Text(c, "界面字号").FontSize(fs(12)).TextColor(tk.Text)
+		if mui.Segmented(c.Key("font-scale"), &idx, labels...).Label("界面字号").Changed() {
+			*ptr = strconv.FormatFloat(float64(scales[idx]), 'f', 1, 32)
+		}
+		mui.Text(c, "保存后按新字号重绘").FontSize(fs(10)).TextColor(tk.TextFaint)
+	})
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // pauseControl is 设置 › 执行's run/pause switch: the one place the operator
@@ -281,7 +329,7 @@ func (a *App) pauseControl(c *mui.Context) {
 		state, fg, bg = "运行中", tk.Green, tk.GreenSoft
 	}
 	mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, "自动派工").FontSize(14).TextColor(tk.Text)
+		mui.Text(c, "自动派工").FontSize(fs(14)).TextColor(tk.Text)
 		chip(c, tk, state, fg, bg)
 		mui.Text(c, "暂停后不再启动新的执行；已在跑的 Assignment 不受影响。").
 			FontSize(10).TextColor(tk.TextFaint)
@@ -308,14 +356,14 @@ func (a *App) pauseControl(c *mui.Context) {
 			FontSize(10).TextColor(tk.Amber)
 	}
 	if a.pauseErr != "" {
-		mui.Text(c, a.pauseErr).FontSize(12).TextColor(tk.Red)
+		mui.Text(c, a.pauseErr).FontSize(fs(12)).TextColor(tk.Red)
 	}
 }
 
 // pauseButton is one pause/resume button; disabled when the runtime has no
 // PauseExecution, so a click can never be a silent no-op.
 func (a *App) pauseButton(c *mui.Context, label string, paused bool, wired bool) {
-	btn := mui.Button(c, label).Label(label).Height(24).FontSize(13)
+	btn := mui.Button(c, label).Label(label).Height(24).FontSize(fs(13))
 	if !wired {
 		btn.Disabled(true)
 		return
@@ -348,22 +396,22 @@ func (a *App) settingField(c *mui.Context, g *view.SettingsGroup, f view.Setting
 	switch f.Kind {
 	case view.SettingFact:
 		mui.Row(c).Gap(12).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, f.Label).FontSize(13).Width(180).TextColor(tk.TextMuted)
-			mui.Text(c, f.Value).FontSize(13).Grow(1).TextColor(tk.Text)
+			mui.Text(c, f.Label).FontSize(fs(13)).Width(180).TextColor(tk.TextMuted)
+			mui.Text(c, f.Value).FontSize(fs(13)).Grow(1).TextColor(tk.Text)
 		})
 		return
 	case view.SettingSwitch:
 		ptr := a.settingsPtr(g.ID, f)
-		on := *ptr == "true"
+		on := settingBool(*ptr)
 		mui.Row(c).Gap(12).AlignItems(mui.Center).Children(func() {
 			mui.Column(c).Grow(1).Gap(1).Children(func() {
-				mui.Text(c, f.Label).FontSize(14).TextColor(tk.Text)
+				mui.Text(c, f.Label).FontSize(fs(14)).TextColor(tk.Text)
 				if f.Help != "" {
-					mui.Text(c, f.Help).FontSize(12).TextColor(tk.TextFaint)
+					mui.Text(c, f.Help).FontSize(fs(12)).TextColor(tk.TextFaint)
 				}
 			})
 			if mui.Switch(c.Key("set:"+f.Key), &on).Changed() {
-				*ptr = strconv.FormatBool(on)
+				*ptr = boolText(on)
 			}
 		})
 		return
@@ -373,12 +421,12 @@ func (a *App) settingField(c *mui.Context, g *view.SettingsGroup, f view.Setting
 	ptr := a.settingsPtr(g.ID, f)
 	mui.Column(c).Gap(4).Children(func() {
 		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, f.Label).FontSize(13).TextColor(tk.TextMuted)
+			mui.Text(c, f.Label).FontSize(fs(13)).TextColor(tk.TextMuted)
 			if f.Help != "" {
-				mui.Text(c, "· "+f.Help).FontSize(12).SingleLine().TextColor(tk.TextFaint)
+				mui.Text(c, "· "+f.Help).FontSize(fs(12)).SingleLine().TextColor(tk.TextFaint)
 			}
 		})
-		field := mui.TextInput(c.Key("set:"+f.Key), ptr).Height(30).FontSize(14)
+		field := mui.TextInput(c.Key("set:"+f.Key), ptr).Height(30).FontSize(fs(14))
 		if f.Kind == view.SettingSecret {
 			field.Password()
 		}
@@ -391,17 +439,31 @@ func (a *App) settingField(c *mui.Context, g *view.SettingsGroup, f view.Setting
 func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.SettingsGroup, dirty int) {
 	tk := a.tk
 	_, wired := a.cmd.(SettingsSaver)
+	saving := a.savingSettings(g.ID)
 
 	mui.Column(c).Gap(4).Children(func() {
 		mui.Row(c).Padding(10, 14).Gap(10).Radius(10).Background(tk.Surface).
 			Border(1, tk.Border).AlignItems(mui.Center).Children(func() {
 			dot(c, tk.Amber, 7)
-			mui.Text(c, fmt.Sprintf("%d 处未保存更改", dirty)).FontSize(14).TextColor(tk.Text)
-			mui.Text(c, "· 保存后写入 "+vm.Source+" 并热更新").FontSize(12).
+			mui.Text(c, fmt.Sprintf("%d 处未保存更改", dirty)).FontSize(fs(14)).TextColor(tk.Text)
+			// Only a group whose changes are really live says 热更新; the rest say
+			// when they take effect (P2; SettingsGroup.Effect overrides the default).
+			effect := g.Effect
+			if effect == "" {
+				effect = view.SaveEffect(g.ID)
+			}
+			mui.Text(c, "· 保存到 "+vm.Source+" · "+effect).FontSize(fs(12)).
 				TextColor(tk.TextFaint)
 			mui.Spacer(c)
 			if wired {
-				if mui.PrimaryButton(c, "保存").Label("保存").Height(26).Clicked() {
+				label := "保存"
+				if saving {
+					label = "保存中…"
+				}
+				btn := mui.PrimaryButton(c, label).Label(label).Height(26)
+				if saving {
+					btn.Disabled(true)
+				} else if btn.Clicked() {
 					a.saveSettings(vm, g)
 				}
 			} else {
@@ -409,7 +471,7 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 				// that silently does nothing is worse than a grey one.
 				btn := mui.Row(c).Height(26).Padding(0, 12).Radius(7).
 					Background(tk.SurfaceAlt).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, "保存").FontSize(14).TextColor(tk.TextFaint)
+					mui.Text(c, "保存").FontSize(fs(14)).TextColor(tk.TextFaint)
 				})
 				if btn.Clicked() {
 					a.settingsErr = "当前运行时不能保存设置：没有保存通道。"
@@ -417,7 +479,7 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 			}
 		})
 		if !wired {
-			mui.Text(c, "当前运行时不能保存设置").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, "当前运行时不能保存设置").FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 		if a.settingsConflict(vm) {
 			mui.Text(c, fmt.Sprintf(
@@ -425,7 +487,7 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 				FontSize(10).TextColor(tk.Amber)
 		}
 		if a.settingsErr != "" {
-			mui.Text(c, a.settingsErr).FontSize(12).TextColor(tk.Red)
+			mui.Text(c, a.settingsErr).FontSize(fs(12)).TextColor(tk.Red)
 		}
 	})
 }
@@ -512,13 +574,17 @@ func (a *App) saveSettings(vm *view.SettingsVM, g *view.SettingsGroup) {
 		base = vm.Revision
 	}
 	values[SettingsRevisionKey] = strconv.FormatUint(base, 10)
-	rev, err := saver.SaveSettings(string(g.ID), values)
-	if err != nil {
-		a.settingsErr = err.Error()
-		return
-	}
+	group := g.ID
 	a.settingsErr = ""
-	a.settingsEditRev = rev
+	a.markSaving(string(group))
+	startSaveSettings(a, string(group), values, func(rev uint64, err error) {
+		a.savingGroup = ""
+		if err != nil {
+			a.settingsErr = err.Error()
+			return
+		}
+		a.settingsEditRev = rev
+	})
 }
 
 // settingsIcon is the icon of one group.

@@ -26,15 +26,34 @@ func (a *App) streamPage(c *mui.Context) {
 	vm := a.snap.Stream()
 
 	mui.Column(c).Grow(1).AlignItems(mui.Stretch).Background(tk.Bg).Children(func() {
-		if vm == nil || len(vm.Threads) == 0 {
+		// The workspace context is visible on 消息 too: a filtered stream says so
+		// and offers the way back to 全部 (P1-7).
+		if a.filterWorkspace != "" {
+			mui.Column(c).Padding(10, 24).AlignItems(mui.Center).Children(func() {
+				mui.Column(c).Width(maxStreamWidth).Children(func() { a.workspaceFilterBar(c) })
+			})
+		}
+		var rows []view.Thread
+		if vm != nil {
+			rows = view.FilterThreadsByWorkspace(vm.Threads, a.filterWorkspace)
+		}
+		if len(rows) == 0 {
 			mui.Scroll(c).Grow(1).Children(func() {
 				mui.Column(c).Padding(28, 24).AlignItems(mui.Center).Children(func() {
+					if a.filterWorkspace != "" {
+						mui.Column(c).Padding(0, 120).Gap(8).AlignItems(mui.Center).Children(func() {
+							mui.Icon(c, icTrigger).FontSize(fs(26)).TextColor(tk.TextFaint)
+							mui.Text(c, "这个工作区还没有消息").FontSize(fs(18)).Bold().TextColor(tk.Text)
+							mui.Text(c, "切到「全部」看所有来源；或在下方把活派给这个工作区。").
+								FontSize(13).TextColor(tk.TextMuted)
+						})
+						return
+					}
 					a.emptyStream(c)
 				})
 			})
 			return
 		}
-		rows := vm.Threads
 		a.streamList.Key = threadKeys(rows)
 		a.streamList.FollowEnd = true
 		a.streamList.FollowAnimation = &mui.Smooth
@@ -65,8 +84,8 @@ func threadKeys(rows []view.Thread) func(int) any {
 func (a *App) emptyStream(c *mui.Context) {
 	tk := a.tk
 	mui.Column(c).Padding(0, 120).Gap(8).AlignItems(mui.Center).Children(func() {
-		mui.Icon(c, icSpark).FontSize(26).TextColor(tk.Accent)
-		mui.Text(c, "把事交给它，然后看着它做").FontSize(20).Bold().TextColor(tk.Text)
+		mui.Icon(c, icSpark).FontSize(fs(26)).TextColor(tk.Accent)
+		mui.Text(c, "把事交给它，然后看着它做").FontSize(fs(20)).Bold().TextColor(tk.Text)
 		mui.Text(c, "所有来源的消息都会落到这条流里：GitHub、钉钉、飞书，以及你在这里打的字。").
 			FontSize(12).TextColor(tk.TextMuted)
 	})
@@ -109,15 +128,15 @@ func (a *App) headLine(c *mui.Context, l view.Line) {
 		a.avatar(c, avatarLetter(l), ifColor(mine, tk.Accent, tk.TextMuted))
 		mui.Column(c).Grow(1).Gap(3).Children(func() {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, l.Source).FontSize(13).TextColor(tk.TextMuted)
+				mui.Text(c, l.Source).FontSize(fs(13)).TextColor(tk.TextMuted)
 				if l.Who != "" {
-					mui.Text(c, "· "+l.Who).FontSize(13).TextColor(tk.TextFaint)
+					mui.Text(c, "· "+l.Who).FontSize(fs(13)).TextColor(tk.TextFaint)
 				}
 				mui.Spacer(c)
-				mui.Text(c, l.At.Format("15:04")).FontSize(12).TextColor(tk.TextFaint)
+				mui.Text(c, l.At.Format("15:04")).FontSize(fs(12)).TextColor(tk.TextFaint)
 			})
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, l.Text).FontSize(15).Grow(1).TextColor(tk.Text)
+				mui.Text(c, l.Text).FontSize(fs(15)).Grow(1).TextColor(tk.Text)
 				if located {
 					chip(c, tk, "定位", tk.Accent, tk.Surface)
 				}
@@ -182,18 +201,18 @@ func (a *App) agentAnswer(c *mui.Context, l view.Line) {
 	text = strings.TrimPrefix(text, "超级Agent：")
 	text = strings.TrimPrefix(text, "超级Agent:")
 	mui.Row(c).Padding(10, 12).Radius(8).Background(bg).Gap(9).AlignItems(mui.Start).Children(func() {
-		mui.Icon(c, icSpark).FontSize(13).TextColor(fg)
+		mui.Icon(c, icSpark).FontSize(fs(13)).TextColor(fg)
 		mui.Column(c).Grow(1).Gap(3).Children(func() {
 			mui.Row(c).Gap(7).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "超级Agent").FontSize(12).Bold().TextColor(fg)
+				mui.Text(c, "超级Agent").FontSize(fs(12)).Bold().TextColor(fg)
 				if !l.At.IsZero() {
-					mui.Text(c, l.At.Format("15:04")).FontSize(10).TextColor(tk.TextFaint)
+					mui.Text(c, l.At.Format("15:04")).FontSize(fs(10)).TextColor(tk.TextFaint)
 				}
 				for _, b := range l.Badges {
 					textChip(c, tk, b)
 				}
 			})
-			mui.Text(c, text).FontSize(14).TextColor(tk.Text)
+			mui.Text(c, text).FontSize(fs(14)).TextColor(tk.Text)
 		})
 	})
 }
@@ -207,17 +226,17 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		// A record that the agent asked something, not a place to answer it: the
 		// answer belongs to 总览, where the to-dos are (design §6.3).
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "问").FontSize(12).TextColor(tk.TextFaint)
-			mui.Text(c, "问你："+l.Text).FontSize(14).SingleLine().TextColor(tk.Text)
+			mui.Text(c, "问").FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, "问你："+l.Text).FontSize(fs(14)).SingleLine().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, "待你回答").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, "待你回答").FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 		return
 
 	case view.LineDecision:
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "→").FontSize(13).TextColor(tk.TextFaint)
-			mui.Text(c, l.Text).FontSize(14).TextColor(tk.TextMuted)
+			mui.Text(c, "→").FontSize(fs(13)).TextColor(tk.TextFaint)
+			mui.Text(c, l.Text).FontSize(fs(14)).TextColor(tk.TextMuted)
 			for _, b := range l.Badges {
 				textChip(c, tk, b)
 			}
@@ -232,8 +251,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 			return
 		}
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "✉").FontSize(13).TextColor(toneFg(tk, l.Tone))
-			mui.Text(c, l.Text).FontSize(13).TextColor(tk.TextMuted)
+			mui.Text(c, "✉").FontSize(fs(13)).TextColor(toneFg(tk, l.Tone))
+			mui.Text(c, l.Text).FontSize(fs(13)).TextColor(tk.TextMuted)
 			for _, b := range l.Badges {
 				textChip(c, tk, b)
 			}
@@ -242,8 +261,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 
 	case view.LineProgress:
 		mui.Row(c).Gap(8).AlignItems(mui.Start).Children(func() {
-			mui.Text(c, "ZeoKeel").FontSize(13).Bold().TextColor(tk.TextMuted)
-			mui.Text(c, l.Text).FontSize(14).Grow(1).TextColor(tk.Text)
+			mui.Text(c, "ZeoKeel").FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
+			mui.Text(c, l.Text).FontSize(fs(14)).Grow(1).TextColor(tk.Text)
 		})
 		return
 
@@ -251,8 +270,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		// A deliverable is not a command: draw it as the thing it produced, with
 		// the kind as a chip (design §6.10).
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "交付").FontSize(12).TextColor(tk.TextFaint)
-			mui.Text(c, l.Text).FontSize(14).TextColor(tk.Text)
+			mui.Text(c, "交付").FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, l.Text).FontSize(fs(14)).TextColor(tk.Text)
 			for _, b := range l.Badges {
 				textChip(c, tk, b)
 			}
@@ -268,7 +287,7 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		}
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			dot(c, tk.TextFaint, 4)
-			mui.Text(c, l.Text).FontSize(13).TextColor(tk.TextFaint)
+			mui.Text(c, l.Text).FontSize(fs(13)).TextColor(tk.TextFaint)
 		})
 		return
 	}
@@ -276,8 +295,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 	// A tool or verification row: monospace, with the result on the right.
 	mui.Row(c).Padding(8, 10).Radius(6).Background(tk.SurfaceAlt).Gap(8).
 		AlignItems(mui.Center).Children(func() {
-		mui.Text(c, "▸ "+l.Tool).FontSize(13).Bold().TextColor(tk.TextMuted)
-		mui.Text(c, l.Command).FontSize(13).SingleLine().Grow(1).TextColor(tk.Text)
+		mui.Text(c, "▸ "+l.Tool).FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
+		mui.Text(c, l.Command).FontSize(fs(13)).SingleLine().Grow(1).TextColor(tk.Text)
 		if l.DiffAdd > 0 || l.DiffDel > 0 {
 			chip(c, tk, fmt.Sprintf("+%d", l.DiffAdd), tk.Green, tk.GreenSoft)
 			chip(c, tk, fmt.Sprintf("−%d", l.DiffDel), tk.Red, tk.RedSoft)
@@ -303,6 +322,6 @@ func avatarLetter(l view.Line) string {
 
 func (a *App) avatar(c *mui.Context, label string, bg mui.Color) {
 	mui.Row(c).Size(24, 24).Radius(12).Background(bg).Center().Children(func() {
-		mui.Text(c, label).FontSize(13).TextColor(mui.Hex("#FFFFFF"))
+		mui.Text(c, label).FontSize(fs(13)).TextColor(mui.Hex("#FFFFFF"))
 	})
 }

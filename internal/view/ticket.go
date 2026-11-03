@@ -177,7 +177,10 @@ type DeliveryDetail struct {
 // the projector; empty sections are a fact the panel states ("暂无数据"), never
 // something it fills in with a guess.
 type TicketDetailVM struct {
+	// ID is the Ticket's domain id (the lookup key); Number is the "#42" a
+	// person reads.
 	ID        string
+	Number    int
 	Title     string
 	Workspace string
 	// Stage is the derived stage id (see StagePersonAnswer and the rest) and

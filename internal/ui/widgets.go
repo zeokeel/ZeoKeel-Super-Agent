@@ -28,19 +28,19 @@ func dot(c *mui.Context, color mui.Color, size float32) {
 
 func chip(c *mui.Context, tk Tokens, label string, fg, bg mui.Color) {
 	mui.Row(c).Height(20).Padding(0, 8).Radius(6).Background(bg).AlignItems(mui.Center).
-		Children(func() { mui.Text(c, label).FontSize(13).SingleLine().TextColor(fg) })
+		Children(func() { mui.Text(c, label).FontSize(fs(13)).SingleLine().TextColor(fg) })
 }
 
 func textChip(c *mui.Context, tk Tokens, label string) {
 	mui.Row(c).Height(22).Padding(0, 8).Radius(6).Background(tk.SurfaceAlt).
 		Border(1, tk.BorderSoft).AlignItems(mui.Center).
-		Children(func() { mui.Text(c, label).FontSize(13).TextColor(tk.TextMuted) })
+		Children(func() { mui.Text(c, label).FontSize(fs(13)).TextColor(tk.TextMuted) })
 }
 
 func heading(c *mui.Context, tk Tokens, title, sub string) {
 	mui.Column(c).Gap(4).Children(func() {
-		mui.Text(c, title).FontSize(26).Bold().TextColor(tk.Text)
-		mui.Text(c, sub).FontSize(15).TextColor(tk.TextMuted)
+		mui.Text(c, title).FontSize(fs(26)).Bold().TextColor(tk.Text)
+		mui.Text(c, sub).FontSize(fs(15)).TextColor(tk.TextMuted)
 	})
 }
 
@@ -62,7 +62,7 @@ func sourceGlyph(c *mui.Context, tk Tokens, kind string, size float32) {
 	}
 	mui.Row(c).Size(size, size).Radius(tk.RadiusSmall).Background(bg).Border(1, tk.Border).
 		Center().Children(func() {
-		mui.Icon(c, icon).FontSize(size * 0.5).TextColor(fg)
+		mui.Icon(c, icon).FontSize(fs(size * 0.5)).TextColor(fg)
 	})
 }
 
@@ -80,7 +80,7 @@ func filterChip(c *mui.Context, tk Tokens, label string, on bool, count int) boo
 	}
 	row := mui.Row(c).Height(24).Padding(0, 10).Radius(6).Background(bg).Border(1, border).
 		AlignItems(mui.Center).Children(func() {
-		mui.Text(c, text).FontSize(13).SingleLine().TextColor(fg)
+		mui.Text(c, text).FontSize(fs(13)).SingleLine().TextColor(fg)
 	})
 	return row.Clicked()
 }

@@ -10,13 +10,14 @@ import (
 	"github.com/zeokeel/super-agent/internal/view"
 )
 
-// ticketRowsOf is the list the execution page draws, in the order it draws it.
+// ticketRowsOf is the list the execution page draws, in the order it draws it:
+// the same derivation (bucket + workspace) the page uses.
 func ticketRowsOf(a *App) []view.TicketRow {
 	vm := a.snap.Tickets()
 	if vm == nil {
 		return nil
 	}
-	return view.FilterTickets(vm.Rows, a.ticketFilter)
+	return a.ticketsVisible(vm)
 }
 
 // Reordering must not move the opened row to another Ticket. The rows are sorted
@@ -34,7 +35,7 @@ func TestTicketSelectionFollowsTheTicketWhenRowsReorder(t *testing.T) {
 		t.Fatalf("opened row %d of %d", a.ticketSel, len(rows))
 	}
 	opened := rows[a.ticketSel]
-	if opened.ID != "42" {
+	if opened.ID != "tk-42" {
 		t.Fatalf("opened ticket %q, want 42", opened.ID)
 	}
 	wantTexts(t, tt, "step 7 · 正在补 SessionTimeout 默认值", "explicit · policy v7")
@@ -225,7 +226,7 @@ func TestPaletteListHeadingsAreNotChoices(t *testing.T) {
 	if a.sec != view.SecExecution {
 		t.Fatalf("section %q, want execution", a.sec)
 	}
-	if a.locate == nil || a.locate.TicketID != "42" {
+	if a.locate == nil || a.locate.TicketID != "tk-42" {
 		t.Fatalf("located %+v, want ticket #42", a.locate)
 	}
 }

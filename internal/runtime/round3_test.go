@@ -122,6 +122,12 @@ func TestWorkspacePanelListsConversations(t *testing.T) {
 	if _, err := rt.EvaluateDue(time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	// IM requests are approvals now: approve so an "agent" conversation exists.
+	for _, d := range eng.Proposals() {
+		if err := rt.Approve(string(d.ID)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rt.Publish()
 
 	panel := snap.Workspaces()
@@ -165,35 +171,45 @@ func TestOverviewSystemFacts(t *testing.T) {
 	}
 }
 
-// A local message is never left at "未受理": the stream carries an answer line.
+// A local message is never left at "未受理": the chat carries an answer and the
+// composer does not go red (P0-7).
 func TestLocalMessagesGetAnAnswer(t *testing.T) {
 	rt, _, _ := newRound3(t)
 	rt.Publish()
 
-	// Asking about workspaces lists them.
-	if err := rt.Dispatch("我有哪些工作区？"); err == nil {
-		t.Fatal("a non-dispatching local message must tell the composer why")
+	// Asking about workspaces lists them, in the chat.
+	if err := rt.Dispatch("我有哪些工作区？"); err != nil {
+		t.Fatalf("an answered chat message must not be an error: %v", err)
 	}
-	lines := streamLines(rt.stream())
-	if !hasLine(lines, view.LineReply, "超级Agent：") || !hasLineText(lines, "web") {
-		t.Fatalf("workspace answer did not answer in-stream: %+v", lines)
-	}
-
-	// Plain chat answers why nothing was dispatched, and how to dispatch.
-	if err := rt.Dispatch("你好"); err == nil || !strings.Contains(err.Error(), "没有派发") {
-		t.Fatalf("plain chat err = %v", err)
-	}
-	lines = streamLines(rt.stream())
-	if !hasLineText(lines, "没有派发") || !hasLineText(lines, "新建会话") {
-		t.Fatalf("plain-chat answer is not actionable: %+v", lines)
-	}
-	if hasLineText(lines, "未受理") && !hasLineText(lines, "超级Agent：") {
-		t.Fatalf("a local message ended at 未受理: %+v", lines)
+	chat := rt.chatHistory()
+	if len(chat) < 2 || chat[len(chat)-1].Role != view.ChatAssistant ||
+		!strings.Contains(chat[len(chat)-1].Text, "web") {
+		t.Fatalf("workspace answer missing from chat: %+v", chat)
 	}
 
-	// Real work still creates a Ticket.
+	// Plain chat answers with next steps instead of an error.
+	if err := rt.Dispatch("你好"); err != nil {
+		t.Fatalf("plain chat returned an error: %v", err)
+	}
+	last := rt.chatHistory()
+	if len(last) == 0 || last[len(last)-1].Kind != view.ChatAnswer ||
+		!strings.Contains(last[len(last)-1].Text, "新建会话") {
+		t.Fatalf("plain-chat answer is not actionable: %+v", last)
+	}
+
+	// Real work still creates a Ticket and reports an outcome in the chat.
 	if err := rt.Dispatch("在 webapp 里跑个命令"); err != nil {
 		t.Fatalf("work request failed: %v", err)
+	}
+	var outcome bool
+	for _, m := range rt.chatHistory() {
+		if m.Role == view.ChatSystem && m.Kind == view.ChatOutcome &&
+			strings.Contains(m.Text, "已派发") {
+			outcome = true
+		}
+	}
+	if !outcome {
+		t.Fatalf("dispatched work has no chat outcome: %+v", rt.chatHistory())
 	}
 }
 
@@ -221,4 +237,27 @@ func hasLineText(lines []view.Line, sub string) bool {
 		}
 	}
 	return false
+}
+
+// Deleting an empty workspace removes it from routing; a workspace with a
+// Ticket still refuses so history cannot be orphaned.
+func TestDeleteWorkspaceRemovesEmptyOnly(t *testing.T) {
+	rt, eng, _ := newRound3(t)
+	if err := rt.DeleteWorkspace("ws_web"); err != nil {
+		t.Fatalf("delete empty workspace: %v", err)
+	}
+	if len(eng.Workspaces()) != 0 {
+		t.Fatalf("workspace survived delete: %+v", eng.Workspaces())
+	}
+	// A ticket-bearing workspace must be refused.
+	eng.Register(domain.Workspace{ID: "ws_used", Name: "used", Root: t.TempDir()}, engine.Policy{Version: "v1"})
+	if _, err := eng.Dispatch(engine.DispatchInput{Text: "在 used 里写个文件", Workspace: "ws_used", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.DeleteWorkspace("ws_used"); err == nil {
+		t.Fatal("deleting a workspace with a ticket must be refused")
+	}
 }

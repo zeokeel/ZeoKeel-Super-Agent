@@ -49,7 +49,7 @@ func TestModelFailureMarksTheTicketAndReplies(t *testing.T) {
 	}
 	approved := evalNow(eng)
 	if approved.Ticket == "" {
-		t.Fatalf("eval created no ticket: %+v", approved)
+		approved.Ticket = ticketAfterProposal(t, eng, "model failure")
 	}
 	out.Ticket = approved.Ticket
 

@@ -118,7 +118,7 @@ func TestStageBucketAndOverviewAgree(t *testing.T) {
 			ov := rt.snap.Overview()
 			listed := false
 			for _, row := range ov.NeedsPerson {
-				if row.ID == number(tk.Number) {
+				if row.ID == string(tk.ID) {
 					listed = true
 				}
 			}
@@ -130,7 +130,7 @@ func TestStageBucketAndOverviewAgree(t *testing.T) {
 			tickets := rt.ticketsVM(now)
 			var row *view.TicketRow
 			for i := range tickets.Rows {
-				if tickets.Rows[i].ID == number(tk.Number) {
+				if tickets.Rows[i].ID == string(tk.ID) {
 					row = &tickets.Rows[i]
 				}
 			}
@@ -282,7 +282,7 @@ func TestNeedsPersonRowCarriesTheReason(t *testing.T) {
 	rt.Publish()
 	var detail string
 	for _, row := range rt.snap.Overview().NeedsPerson {
-		if row.ID == "1" {
+		if row.ID == string(out.Ticket) {
 			detail = row.Detail
 		}
 	}

@@ -44,7 +44,7 @@ func demoStream() *view.StreamVM {
 	return &view.StreamVM{
 		Threads: []view.Thread{
 			{
-				ID: "th-1",
+				ID: "th-1", Workspace: "ws_webapp",
 				Head: view.Line{Kind: view.LineInbound, Who: "lin", Source: "GitHub · #42",
 					Text: "登录超时应可配置，默认 30 分钟", At: now},
 				Steps: []view.Line{
@@ -55,7 +55,7 @@ func demoStream() *view.StreamVM {
 				},
 			},
 			{
-				ID: "th-2",
+				ID: "th-2", Workspace: "ws_data",
 				Head: view.Line{Kind: view.LineOperator, Who: "你", Source: "本地面板",
 					Text: "整理 acme 上月用量摘要", At: now},
 				Steps: []view.Line{
@@ -130,9 +130,10 @@ func TestInputSubmitsAndClears(t *testing.T) {
 	}
 }
 
-// A failed dispatch keeps the text: losing what a person typed is worse than a
-// red line.
-func TestInputKeepsTextOnError(t *testing.T) {
+// A dispatch refusal is usually "no work: answered or asked back", so the line
+// is taken optimistically and the runtime's explanation is shown NEUTRAL, not as
+// a red failure (P0-2/P0-7). The draft is cleared: the message was sent.
+func TestInputTakesTheLineOnRefusal(t *testing.T) {
 	cmd := &fakeCmd{fail: "没有匹配到工作区，请指定一个"}
 	a := newTestApp(t, false)
 	a.cmd = cmd
@@ -142,11 +143,17 @@ func TestInputKeepsTextOnError(t *testing.T) {
 	if err := tt.Click("发送"); err != nil {
 		t.Fatalf("click 发送: %v", err)
 	}
-	if a.draft != "今天中午吃什么" {
-		t.Fatal("the text must survive a failed dispatch")
+	if a.draft != "" {
+		t.Fatalf("the line was taken but the draft is %q", a.draft)
+	}
+	if a.composerErr != "" {
+		t.Fatalf("a refusal set a red error %q", a.composerErr)
+	}
+	if a.composerNote == "" {
+		t.Fatal("a refusal said nothing")
 	}
 	if !tt.HasText("没有匹配到工作区，请指定一个") {
-		t.Fatalf("the error should be visible; texts: %q", tt.Texts())
+		t.Fatalf("the explanation should be visible; texts: %q", tt.Texts())
 	}
 }
 

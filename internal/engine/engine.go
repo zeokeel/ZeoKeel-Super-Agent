@@ -151,6 +151,21 @@ func (e *Engine) Register(w domain.Workspace, p Policy) {
 	e.rebuildIndexLocked()
 }
 
+// Unregister removes a workspace and its policy. The caller must have checked
+// that no Ticket refers to it; the routing index is rebuilt so no stale brief
+// can keep routing work into a deleted workspace.
+func (e *Engine) Unregister(id domain.WorkspaceID) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.workspaces[id]; !ok {
+		return false
+	}
+	delete(e.workspaces, id)
+	delete(e.policies, id)
+	e.rebuildIndexLocked()
+	return true
+}
+
 // SetPolicy replaces one workspace's policy (a panel save, or a Source sync).
 func (e *Engine) SetPolicy(id domain.WorkspaceID, p Policy) error {
 	e.mu.Lock()

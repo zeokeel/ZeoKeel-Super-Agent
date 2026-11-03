@@ -476,9 +476,11 @@ func (r *Runtime) runnerFor(t domain.Ticket, cfg *WorkerConfig, workdir string) 
 		// The Worker's bash child sees the same ticket facts as the prompt and the
 		// prepare script (no credentials: executionVars only carries paths/ids).
 		Env: r.executionVars(t, workdir),
-		// Framework tools the panel promises (ui2-spec §4): plan/todo tools,
-		// AGENTS.md injection, and web_fetch/web_search.
-		PlanTasks: true, AgentsMD: true, WebTools: true,
+		// Framework tools the panel promises, switchable per deployment (P1-12);
+		// the defaults are on so an upgraded install keeps the tools it had.
+		PlanTasks:    r.settingBool("execution.plan_tasks", true),
+		AgentsMD:     r.settingBool("execution.agents_md", true),
+		WebTools:     r.settingBool("execution.web_tools", true),
 		WebSearchURL: r.searchURLFor(cfg),
 	})
 	if err != nil {
@@ -570,7 +572,7 @@ func (r *Runtime) systemPromptFor(t domain.Ticket, cfg *WorkerConfig) string {
 	system += "\n\n" + r.promptVars(t, ticketWorkdir(cfg, t))
 	// Framework tools enabled for every Worker (ui2-spec §4/§5): the model needs
 	// to know they exist, not just to have them registered.
-	system += "\n\n计划工具：task_create / task_get / task_update / task_list。" +
+	system += "\n\n计划工具：TaskCreate / TaskGet / TaskUpdate / TaskList。" +
 		"\n网络工具：web_fetch / web_search（仅 http/https，拒绝内网地址）。" +
 		"\n工作区根目录的 AGENTS.md 会自动注入；没有该文件不影响执行。"
 	// Team sections last: they own the voice and the delivery standard, and a team

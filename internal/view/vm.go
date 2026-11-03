@@ -44,11 +44,18 @@ type NavItem struct {
 // TicketRow is one Ticket as a list row: the label says what it waits for, not an
 // internal status code (design §6.3).
 type TicketRow struct {
-	ID         string
-	Title      string
-	Workspace  string
-	Source     string
-	SourceIcon string
+	// ID is the Ticket's domain id (the runtime's key): lookups for its detail
+	// use this, never the number.
+	ID string
+	// Number is the Ticket's number, the part a person reads as "#42".
+	Number int
+	Title  string
+	// Workspace is the workspace's display name; WorkspaceID is the id the
+	// panel filters by (they are different things: a rename changes one).
+	Workspace   string
+	WorkspaceID string
+	Source      string
+	SourceIcon  string
 	// Stage is the badge: what this row is waiting for, in a person's words.
 	Stage string
 	// StageID is the fact behind the badge: the derived stage id (see
@@ -72,6 +79,19 @@ type TicketRow struct {
 	Activity string
 	Tone     Tone
 	Age      time.Duration
+}
+
+// TicketLabel is how a row reads: "#42". The number is what a person sees; the
+// ID is the domain key used for every lookup. A projector that has not filled
+// the number yet falls back to the id, so a row is never blank.
+func TicketLabel(id string, number int) string {
+	if number > 0 {
+		return "#" + itoa(number)
+	}
+	if id != "" {
+		return "#" + id
+	}
+	return "#?"
 }
 
 // ApprovalRow is one request waiting for the operator's yes. It is not a Ticket:
@@ -242,6 +262,8 @@ type Snapshot struct {
 	goals     atomic.Pointer[GoalVM]
 	// workspaces is the sidebar's shard: workspace rows and their conversations.
 	workspaces atomic.Pointer[WorkspacePanelVM]
+	// chat is the 超级Agent conversation shard.
+	chat atomic.Pointer[ChatVM]
 	// onboarding is the first-run wizard; nil means "this install is set up".
 	onboarding atomic.Pointer[OnboardingVM]
 	artifacts  atomic.Pointer[ArtifactVM]
@@ -335,6 +357,16 @@ func (s *Snapshot) PublishWorkspaces(vm *WorkspacePanelVM) {
 // publish. The sidebar then says it waits instead of drawing an empty group as
 // if no workspace existed.
 func (s *Snapshot) Workspaces() *WorkspacePanelVM { return s.workspaces.Load() }
+
+// PublishChat hands the panel the 超级Agent conversation.
+func (s *Snapshot) PublishChat(vm *ChatVM) {
+	s.chat.Store(vm)
+	s.bump()
+}
+
+// Chat returns the last 超级Agent conversation, or nil before the first publish.
+// The panel then draws no chat rather than an empty one.
+func (s *Snapshot) Chat() *ChatVM { return s.chat.Load() }
 
 // PublishArtifacts hands the deliverables panel its rows.
 func (s *Snapshot) PublishArtifacts(vm *ArtifactVM) {
@@ -522,9 +554,29 @@ type Thread struct {
 	// ID identifies the Thread across publishes, so the list drawing the stream
 	// keeps its place and its row state as older messages load. "" means the
 	// projector does not publish one yet, and the rows are keyed by index.
-	ID    string
-	Head  Line
-	Steps []Line
+	ID string
+	// Workspace is the workspace id the message belongs to, so the panel can
+	// filter the stream to the selected workspace. "" means the projector did not
+	// classify it, and the thread shows only under "全部".
+	Workspace string
+	Head      Line
+	Steps     []Line
+}
+
+// FilterThreadsByWorkspace returns the threads of one workspace, or every thread
+// when workspace is "". A thread the projector did not classify belongs to no
+// workspace, so it shows only under 全部.
+func FilterThreadsByWorkspace(threads []Thread, workspace string) []Thread {
+	if workspace == "" {
+		return threads
+	}
+	out := make([]Thread, 0, len(threads))
+	for _, t := range threads {
+		if t.Workspace == workspace {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // StreamVM is everything the workbench draws.

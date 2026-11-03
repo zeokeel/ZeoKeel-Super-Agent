@@ -65,10 +65,28 @@
 
 | 概念 / 实现 | 判定 | 说明与证据 |
 | --- | --- | --- |
-| DWS 外部 CLI 作为钉钉默认 transport | **接受，登记为集成偏离** | 官方 Stream SDK 需要公网订阅；本项目默认 `dws` 网关 CLI，串行 worker + cursor 整批成功才推进 + 隐藏幂等 marker。代价：依赖外部命令、能力受契约限制（无成员/历史）。官方 Stream 保留为 `stream` 选项（`internal/im/dingtalk/dws.go`、`design/im-channels.md`） |
+| DWS 外部 CLI 作为钉钉默认 transport | **接受，登记为集成偏离** | 官方 Stream SDK 需要公网订阅；本项目默认 `dws` 网关 CLI，长驻 NDJSON consumer（无 poll/cursor）+ event id 去重 + 1s→30s 重连 + 隐藏幂等 marker。代价：依赖外部命令、能力受契约限制（无成员/历史）。官方 Stream 保留为 `stream` 选项（`internal/im/dingtalk/dws.go`、`design/im-channels.md`） |
 | IM 渠道独立开关 + 检查/授权按钮 | 接受（EXTRA） | 原型没有"渠道管理"概念；桌面单机需要明确"未启用≠在线"，且设置变更只重启变化渠道（`internal/runtime/im.go:189-328`、`internal/ui/channels.go`） |
-| eino `plantask`（TaskCreate/Get/Update/List）与 `agentsmd` | 接受，不自研 | 直接采用框架中间件；任务 JSON 存工单目录、AGENTS.md 工作区根注入（`internal/agent/builtin.go:44,96`）。禁止再手写一套 todo/instructions 注入 |
+| eino `plantask`（TaskCreate/Get/Update/List）与 `agentsmd` | 接受，不自研 | 直接采用框架中间件；任务 JSON 存 `.zeokeel/plan`、AGENTS.md 以**不可信仓库内容信封**（≤64KB）注入（`internal/agent/builtin.go:30-44,71,158-270`）。禁止再手写一套 todo/instructions 注入 |
 | `web_fetch` / `web_search` 内置工具 | 接受（EXTRA） | DSH 能力对齐；web_fetch 拒绝私网（SSRF）、10s/2MiB；web_search 前 5 条、端点可配（`internal/agent/webtools.go`） |
 | 面板工作区树 / 会话=工单（我创建 vs 超级Agent 创建） | 接受（EXTRA） | 原型以 chat 为中心；桌面版把工作区作为一等容器，会话是 Ticket 的视图（`internal/view/workspace.go`、`internal/runtime/workspaces.go`） |
 | 原生目录选择器（mygo `Dialog.Open`） | 接受 | 不在面板里手写目录浏览器；三平台由 mygo 处理，后台 goroutine 回填，测试 seam（`internal/ui/workspace.go:19-52`） |
-| 面板消息必然得到答复（"未受理"修复） | 接受 | 本地消息无 Ticket 时输出「已答复」+ 超级Agent 文本（列工作区/说明下一步），确定性不耗模型；真活仍建 Ticket（`internal/runtime/runtime.go:456-482`、`workspaces.go:159-214`）。它替代"沉默=未受理"的旧行为 |
+| 面板消息必然得到答复（"未受理"修复） | 接受（2026-11-04 升级为聊天+派活双态） | 提问→模型回答/确定性回答；派活→「已派发 #N」；待批→「需要你确认」；回答内联输入框上方与总览；非失败不标红（`internal/runtime/chat.go`、`internal/ui/chat.go`、`runtime/runtime.go:812-880`） |
+
+## E. 修复波（2026-11-04）新增/变化的概念登记
+
+| 概念 / 实现 | 判定 | 说明与证据 |
+| --- | --- | --- |
+| **IM 入站审批优先**（每条消息先 DecPropose，Approve 建单/Reject 无痕） | **接受，release policy** | 产品决定：IM 不允许自动开工。每条消息恰好一个待批项，重复投递幂等；来源页「待审批 N」。逃生阀 `AutoApproveIM` 默认关闭（`internal/engine/evaluate.go:396-461`、`gate.go:56-60`、`runtime/runtime.go:896-930`、`cmd/zeokeel/acceptance_test.go:129-160`） |
+| 飞书官方 `larkws` 长连接为推荐接收（longpoll 为显式 fallback） | 接受（替换“只做长轮询”） | 低延迟、无需公网回调；`larksuite/oapi-sdk-go/v3 v3.12.2` + `OnP2MessageReceiveV1`；longpoll 保留 cursor 兼容旧环境（`internal/im/feishu/ws.go`、`go.mod:12`）。webhook 拒绝。 |
+| DWS=操作员个人 OAuth，Stream=bot | 接受，身份模型偏离 | 两者**不是同一身份**：DWS 不用 app key/secret，靠 `dws auth login` 的 profile；Stream 是官方机器人 SDK（app key/secret/robot）。文档与设置字段按身份分开（`internal/im/dingtalk/dws.go:1-28`、`internal/runtime/pages.go:483-500`） |
+| DWS 长驻 NDJSON consumer（无 poll/cursor） | 接受，替换早期“JSON poll 契约” | 真实 CLI 只提供 `event +listen-im … -f ndjson`；event id 去重、断线 1s→30s 重连、短命令串行；发送无 idempotency-key，靠隐藏 marker（`dws.go`、`design/im-channels.md` §4） |
+| UI 异步命令边界（后台队列 + 发送中/保存中/重启中） | 接受 | 禁止 handler 内同步 DB/模型/渠道重启；`ui/commands.go` 的 seam 把命令交给 goroutine，`postToUI` 回结果；面板显示 pending 状态（`internal/ui/commands.go`、`internal/ui/input.go`、`internal/ui/settings.go`） |
+| 超级Agent = 聊天 + 派活双态 | 接受（产品拍板） | 全局输入既回答问题也派活；回答有模型/确定性两条路径；内联反馈；只有真实失败才红（`internal/runtime/chat.go`、`internal/view/chat.go`、`internal/ui/chat.go`） |
+| Ticket 身份 = domain ID（显示 #number） | 接受 | 行/详情查找键统一 domain ID，避免“编号字符串当键”；显示层用 TicketLabel 出 `#N`；旧“42 fixture”错误被列为回归测试（`internal/runtime/pages.go:302,310`、`internal/view/vm.go:87-95`） |
+| 工作区 opaque ID + 可改名 + 过滤上下文 | 接受 | 名字可变、身份/历史不变；中文名不再塌缩；选中工作区过滤「消息/执行」；删除空工作区（有工单拒绝）而不是假删（`internal/runtime/workspaces.go:23-190`、`internal/store/store.go:390`、`internal/ui/workspace.go:346-400`） |
+| AGENTS.md = 不可信仓库内容信封（≤64KB） | **接受，安全边界** | 不再把仓库指令当权威系统指令；包 `<untrusted-repository-content>` 信封并限 64KB；仓库内容视为数据（`internal/agent/builtin.go:30-44,158-270`） |
+| web 内容 = 不可信数据 + DNS pin/Proxy:nil | 接受，安全边界 | web_fetch 解析后 pin IP 拨号、显式禁用环境代理、拒绝私网、2MiB/10s、返回 `<untrusted-web-content>`；web 工具可按设置关闭（`internal/agent/webtools.go:40-44,98-160,226-290`、`runtime/pages.go:520-525`） |
+| 设置唯一 bool 编码 + 三态启用 + 一次性迁移 + flag bootstrap | 接受 | UI 开关读写 1/0（读兼容 true/false）；`LoadSettings` 一次性迁移（bool/IM 启用/transport/im_self）并写 schema stamp；显式值优先，缺省按凭据/flags 推导；flag-only 部署启动时补写（`internal/runtime/settingscodec.go`、`internal/runtime/im.go:33-130`、`internal/runtime/pages.go:678-707`） |
+| settings 保存事务化 + secret redaction | 接受 | 先构造新快照→事务提交→成功才换内存；失败面板不变；secret 不回显，status/Inspect/health 用 `***`（`runtime/pages.go:567-690,539-550`、`store/redact.go`、`store/inspect.go`） |
+| 界面字号 scale token（`ui.font_scale`）+ 最小窗口 1100×720 | 接受（替换 magic +2） | 显式字号走 `fs()` 缩放，三档 0.9/1.0/1.1，设置›部署可编辑并投影（`internal/ui/tokens.go:48-78`、`internal/ui/app.go:238-264`、`internal/runtime/pages.go:537-539`） |

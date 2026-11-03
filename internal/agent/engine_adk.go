@@ -110,14 +110,11 @@ func (r *Runner) newADKAgent(ctx context.Context, mb model.ToolCallingChatModel,
 	if err != nil {
 		return nil, err
 	}
-	// agentsmd must come after summarization so AGENTS.md is never compressed away
-	// (the middleware documents that ordering); plantask only adds tools.
-	var agentsMDMiddleware adk.ChatModelAgentMiddleware
+	// Repository AGENTS.md is injected after summarization (so its system message
+	// stays out of the compressed context); plantask only adds tools.
+	var repoContentMiddleware adk.ChatModelAgentMiddleware
 	if r.cfg.AgentsMD {
-		agentsMDMiddleware, err = newAgentsMDMiddleware(ctx, r.cfg.Workdir)
-		if err != nil {
-			return nil, fmt.Errorf("agent: agentsmd middleware: %w", err)
-		}
+		repoContentMiddleware = newRepoContentMiddleware(r.cfg.Workdir)
 	}
 	var planTaskMiddleware adk.ChatModelAgentMiddleware
 	if r.cfg.PlanTasks {
@@ -152,15 +149,15 @@ func (r *Runner) newADKAgent(ctx context.Context, mb model.ToolCallingChatModel,
 		},
 		MaxIterations: maxSteps(r.cfg.MaxSteps),
 		Handlers: r.handlers(handlerSet{
-			summarizer: summarizer,
-			agentsMD:   agentsMDMiddleware,
-			reducer:    reducer,
-			patcher:    patcher,
-			files:      fileMiddleware,
-			jobs:       jobsMiddleware,
-			planTasks:  planTaskMiddleware,
-			refusal:    newToolRefusalMiddleware(),
-			subagents:  subHandler,
+			summarizer:  summarizer,
+			repoContent: repoContentMiddleware,
+			reducer:     reducer,
+			patcher:     patcher,
+			files:       fileMiddleware,
+			jobs:        jobsMiddleware,
+			planTasks:   planTaskMiddleware,
+			refusal:     newToolRefusalMiddleware(),
+			subagents:   subHandler,
 		}),
 	})
 	if err != nil {
@@ -285,26 +282,27 @@ func maxSteps(v int) int {
 }
 
 // handlerSet is the middleware stack of one Worker run. It exists so the order is
-// written down once: summarization first, AGENTS.md after it (so it is never
-// compressed), then tool-result reduction and the tool-providing middlewares.
+// written down once: summarization first, untrusted repository instructions after
+// it (so they are not compressed), then tool-result reduction and the tool-providing
+// middlewares.
 type handlerSet struct {
-	summarizer adk.ChatModelAgentMiddleware
-	agentsMD   adk.ChatModelAgentMiddleware
-	reducer    adk.ChatModelAgentMiddleware
-	patcher    adk.ChatModelAgentMiddleware
-	files      adk.ChatModelAgentMiddleware
-	jobs       adk.ChatModelAgentMiddleware
-	planTasks  adk.ChatModelAgentMiddleware
-	refusal    adk.ChatModelAgentMiddleware
-	subagents  []adk.ChatModelAgentMiddleware
+	summarizer  adk.ChatModelAgentMiddleware
+	repoContent adk.ChatModelAgentMiddleware
+	reducer     adk.ChatModelAgentMiddleware
+	patcher     adk.ChatModelAgentMiddleware
+	files       adk.ChatModelAgentMiddleware
+	jobs        adk.ChatModelAgentMiddleware
+	planTasks   adk.ChatModelAgentMiddleware
+	refusal     adk.ChatModelAgentMiddleware
+	subagents   []adk.ChatModelAgentMiddleware
 }
 
 // handlers returns the ordered middleware list for a Worker run.
 func (r *Runner) handlers(h handlerSet) []adk.ChatModelAgentMiddleware {
 	out := make([]adk.ChatModelAgentMiddleware, 0, 8+len(h.subagents))
 	out = append(out, h.summarizer)
-	if h.agentsMD != nil {
-		out = append(out, h.agentsMD)
+	if h.repoContent != nil {
+		out = append(out, h.repoContent)
 	}
 	out = append(out, h.reducer, h.patcher, h.files, h.jobs)
 	if h.planTasks != nil {

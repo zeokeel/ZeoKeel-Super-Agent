@@ -54,7 +54,7 @@ func TestSourceChannelCards(t *testing.T) {
 	_, tt := channelApp(t, &fakeCmd{})
 	wantTexts(t, tt,
 		"IM 通道", "飞书", "钉钉",
-		"长轮询", "DWS 长连接",
+		"HTTP 长轮询", "官方长连接", "DWS 长连接",
 		"飞书 App ID", "飞书 App Secret", "飞书会话 ID（逗号分隔）",
 		"钉钉 AppKey", "钉钉 AppSecret", "钉钉机器人 RobotCode",
 		"检查通道",
@@ -153,12 +153,12 @@ func TestChannelEnableUsesSaveProtocol(t *testing.T) {
 	wantTexts(t, tt, "1 处未保存更改")
 
 	click(t, tt, "保存")
-	if got := saver.values["dingtalk_enabled"]; got != "true" {
+	if got := saver.values["dingtalk_enabled"]; got != "1" {
 		t.Fatalf("save carried dingtalk_enabled=%q; values=%v", got, saver.values)
 	}
 	// No optimistic update: the projection still says off until it is republished.
 	ptr := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "dingtalk_enabled"})
-	if *ptr != "true" {
+	if *ptr != "1" {
 		t.Fatalf("the edit was dropped: %q", *ptr)
 	}
 }
@@ -191,7 +191,7 @@ func TestChannelTransportNotProjected(t *testing.T) {
 		Groups: []view.SettingsGroup{{
 			ID: view.SettingsSource, Label: "来源", Note: "n",
 			Fields: []view.SettingField{
-				{Key: "dingtalk_enabled", Label: "钉钉：启用", Value: "true", Kind: view.SettingSwitch},
+				{Key: "dingtalk_enabled", Label: "钉钉：启用", Value: "1", Kind: view.SettingSwitch},
 				{Key: "dingtalk_app_key", Label: "钉钉 AppKey", Value: "k", Kind: view.SettingText},
 			},
 		}},

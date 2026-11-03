@@ -49,7 +49,10 @@ type Config struct {
 	BaseURL   string
 	// Chats 是要监听的会话；空表示不监听任何会话（轮询返回空）。
 	Chats []Chat
-	// SelfID/SelfName 是无 bot/v3/info 权限时的回退身份（@ 判定需要它）。
+	// SelfID/SelfName 是**本渠道（飞书）**的机器人身份，来自 settings 的
+	// `source.feishu_self_id`；无 bot/v3/info 权限时作为回退，@ 判定需要它。
+	// 空时 Self() 会问飞书的 bot/v3/info（仍是本渠道），绝不借用钉钉的
+	// bot id：两个 IM 的身份空间不同，混用会让 @ 判定错位（review P1-8）。
 	SelfID   string
 	SelfName string
 
@@ -62,6 +65,14 @@ type Config struct {
 	IdleDelay time.Duration
 	// PageSize 是每次拉取的页大小。
 	PageSize int
+
+	// Transport 选择接收传输：
+	//   ""/"longpoll" —— HTTP 长轮询（显式 fallback，持久化游标）；
+	//   "ws"          —— 官方 larkws 长连接（推荐；无 cursor，断线由 SDK 重连，
+	//                    本驱动按 message_id 去重）。
+	Transport string
+	// WSConnectorFactory 允许测试注入长连接替身；nil 时用官方 SDK。
+	WSConnectorFactory WSConnectorFactory
 }
 
 // Driver 实现 im.Provider/Receiver/Poller/Sender 与 im.HealthReporter。
@@ -69,6 +80,7 @@ type Driver struct {
 	cfg    Config
 	tr     Transport
 	health *im.HealthTracker
+	subs   im.Subscriptions
 
 	mu         sync.Mutex
 	self       im.Identity
@@ -78,8 +90,49 @@ type Driver struct {
 	unreadable int
 }
 
-// New 用真实 HTTP 传输构造驱动。
+// 飞书实现的接收传输：longpoll（HTTP 长轮询，显式 fallback）和 ws（官方
+// larkws 长连接，推荐）。webhook 未实现，settings 不应发布它（review D-14）。
+const (
+	TransportLongPoll = "longpoll"
+	TransportWS       = "ws"
+)
+
+// TransportModes 返回本包真正实现的接收传输；runtime 的 settings 选项与
+// CheckChannel 应只使用这个列表。
+func TransportModes() []string { return []string{TransportLongPoll, TransportWS} }
+
+// SupportsTransport 报告某个 settings transport 值是否可用。
+func SupportsTransport(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", TransportLongPoll, TransportWS:
+		return true
+	default:
+		return false
+	}
+}
+
+// CheckCredentials 用一个真实的 tenant_access_token 请求验证 app id/secret
+// （10s 内，由调用方 ctx 控制）。runtime 的"检查飞书渠道"应调用它，而不是
+// 自己再拼一份 token 请求：错误分类（HTTPError 401/403 → 授权问题）与超时
+// 只在这里维护一份。
+func CheckCredentials(ctx context.Context, cfg Config) error {
+	if strings.TrimSpace(cfg.AppID) == "" || strings.TrimSpace(cfg.AppSecret) == "" {
+		return errors.New("feishu: app id and app secret are required")
+	}
+	tr := NewHTTPTransport(cfg.BaseURL, cfg.AppID, cfg.AppSecret, cfg.Client)
+	tr.Retry = im.RetryPolicy{Attempts: 1}
+	_, err := tr.TenantToken(ctx)
+	return err
+}
+
+// New 用真实 HTTP 传输构造驱动（发送/成员/令牌始终走 HTTP）。接收传输由
+// Config.Transport 选择：ws 用官方长连接，longpoll/空 用 HTTP 长轮询。
 func New(cfg Config) (*Driver, error) {
+	switch transport := strings.ToLower(strings.TrimSpace(cfg.Transport)); transport {
+	case "", TransportLongPoll, TransportWS:
+	default:
+		return nil, fmt.Errorf("feishu: unknown transport %q (want longpoll or ws)", cfg.Transport)
+	}
 	if cfg.AppID == "" || cfg.AppSecret == "" {
 		return nil, errors.New("feishu: app id and app secret are required")
 	}
@@ -315,13 +368,28 @@ func (d *Driver) Poll(ctx context.Context, cursor string) ([]im.RawEvent, string
 // 长轮询本身是正确路径而不是临时 hack：游标只在整轮交付成功后推进，失败重读
 // 由内容派生 ID 吸收（§4.4 不变量 1），Health 会如实报告连接状态。
 func (d *Driver) Subscribe(ctx context.Context, out chan<- im.RawEvent) error {
-	return im.SubscribeLongPoll(ctx, d, im.SubscribeOptions{
+	subCtx, release, err := d.subs.Track(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if strings.EqualFold(strings.TrimSpace(d.cfg.Transport), TransportWS) {
+		return d.subscribeWS(subCtx, out)
+	}
+	return im.SubscribeLongPoll(subCtx, d, im.SubscribeOptions{
 		Backoff:    d.cfg.Retry.Base,
 		MaxBackoff: 30 * time.Second,
 		IdleDelay:  d.cfg.IdleDelay,
 		Health:     d.health,
 		Now:        d.cfg.Now,
 	}, out)
+}
+
+// Close 实现 im.Closer：取消在跑的长轮询订阅。飞书驱动没有子进程/长连接，
+// 关掉订阅即可让 runtime 的 Stop 不残留 goroutine（review P1-10）。
+func (d *Driver) Close() error {
+	d.subs.Close()
+	return nil
 }
 
 // Health 实现 im.HealthReporter。

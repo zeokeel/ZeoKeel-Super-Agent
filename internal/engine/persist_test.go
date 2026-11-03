@@ -202,3 +202,41 @@ func TestLaunchEffectRerunsAfterRestart(t *testing.T) {
 		t.Fatal("a pending launch effect must be re-run after a restart")
 	}
 }
+
+// IM approvals are Decisions: they survive a restart and can still be approved
+// after it (Approve needs the Decision→Trigger edge, which Load rebuilds).
+func TestIMProposalsSurviveRestart(t *testing.T) {
+	st := openTestStore(t)
+	_, p1, _ := restart(t, st)
+	if err := p1.Register(repoWS("ws_web"), imPolicy()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"ip1", "ip2"} {
+		if _, err := p1.Receive(imTrigger(id, "ding", "chat-r", "webapp: "+id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p1.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(p1.Engine().Proposals()); got != 2 {
+		t.Fatalf("want two proposals before the restart, got %d", got)
+	}
+
+	e2, p2, _ := restart(t, st)
+	_ = p2
+	ps := e2.Proposals()
+	if len(ps) != 2 {
+		t.Fatalf("the IM approvals must survive a restart, got %d", len(ps))
+	}
+	out, err := e2.Approve(ps[0].ID)
+	if err != nil {
+		t.Fatalf("Approve after restart: %v", err)
+	}
+	if out.Ticket == "" {
+		t.Fatal("Approve after restart must create the Ticket")
+	}
+	if len(e2.Proposals()) != 1 {
+		t.Fatalf("one approval must remain pending, got %d", len(e2.Proposals()))
+	}
+}

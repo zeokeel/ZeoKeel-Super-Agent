@@ -5,9 +5,12 @@ package runtime
 // durable layer when a store is attached, so the row survives a restart.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/zeokeel/super-agent/internal/domain"
@@ -18,6 +21,8 @@ import (
 // CreateWorkspace registers a new workspace from the panel: validated name/root,
 // scanned facts, persisted row + default policy, then published.
 func (r *Runtime) CreateWorkspace(name, root, purpose, kind string) error {
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
 	name = strings.TrimSpace(name)
 	root = expandHome(strings.TrimSpace(root))
 	if name == "" {
@@ -33,10 +38,16 @@ func (r *Runtime) CreateWorkspace(name, root, purpose, kind string) error {
 	if err != nil {
 		return err
 	}
-	id := domain.WorkspaceID("ws_" + slug(name))
+	id := newWorkspaceID()
+	absRoot := normalizedRoot(root)
 	for _, existing := range r.eng.Workspaces() {
-		if existing.ID == id || strings.EqualFold(existing.Name, name) {
+		if strings.EqualFold(existing.Name, name) {
 			return fmt.Errorf("工作区 %q 已经存在", name)
+		}
+		// P1-6: two workspaces sharing one directory would fight over files and
+		// locks; the root is the identity people actually care about.
+		if sameRoot(existing.Root, absRoot) {
+			return fmt.Errorf("根目录 %s 已被工作区 %q 使用", absRoot, existing.Name)
 		}
 	}
 	facts := scan.Scan(root)
@@ -45,7 +56,7 @@ func (r *Runtime) CreateWorkspace(name, root, purpose, kind string) error {
 		keywords = append(keywords, filepath.Base(root))
 	}
 	w := domain.Workspace{
-		ID: id, Name: name, Root: root, Kind: k,
+		ID: id, Name: name, Root: absRoot, Kind: k,
 		Brief: domain.Brief{Purpose: purpose, Keywords: keywords, Facts: facts},
 	}
 	policy := engine.Policy{Version: "v1",
@@ -70,6 +81,118 @@ func (r *Runtime) CreateWorkspace(name, root, purpose, kind string) error {
 	}
 	r.Publish()
 	return nil
+}
+
+// newWorkspaceID is an opaque random id (P1-6): renaming a workspace must never
+// change its identity, and two Chinese-only names must not collide.
+func newWorkspaceID() domain.WorkspaceID {
+	var buf [5]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return domain.WorkspaceID("ws_" + hex.EncodeToString([]byte(fmt.Sprint(os.Getpid()))))
+	}
+	return domain.WorkspaceID("ws_" + hex.EncodeToString(buf[:]))
+}
+
+// normalizedRoot is the absolute, cleaned path used for duplicate detection.
+func normalizedRoot(root string) string {
+	abs, err := filepath.Abs(expandHome(strings.TrimSpace(root)))
+	if err != nil {
+		return filepath.Clean(expandHome(strings.TrimSpace(root)))
+	}
+	return abs
+}
+
+func sameRoot(a, b string) bool {
+	return normalizedRoot(a) == normalizedRoot(b)
+}
+
+// RenameWorkspace renames a workspace; the id and its history stay stable
+// (P1-6, ui WorkspaceRenamer).
+func (r *Runtime) RenameWorkspace(id, name string) error {
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("工作区名称不能为空")
+	}
+	wsID := domain.WorkspaceID(strings.TrimSpace(id))
+	var found domain.Workspace
+	for _, w := range r.eng.Workspaces() {
+		if w.ID == wsID {
+			found = w
+		} else if strings.EqualFold(w.Name, name) {
+			return fmt.Errorf("工作区 %q 已经存在", name)
+		}
+	}
+	if found.ID == "" {
+		return fmt.Errorf("工作区 %q 不存在", id)
+	}
+	found.Name = name
+	found.Brief.Keywords = replaceKeyword(found.Brief.Keywords, name)
+	pol, ok := r.eng.PolicyOf(wsID)
+	if !ok {
+		pol = engine.Policy{Version: "v1",
+			Allowed: map[string]map[string]bool{"local": {"operator": true}}}
+	}
+	r.mu.Lock()
+	p := r.persist
+	r.mu.Unlock()
+	if p != nil {
+		if err := p.Register(found, pol); err != nil {
+			return fmt.Errorf("重命名保存失败：%w", err)
+		}
+	} else {
+		r.eng.Register(found, pol)
+	}
+	r.Publish()
+	return nil
+}
+
+// DeleteWorkspace unregisters a workspace only when it has no Tickets (ui
+// WorkspaceDeleter). Removing the row from SQLite needs a store API this scope
+// does not own, so a truly deleted workspace is refused with the reason instead
+// of pretending it is gone.
+func (r *Runtime) DeleteWorkspace(id string) error {
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
+	wsID := domain.WorkspaceID(strings.TrimSpace(id))
+	found := false
+	for _, w := range r.eng.Workspaces() {
+		if w.ID == wsID {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("工作区 %q 不存在", id)
+	}
+	count := 0
+	for _, t := range r.eng.AllTickets() {
+		if t.Workspace == wsID {
+			count++
+		}
+	}
+	if count > 0 {
+		return fmt.Errorf("工作区 %q 还有 %d 个工单，不能删除", id, count)
+	}
+	if st := r.settingsStore; st != nil {
+		if err := st.DeleteWorkspace(wsID); err != nil {
+			return fmt.Errorf("删除工作区失败：%w", err)
+		}
+	}
+	r.eng.Unregister(wsID)
+	r.Publish()
+	return nil
+}
+
+func replaceKeyword(list []string, name string) []string {
+	out := []string{name}
+	for _, k := range list {
+		if !strings.EqualFold(k, name) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *Runtime) hasWorkspace(id domain.WorkspaceID) bool {
@@ -99,6 +222,8 @@ func parseWorkspaceKind(raw string) (domain.WorkspaceKind, error) {
 // NewConversation starts a conversation in a named workspace from the panel. The
 // workspace is explicit (the person picked it), so the Router is not asked again.
 func (r *Runtime) NewConversation(workspaceID, text string) error {
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return fmt.Errorf("会话内容不能为空")

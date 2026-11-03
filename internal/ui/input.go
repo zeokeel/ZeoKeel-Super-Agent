@@ -1,48 +1,35 @@
 package ui
 
 import (
-	"strings"
-
 	mui "github.com/egoist/mygo/ui"
 )
 
 // inputBar is the whole input: one line, no workspace picker, no "new task"
-// action. Where the work goes is the agent's decision (design §6.9).
+// action. It is a question box and a dispatch box at once (P0-7): 超级Agent
+// answers a question, or takes the work and reports an outcome above this line.
+// Sending is asynchronous (P0-2): the frame submits and returns, and the pending
+// state is what a waiting person sees.
 func (a *App) inputBar(c *mui.Context) {
 	tk := a.tk
 
 	mui.Row(c).Height(40).Radius(10).Background(tk.Surface).Border(1, tk.Border).
 		Gap(8).Padding(0, 12).AlignItems(mui.Center).Children(func() {
-		mui.Icon(c, icSpark).FontSize(15).TextColor(tk.Accent)
+		mui.Icon(c, icSpark).FontSize(fs(15)).TextColor(tk.Accent)
 		field := mui.TextInput(c.Key("input"), &a.draft).
-			Placeholder("说点什么，或派一件事…")
-		field.Grow(1).FontSize(15)
+			Placeholder("问点什么，或派一件事…")
+		field.Grow(1).FontSize(fs(15))
 		if field.Submitted() {
 			a.submit()
 		}
-		if mui.PrimaryButton(c, "发送").Label("发送").Height(26).Clicked() {
+		label := "发送"
+		if a.dispatchPending {
+			label = "发送中…"
+		}
+		btn := mui.PrimaryButton(c, label).Label(label).Height(26)
+		if a.dispatchPending {
+			btn.Disabled(true)
+		} else if btn.Clicked() {
 			a.submit()
 		}
 	})
-
-	if a.composerErr != "" {
-		mui.Row(c).Padding(4, 0).Children(func() {
-			mui.Text(c, a.composerErr).FontSize(13).TextColor(tk.Red)
-		})
-	}
-}
-
-// submit hands the line to the agent. It runs on the main thread and Dispatch is
-// memory-only, so it cannot stall a frame.
-func (a *App) submit() {
-	text := strings.TrimSpace(a.draft)
-	if text == "" || a.cmd == nil {
-		return
-	}
-	if err := a.cmd.Dispatch(text); err != nil {
-		a.composerErr = err.Error()
-		return // keep the text: losing what a person typed is worse than a red line
-	}
-	a.draft = ""
-	a.composerErr = ""
 }

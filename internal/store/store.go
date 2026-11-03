@@ -385,6 +385,13 @@ func (s *Store) PutWorkspace(w domain.Workspace) error {
 	return err
 }
 
+// DeleteWorkspace removes one workspace row (and its embedded policy). The
+// caller is responsible for the higher-level invariant (no Ticket refers to it).
+func (s *Store) DeleteWorkspace(id domain.WorkspaceID) error {
+	_, err := s.Exec(`DELETE FROM workspace WHERE id=?`, string(id))
+	return err
+}
+
 // Workspaces returns every workspace ordered by id.
 func (s *Store) Workspaces() ([]domain.Workspace, error) {
 	rows, err := s.Query(`SELECT id,name,root,remote,kind,brief FROM workspace ORDER BY id`)

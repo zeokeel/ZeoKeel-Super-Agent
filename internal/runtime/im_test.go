@@ -83,7 +83,7 @@ func TestIMConfigDefaults(t *testing.T) {
 	if cfg.FeishuEnabled || cfg.DingEnabled {
 		t.Fatal("channels must default to disabled")
 	}
-	if cfg.FeishuTransport != "longpoll" || cfg.DingTransport != "dws" || cfg.DWSCmd != "dws" {
+	if cfg.FeishuTransport != "ws" || cfg.DingTransport != "dws" || cfg.DWSCmd != "dws" {
 		t.Fatalf("defaults = %+v", cfg)
 	}
 }
@@ -165,7 +165,7 @@ func TestIMChannelPollsAndPersistsCursor(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if v, ok, _ := st.Get("im.cursor.feishu"); ok && v == "c2" {
+		if v, ok, _ := st.Get("im.cursor.feishu.longpoll"); ok && v == "c2" {
 			row := findSourceRow(t, rt, "feishu")
 			if !row.Enabled || row.LastPoll.Outcome != view.PollOK {
 				t.Fatalf("row after poll = %+v", row)
@@ -197,7 +197,7 @@ func TestIMCursorNotAdvancedOnFailure(t *testing.T) {
 			break
 		}
 		if row.LastPoll.Problem != "" {
-			if _, ok, _ := st.Get("im.cursor.feishu"); ok {
+			if v, ok, _ := st.Get("im.cursor.feishu.longpoll"); ok && v != "" {
 				t.Fatal("cursor advanced after a failed batch")
 			}
 			return

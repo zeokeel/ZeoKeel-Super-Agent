@@ -94,3 +94,29 @@ func settleRuntime(t *testing.T, rt *Runtime) {
 		}
 	})
 }
+
+// approvePending approves every waiting proposal (IM messages are proposals by
+// policy now) and returns the newest Ticket id, "" when nothing was approved.
+func approvePending(t *testing.T, eng *engine.Engine) domain.ID {
+	t.Helper()
+	for _, d := range eng.Proposals() {
+		if _, err := eng.Approve(d.ID); err != nil {
+			t.Fatalf("approve %q: %v", d.ID, err)
+		}
+	}
+	if all := eng.AllTickets(); len(all) > 0 {
+		return all[len(all)-1].ID
+	}
+	return ""
+}
+
+// ticketAfterProposal approves any proposal an IM trigger produced and returns
+// the Ticket id; it asserts that exactly one Ticket now exists.
+func ticketAfterProposal(t *testing.T, eng *engine.Engine, what string) domain.ID {
+	t.Helper()
+	id := approvePending(t, eng)
+	if id == "" {
+		t.Fatalf("%s: no ticket after approving the IM proposal", what)
+	}
+	return id
+}

@@ -48,6 +48,10 @@ type RawEvent struct {
 	Actor    domain.Actor
 	Mentions []string // ids mentioned; the driver resolves @everyone away
 	ReplyTo  string
+	// AddressedToBot 是传输层给出的权威事实：这条消息明确是对 agent 本人说的
+	// （DWS 的 at-me/group 监听、其它协议里能确证的 @）。空/假表示未确证；驱动
+	// 仍可用 Mentions 比较 selfID。AddressedFor 会把它并进 Mention 事实。
+	AddressedToBot bool
 	// ReplyToBot 为真表示被回复的那条消息是本机器人自己发的（不是任意回复）。
 	// 领域里 Addressed.ReplyTo 是一个"事实"：只有确证父消息属于 agent 才置位，
 	// 否则一条"回复别人"的消息会被误判成对 agent 说话（§4.9 / 001）。
@@ -154,6 +158,17 @@ func EffectiveCapabilities(p Provider) Capabilities {
 		c.MaxTextLen = 4000
 	}
 	return c
+}
+
+// ErrClosed marks a driver/transport that was closed. Lifecycle owners
+// (runtime) should treat it as "stopped", not as a transient failure to retry.
+var ErrClosed = errors.New("im: closed")
+
+// Closer is an optional capability: a driver that owns goroutines, timers or
+// child processes implements it so the runtime can stop it deterministically
+// (Close is idempotent; subsequent Receive/Subscribe calls fail with ErrClosed).
+type Closer interface {
+	Close() error
 }
 
 // ErrUnsupported marks a capability the driver cannot provide on this tool:

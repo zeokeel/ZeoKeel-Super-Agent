@@ -165,3 +165,11 @@ func (p *Persistence) Reply(ticketID domain.ID, text string) (bool, error)
 accept mode 取更严者（off > observe > auto）、reply mode（notify > assist > auto）、rules 去重且禁用优先、
 allowed/bots 取并集；全局 Trigger 在合并策略拒绝时仍会以"任一工作区最严的可准入 strength"进入 Eval，
 Ticket 创建前再按目标工作区 re-gate（不会因合并扩大授权）。`AssessInput.Policy` 因此总是非空（Version/Rules）。
+
+
+## 产品规则：入站 IM 一律待批（2026-11）
+
+`Policy.AutoApproveIM`（默认 false）：为 false 时，`feishu`/`dingtalk` 来源的**每条**经 gate 准入的消息都变成
+`DecPropose`（一条消息一个 proposal，批内不合并），不建 Ticket、不 launch、不自动回复；只有 `Approve(decisionID)`
+创建 Ticket。非 IM 来源（github/local/schedule）行为不变。runtime 侧：收到 Proposal 后 UI 展示待办，Approve 走
+`Persistence.Approve`；不要为 proposal 启动 worker。重启后 proposal 仍可 Approve（Decision.TriggerIDs 重建边）。

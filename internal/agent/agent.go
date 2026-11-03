@@ -53,9 +53,11 @@ type Config struct {
 	// TaskUpdate, TaskList) over a Backend rooted at Workdir, so a Worker can keep a
 	// structured plan while it works. Off by default: the runtime enables it.
 	PlanTasks bool
-	// AgentsMD injects the workspace's AGENTS.md into the model input through
-	// eino's adk/middlewares/agentsmd. Off by default; a missing file is not an
-	// error (the middleware reports it through a warning callback).
+	// AgentsMD injects the workspace's AGENTS.md into the model input as one
+	// clearly-delimited *untrusted repository content* system message (64KB cap,
+	// injected once per session). It deliberately does not use eino's agentsmd
+	// middleware, whose frame tells the model the file overrides its instructions.
+	// Off by default; a missing file is not an error.
 	AgentsMD bool
 	// WebTools adds the web_fetch and web_search tools. Off by default; the runtime
 	// enables it for deployments that may reach the network.

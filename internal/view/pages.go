@@ -416,6 +416,22 @@ func FilterTickets(rows []TicketRow, bucket TicketBucket) []TicketRow {
 	return out
 }
 
+// FilterTicketsByWorkspace returns the rows of one workspace, or every row when
+// workspace is "" (the "全部" state). It compares workspace ids, so a renamed
+// workspace keeps filtering the same work.
+func FilterTicketsByWorkspace(rows []TicketRow, workspace string) []TicketRow {
+	if workspace == "" {
+		return rows
+	}
+	out := make([]TicketRow, 0, len(rows))
+	for _, r := range rows {
+		if r.WorkspaceID == workspace {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // FilterDecisions returns the rows of one decision kind, or every row when kind
 // is "". Pure for the same reason as FilterTickets.
 func FilterDecisions(rows []DecisionRow, kind string) []DecisionRow {
@@ -489,6 +505,10 @@ type SettingsGroup struct {
 	// "等待运行时投影：<pending>" instead of showing an empty form that reads as
 	// "nothing to configure".
 	Pending []string
+	// Effect says when a save takes effect, in a person's words: "热更新",
+	// "重启后生效", "下次新工单生效". The panel writes it on the save bar; when
+	// the runtime does not project it, SaveEffect(id) gives the group's default.
+	Effect string
 }
 
 // SettingsVM is everything the settings page draws.
@@ -501,6 +521,44 @@ type SettingsVM struct {
 	// detectable instead of silently overwritten.
 	Revision  uint64
 	UpdatedAt time.Time
+}
+
+// FieldValue returns a setting value by key, across every published group. The
+// panel reads presentation settings this way (ui.font_scale) so a runtime that
+// stores them in any group still drives it.
+func (vm *SettingsVM) FieldValue(key string) (string, bool) {
+	if vm == nil {
+		return "", false
+	}
+	for _, g := range vm.Groups {
+		for _, f := range g.Fields {
+			if f.Key == key {
+				return f.Value, true
+			}
+		}
+	}
+	return "", false
+}
+
+// SaveEffect is when a group's save takes effect, in a person's words, when the
+// projection does not say (SettingsGroup.Effect). Only a group whose changes are
+// really live says 热更新; boot-only and channel-restart groups say so plainly.
+func SaveEffect(id SettingsGroupID) string {
+	switch id {
+	case SettingsSource:
+		return "保存后重启相关渠道（几秒；正在跑的工单不受影响）"
+	case SettingsEval:
+		return "保存后对下一次评估生效"
+	case SettingsExecution:
+		return "下次新工单生效"
+	case SettingsPeople:
+		return "立即生效"
+	case SettingsPrompt:
+		return "热更新：下一次模型调用生效"
+	case SettingsDeploy:
+		return "重启后生效"
+	}
+	return "保存后生效"
 }
 
 // Group returns one group by ID, or nil.

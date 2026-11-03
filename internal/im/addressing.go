@@ -13,7 +13,7 @@ import "github.com/zeokeel/super-agent/internal/domain"
 //     回复别人只是回复链，不构成"对 agent 说话"（§4.9 / 001）。
 func AddressedFor(ev RawEvent, selfID string) domain.Addressed {
 	return domain.Addressed{
-		Mention: Mentioned(ev, selfID),
+		Mention: Mentioned(ev, selfID) || ev.AddressedToBot,
 		Direct:  ev.Conv.Kind == domain.ConvDirect,
 		ReplyTo: ev.ReplyToBot,
 	}

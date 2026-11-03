@@ -114,9 +114,10 @@ type App struct {
 
 	// The filtered rows are recomputed only when the published page or the
 	// filter changed: the view never sorts or filters while drawing.
-	ticketSrc        *view.TicketListVM
-	ticketFilterUsed view.TicketBucket
-	ticketRows       []view.TicketRow
+	ticketSrc           *view.TicketListVM
+	ticketFilterUsed    view.TicketBucket
+	ticketWorkspaceUsed string
+	ticketRows          []view.TicketRow
 
 	evalKind     string
 	evalSrc      *view.DecisionVM
@@ -197,10 +198,48 @@ type App struct {
 	channelChecks map[string]channelCheck
 	channelErr    string
 
+	// Composer commands are asynchronous (P0-2): dispatchPending covers "sending",
+	// dispatchEcho is the line being sent, composerNote is the agent's neutral
+	// answer when it did not become work.
+	dispatchPending bool
+	dispatchEcho    string
+	composerNote    string
+
+	// Workspace dialogs' pending state (creating is off-frame too).
+	wsCreating   bool
+	convCreating bool
+
+	// savingGroup is the settings group being saved; the save bar shows 保存中…
+	// while it is set (P0-2).
+	savingGroup string
+
+	// 工作区 context: when set, 执行 and 消息 show only that workspace's work, with
+	// a visible "全部" control to clear it (P1-7).
+	filterWorkspace string
+
+	// 工作区 management dialogs (P1-6), with their pending/error states.
+	renameOpen    bool
+	renameID      string
+	renameDraft   string
+	renameErr     string
+	renamePending bool
+	deleteOpen    bool
+	deleteID      string
+	deleteName    string
+	deleteErr     string
+	deletePending bool
+
 	// goalFocus is the goal the overview strip jumped to: the 触发 page's goal
 	// list highlights it. Empty when no jump is in effect.
 	goalFocus string
 }
+
+const (
+	// minWindowWidth and minWindowHeight keep the rail and a page usable: a
+	// smaller window would clip both (P2).
+	minWindowWidth  = 1100
+	minWindowHeight = 720
+)
 
 // Run opens the window and blocks until the app quits. It returns nil when
 // another instance is already running: the running one is focused instead.
@@ -213,6 +252,14 @@ func Run(o Options) error {
 	}
 	if o.Height == 0 {
 		o.Height = 900
+	}
+	// A smaller window cannot show the 232px rail and a page at once: open at the
+	// minimum instead of a layout clipping both (P2).
+	if o.Width < minWindowWidth {
+		o.Width = minWindowWidth
+	}
+	if o.Height < minWindowHeight {
+		o.Height = minWindowHeight
 	}
 	if o.Snap == nil {
 		o.Snap = view.NewSnapshot()
@@ -318,6 +365,10 @@ func (a *App) drainFinished() bool {
 // input always at hand, and the status bar. The dashboard is the home; the input
 // is what was missing (design §6.3).
 func (a *App) view(c *mui.Context) {
+	// One text scale for the whole panel, from the ui.font_scale setting (P2:
+	// it replaces the magic +2 that was applied once at the numbers).
+	viewScale = a.viewScale()
+
 	// The frame's theme follows the system's appearance (mygo does that on its
 	// own); the brand derives from it every frame, so dark mode and a change of
 	// the desktop's preferences are not a second code path (design §6.5).
@@ -372,7 +423,12 @@ func (a *App) view(c *mui.Context) {
 		// dashboard was missing.
 		mui.Column(c).Padding(10, 16).AlignItems(mui.Center).Background(tk.Surface).
 			Children(func() {
-				mui.Column(c).Width(maxStreamWidth).Children(func() { a.inputBar(c) })
+				mui.Column(c).Width(maxStreamWidth).Children(func() {
+					// The latest 超级Agent answer (or 发送中…) above the composer on
+					// every page: a message never disappears into another page.
+					a.composerContext(c)
+					a.inputBar(c)
+				})
 			})
 		mui.Box(c).Height(1).Background(tk.Border)
 		a.statusbar(c)
@@ -384,6 +440,8 @@ func (a *App) view(c *mui.Context) {
 	a.artifactsPanel(c)
 	a.workspaceDialog(c)
 	a.conversationDialog(c)
+	a.renameDialog(c)
+	a.deleteDialog(c)
 	a.answerDialog(c)
 	a.stopDialog(c)
 	a.helpDialog(c)
@@ -436,8 +494,8 @@ func (a *App) page(c *mui.Context, ov *view.OverviewVM) {
 func (a *App) placeholder(c *mui.Context, sec view.Section) {
 	tk := a.tk
 	mui.Column(c).Fill().Padding(32).Gap(8).Children(func() {
-		mui.Text(c, labelOf(sec)).FontSize(26).Bold().TextColor(tk.Text)
-		mui.Text(c, "这一页不在侧边栏里。").FontSize(15).TextColor(tk.TextMuted)
+		mui.Text(c, labelOf(sec)).FontSize(fs(26)).Bold().TextColor(tk.Text)
+		mui.Text(c, "这一页不在侧边栏里。").FontSize(fs(15)).TextColor(tk.TextMuted)
 	})
 }
 

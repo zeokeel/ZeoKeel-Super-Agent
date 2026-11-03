@@ -12,15 +12,15 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 
 ## A. 功能完整（对照测试/代码，逐条可复现）
 
-> **最终冻结树测量（2026-11-03 20:53–20:54）**：Lead 的 canonical gate 5/5 通过；
-> `CGO_ENABLED=0 go build/vet/check-nocgo` PASS；全量非 race `go test ./... -skip Live` **连续 2 次全绿**；
-> 全量 `CGO_ENABLED=1 go test -race ./... -skip Live` **全绿**（含 `cmd/zeokeel` 5.2s / `internal/runtime` 25.7s）。
-> 此前 20:47 的 3 个 runtime 测试红与 cmd 偶发 flake 在冻结后的复跑中未再出现。
-> `sh scripts/release-check.sh`：**16 通过 / 0 失败 / 6 跳过**（跳过项均需 CI/真机/真实凭据）。以下勾选以此为准。
+> **本清单对应 2026-11-04 最终代码（P0/P1 修复波之后）。**
+> 2026-11-03 20:53 的历史快照曾全绿（2×非 race + 1×-race + release-check 16/0/6），但修复波改了大量并发/IM/UI 代码，
+> **不能拿旧快照当本轮证据**：由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` 与 `sh scripts/release-check.sh` 后再勾 C/B。
+> 以下 A 组行为勾选按最终代码；未能本机验证的仍不勾。
 
 - [x] 一条请求从聊天出发，经两阶段 Eval 创建 Decision/Ticket，执行后回写原会话（`TestEndToEndFromChatToReply`）
 - [x] 同事的请求按 gate + admission 判定强度；`RequireApproval` 时生成待批单（`TestA2ColleagueRequestCarriesTheFourParts`、`TestV2GateAdmissionNineCells`）
-- [x] 自身账号的请求无条件执行（`TestA3OperatorRequestRunsWithoutApproval`）
+- [x] **IM 审批优先**：自身账号的 IM 消息也不自动执行；每条消息（含操作员）先成一个待批准项，Approve 才建单
+      （`TestA3OperatorRequestRunsWithoutApproval` 的语义已改为审批；`cmd/zeokeel/acceptance_test.go:129-160`）
 - [x] 敏感外发要人批准（`TestA4SensitiveOutboundEscalates`）
 - [x] 首次运行向导能完成并**落库**（`TestOnboardingLeavesAWorkingAgent`；`SaveOnboarding` 写 store）
 - [x] 陌生人/机器人不触发动作（`TestA6StrangersAndBotsDoNothing`、`TestV2BotNeverExplicit`）
@@ -30,9 +30,11 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 - [x] 崩溃恢复：中断的 Assignment 变成 note Input + 新 Assignment + patchtoolcalls（`RecoverAssignments`；测试见 `internal/runtime/recovery_test.go`）
 - [x] PR 生命周期 follows 与 ended 结果（`TestV2FollowsOutcomes`）
 - [x] 后台作业（eino `backgroundtask`，`job_output`/`job_kill`）与子智能体（`internal/agent/jobs.go`、`subagent.go`）
-- [x] IM（飞书/钉钉）入口已接线：`cmd/zeokeel/imwiring.go` import 驱动；flag/设置均可配置；未配置不监听。
-      钉钉走官方 `dingtalk-stream-sdk-go v0.9.1` Stream 长连接，飞书走 HTTP 历史接口长轮询（无 WS）；两者都不下载媒体
-      **未验证**：真实凭据下的端到端（需要飞书/钉钉应用凭据，见 RELEASE-STEPS）
+- [x] IM 渠道已接线且**审批优先**：飞书新装默认 `larkws` 长连接、旧配置迁移 pin longpoll（fallback）；钉钉默认 DWS
+      个人 OAuth CLI（长驻 NDJSON，无 poll/cursor），官方 Stream 为 bot 模式可选 transport；每条消息先待批，
+      Approve 建单/Reject 无痕；三态启用 + bool 兼容 + flag-only bootstrap；per-channel generation/Close/sender 注销；
+      secret 不回显、status/Inspect redaction（`cmd/zeokeel/imwiring.go`、`internal/runtime/im.go`、`design/im-channels.md`）
+      **未验证**：真实凭据/真实 DWS 租户端到端（需要环境）
 - [ ] **面板可配置 Source 实例 / 规则 / admission / accept mode**：设置页来源组可编辑 IM 凭据，评估组只读事实；
       GitHub 仓库/CLI、规则、admission 表、accept mode 仍不可编辑（owner: fix-ui2）
 - [x] 提示词历史与 "Default updated"：`recordPromptMeta` 已在保存路径调用（`internal/runtime/pages.go:557`），
@@ -46,20 +48,19 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 - [x] 重复发送的评论被幂等挡住（`internal/sources/github`、`internal/outbox`）
 - [x] 长任务上下文压缩后仍能继续（`internal/agent` compact 测试）
 - [x] 投递三段式 delivered/read/turnEnded 落库（`internal/engine/lifecycle.go:286-337`）
-- [x] `-race` 全量无数据竞争：最终冻结树全量 `-race` 全绿（`cmd/zeokeel` 5.2s、`internal/runtime` 25.7s 均 ok）；
-      20:47 的三个 runtime 红与 cmd 偶发 flake 在冻结后未复现
+- [ ] `-race` 全量无数据竞争：2026-11-03 快照曾全绿；**修复波后（异步边界/IM 生命周期/chat）必须由 Lead 重跑**再勾
 
 ## C. 工程
 
-- [x] `CGO_ENABLED=0 go build ./...`（2026-11-03 实测）
-- [x] `CGO_ENABLED=0 go test ./... -count=1 -skip Live`（冻结树连续 2 次全绿）
-- [x] `CGO_ENABLED=0 go vet ./...`（20:40 干净）
+- [ ] `CGO_ENABLED=0 go build ./...`（待 final gate）
+- [ ] `CGO_ENABLED=0 go test ./... -count=1 -skip Live`（待 final gate）
+- [ ] `CGO_ENABLED=0 go vet ./...`（待 final gate）
 - [x] `sh scripts/check-nocgo.sh` PASS
 - [x] release 二进制 < 40 MB（`make package`：linux 33MB / darwin 32MB；压缩包 12–13MB）
 - [x] 无 `TODO`/`FIXME` 遗留在用户路径（`release-check.sh` 检查）
-- [x] `CGO_ENABLED=1 go test -race ./... -skip Live`（**唯一**允许 cgo 的测试步骤）——最终冻结树全绿
+- [ ] `CGO_ENABLED=1 go test -race ./... -skip Live`（**唯一**允许 cgo 的测试步骤；待 final gate）
 - [ ] 六平台交叉编译在 CI 跑过本分支（CI cross job 存在；本次未触发 CI）
-- [x] `sh scripts/verify-fixes.sh` 整体全绿（最终冻结树：build/test/vet/nocgo/race 全过）
+- [ ] `sh scripts/verify-fixes.sh` 整体全绿（待 Lead final gate）
 
 ## D. 分发
 
@@ -83,45 +84,45 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 - [x] CHANGELOG 的 1.0.0 节按 Wave 2 事实重写
 - [ ] `design/` 与实现最终逐条一致（本清单最后一步）
 
-## F. 阻塞 1.0.0 的已知缺口（按 owner；2026-11-03 最终快照重排）
+## F. 阻塞 1.0.0 的已知缺口（按 owner；2026-11-04 最终代码 + 微调后重排）
 
-1. **fix-ui2**：设置页评估组可编辑（规则、admission 三格、accept mode）；GitHub Source 实例/仓库/CLI 的表单与持久化。
-2. **fix-engine/fix-runtime**：领域类型收尾（`domain.Source`/`domain.Thread`/`domain.UserError` 未落地，错误仍是自由文本）。
-3. **fix-runtime/fix-agent**：无 `steer/inject`；无 Feishu WS/webhook、无 IM 媒体下载；钉钉 Stream 在面板仍标未实现
-   （runtime 已支持，`internal/view/channels.go:44-66` vs `internal/runtime/im.go:394-398`，owner fix-ui2）。
-   `Runner.Resume` 已删除，恢复走 `RecoverAssignments` + `patchtoolcalls`。
-4. **安全**：系统钥匙串（ADR-12）；worker 环境在三处均已剥离凭证变量——prepare（`runtime/prepare.go:103`）、
-   bash 子进程（`internal/agent/tools.go` 的 `buildShellEnv/scrubEnv`，变量来自 `runtime/worker.go:429`）。
+1. **fix-ui2**：设置页评估组可编辑（规则、admission、accept mode）；GitHub Source 实例/仓库/CLI 表单与持久化。
+2. **fix-engine/fix-runtime**：领域类型收尾（`domain.Source`/`domain.Thread`/`domain.UserError` 未落地）。
+3. **fix-runtime/fix-agent**：`steer/inject`；飞书 webhook 与 IM 媒体下载；多账号/source instance 模型
+   （当前是单实例 `source.*` 键 + 每渠道 self id）。
+4. **安全**：系统钥匙串（ADR-12）未实现——密钥仍明文存 SQLite（0600）；读取侧已 redaction
+   （`store/redact.go`、`inspect.go`），worker 环境已剥离凭证。真实 IM 凭据 E2E 仍需环境。
 5. **分发**：`.dmg`/deb/PKGBUILD/NSIS/自动更新；CI 出包与签名公证。
-6. **运维**：开机自启/休眠唤醒（委托 systemd/launchd，文档已写）；`--respect-stop` 语义由 `stop` 标记 + 巡检脚本承担，无独立 flag。
-
+6. **运维**：开机自启/休眠唤醒（委托 systemd/launchd）；`--respect-stop` 由 stop 标记 + 巡检承担（无独立 flag）。
 ## G. rc.1 的签发语义（不要误读）
 
 `VERSION=1.0.0-rc.1` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
 但 F 组的产品面缺口未完成。F 组全部完成、E 组最后一项通过后，才由发布负责人把 `VERSION` 改为 `1.0.0`。
 
-## H. Round 2/3 增量（2026-11-03 晚，不新增 release tag）
+## H. Round 2/3 + 修复波增量（2026-11-04，不新增 release tag）
 
-> 同一 rc.1 内的用户可见增量；代码证据见设计 §13 与 `design/im-channels.md`。不改变"rc.1 仍是候选"的结论。
+> 同一 rc.1 内的用户可见增量；不改变"rc.1 仍是候选"的结论。证据见 `design/im-channels.md` 与设计 §13。
 
-- [x] 侧栏重构：超级Agent / 工作区树 / 监控（消息·来源·触发·评估·执行）/ 设置；footer OS/arch + 时区
-  （`internal/ui/chrome.go:54-99`、`internal/runtime/runtime.go:172-175`）
-- [x] 工作区页 + 「＋ 新建工作区」（mygo 原生目录选择器，三平台）+ 「＋ 新建会话」（工作区显式、总是派发）
-  （`internal/ui/workspace.go`、`internal/runtime/workspaces.go:20,101`）
-- [x] 会话按「我创建的 / 超级Agent 创建的」分组，每工作区最近 50 条（`internal/view/workspace.go`、`internal/runtime/pages.go:953-995`）
-- [x] 全局字号 15；设置›部署组显示 OS/arch 与时区（`internal/ui/tokens.go:49`、`internal/runtime/pages.go:763-764`）
-- [x] 修复「未受理」：面板本地消息必有答复（列工作区或说明原因/下一步），真活仍建 Ticket
-  （`internal/runtime/runtime.go:456-482`、`internal/runtime/workspaces.go:159-214`）
-- [x] IM 渠道独立启用/停用 + transport + 检查/授权；禁用=未监听；设置变更只重启变化渠道
-  （`internal/runtime/im.go:51,173,189,239,328,588`、`internal/ui/channels.go:134-230`）
-- [x] 飞书长轮询 + tenant token 检查（401/403 → `open.feishu.cn/app`）（`internal/runtime/dws.go:101-140`）
-- [x] 钉钉默认 DWS CLI：串行 worker、send 优先、1s→30s 退避、cursor 整批接受才推进、隐藏幂等 marker、缺 dws 明确报错；
-  官方 Stream 作为可选 transport（`internal/im/dingtalk/dws.go`、`internal/runtime/dws.go`、`design/im-channels.md`）
-- [x] 内置工具：plantask（TaskCreate/Get/Update/List）、agentsmd（AGENTS.md）、web_fetch（公网/10s/2MiB/拒私网）、
-  web_search（前 5/端点 `execution.web_search_url`）（`internal/agent/builtin.go`、`internal/agent/webtools.go`、
-  `internal/runtime/worker.go:480-482`）
-- [x] 增量验证（2026-11-03 23:10）：`CGO_ENABLED=0 go build ./...` / `go vet ./...` 通过；
-      `go test ./internal/ui ./internal/view ./internal/runtime ./internal/agent ./cmd/zeokeel -skip Live` 通过。
-      **全量 verify-fixes/release-check 未在 Round 2/3 代码上重跑**；发布前必须重跑（本组不改变 rc.1 tag）。
-- [ ] 已知 UI 不一致：钉钉 Stream 选项在面板仍标"未实现"（runtime 已支持）—— owner fix-ui2
-- [ ] 会话/工作区重命名、删除；真实凭据下的 IM E2E（需要凭据/环境）
+- [x] 侧栏：超级Agent / 工作区树 / 监控（消息·来源·触发·评估·执行）/ 设置；footer OS/arch + 时区
+- [x] 工作区：原生目录选择器、opaque ID、重命名、删除（仅空工作区，有工单拒绝）、绝对路径/重复 root 拒绝、
+  工作区过滤（消息/执行可切「全部」）
+- [x] 超级Agent 聊天 + 派活双态：模型回答（未配模型则确定性回答并说明）、「已派发 #N」、「需要你确认」；
+  回答内联在输入框上方与总览对话；非失败不标红；历史最多 20 条并持久化
+- [x] 异步命令边界：发送/新建会话/保存设置走后台命令锁，面板显示「发送中/保存中/连接中」；主线程不等 DB/模型/渠道
+- [x] Ticket 身份：行/详情查找与详情 VM 的 ID 都是 domain ID，`Number` 单独显示 `#number`
+- [x] IM 审批优先：每条飞书/钉钉消息（含操作员）→ 恰好一个待批项；Approve 建单/Reject 无痕；
+  来源页「待审批 N」；A3/A7 已按审批语义更新
+- [x] 飞书：**新装默认** `feishu_transport=ws`（官方 `larkws` 长连接，推荐）；旧凭据-only 配置迁移时 pin `longpoll`；
+  面板 Options 只有 `ws`/`longpoll`；longpoll 为显式 fallback（cursor）；401/403 给 `open.feishu.cn/app`
+- [x] 钉钉 DWS 真实契约：长驻 `dws event +listen-im … -f ndjson`（无 poll/cursor；event id 去重；1s→30s 重连）、
+  `dws chat +messages-send --as user`（无 idempotency-key，隐藏 marker）、`dws auth status --format json`、
+  `dws auth login [--device]`；DWS=个人 OAuth，stream=bot（app key/secret/robot）
+- [x] IM 生命周期：三态启用 + bool 编码兼容 + flag-only bootstrap；每渠道 generation/串行 apply；
+  停止 cancel→Close→注销 sender；切换 transport 清 cursor；CheckChannel 复用运行中 DWS 后端
+- [x] 设置：UI 开关读写 canonical `1/0`（读兼容旧 true/false）；`LoadSettings` 一次性迁移 bool/IM 启用/transport/`im_self` + schema stamp；
+  SaveSettings 事务化（先快照后换内存）；分组真实生效方式；secret 不回显且 status/Inspect/health redaction（`TestLegacySettingsMigration`）
+- [x] 工具：TaskCreate/Get/Update/List 与注册名一致、任务 JSON 在 `.zeokeel/plan`；AGENTS.md 不可信仓库信封 ≤64KB；
+  web_fetch DNS pin/`Proxy:nil`/拒私网/2MiB/`<untrusted-web-content>`；`plan_tasks/agents_md/web_tools` 开关
+- [x] 界面：`ui.font_scale` 在设置›部署投影并可编辑（90/100/110%），经 `fs()` 统一缩放；启动窗口最小 1100×720
+- [ ] **最终全量闸门未在本轮代码上运行**：由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` 与
+  `sh scripts/release-check.sh`；本文不预称全绿。`VERSION` 仍 `1.0.0-rc.1`，无新 tag。

@@ -7,6 +7,12 @@ package store
 // entries the durable components wrote, the kv table (cursors, revisions), and the
 // small aggregate counts that answer "is anything waiting?" without opening the
 // writer.
+//
+// Everything this file returns is safe to print: secret values are redacted (see
+// redact.go) and health details are scrubbed of credentials. The writer-side
+// accessors (Settings, Get) still return real values because the runtime needs
+// them; Inspect's job is the opposite: a status/debug surface that cannot leak a
+// token into a terminal, a log file or a support bundle.
 
 import (
 	"database/sql"
@@ -35,8 +41,13 @@ type HealthView struct {
 	SchemaVersion      int
 	SchemaVersionKnown bool
 	Health             []HealthEntry
-	// KV is the whole kv table: cursors, prompt revision, settings revision and
-	// the master session id all live there.
+	// KV is the kv table as a status view may show it: cursors, prompt revision,
+	// settings revision, the schema stamp and the master session id all live there.
+	// Values of secret-named keys (app secrets, API keys, tokens; see IsSecretKey)
+	// are replaced with RedactedValue, so printing this map cannot leak a
+	// credential. The key stays visible so "configured / not configured" is still
+	// answerable. The writer-side Settings()/Get() accessors return the real
+	// values; they are for the process that owns the store, not for status.
 	KV map[string]string
 
 	// Workspaces is the number of registered workspaces.
@@ -93,14 +104,20 @@ func Inspect(path string) (HealthView, error) {
 	if err != nil {
 		return view, err
 	}
-	for k, v := range kv {
-		view.KV[k] = v
-	}
-	if raw, ok := view.KV["schema"]; ok {
+	// Read the schema stamp from the raw map (it is not a secret; doing it before
+	// redaction keeps this independent of IsSecretKey's rules).
+	if raw, ok := kv["schema"]; ok {
 		if v, err := strconv.Atoi(raw); err == nil {
 			view.SchemaVersion = v
 			view.SchemaVersionKnown = true
 		}
+	}
+	for k, v := range kv {
+		if IsSecretKey(k) {
+			view.KV[k] = RedactedValue
+			continue
+		}
+		view.KV[k] = v
 	}
 
 	health, err := inspectHealth(db)
@@ -211,6 +228,7 @@ func inspectHealth(db *sql.DB) ([]HealthEntry, error) {
 			return nil, fmt.Errorf("store: inspect health: %w", err)
 		}
 		e.At, _ = ParseTime(raw)
+		e.Detail = redactText(e.Detail)
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -239,6 +257,7 @@ func (s *Store) HealthEntries() ([]HealthEntry, error) {
 			return nil, err
 		}
 		e.At, _ = ParseTime(raw)
+		e.Detail = redactText(e.Detail)
 		out = append(out, e)
 	}
 	return out, rows.Err()

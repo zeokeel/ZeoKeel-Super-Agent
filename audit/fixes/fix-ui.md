@@ -404,3 +404,68 @@ $ sh scripts/check-nocgo.sh                                    → 步骤 4 (go 
 9. **cmd**：无需新增接线——`Cmd` 传入的 Runtime 实现上述方法后被 UI 类型断言探测到；建议在 cmd/runtime 加编译期断言
    `var _ ui.ChannelAuthorizer = (*runtime.Runtime)(nil)` 等（含 A1 的 WorkspaceCreator/ConversationCreator）。
 10. `check-nocgo.sh` 目前红在 `cmd/zeokeel/extras_test.go`（`triggerForIM` 未定义），属 fix-runtime 的 in-flight 工作，需其收尾后才能全绿。
+
+---
+
+# Round 3（修复全部：设计复审 P0-2 / P0-3 / P0-7 / P1-6 / P1-7 / P2 的 UI 侧）
+
+依据 `audit/design-review-r2.md` + 四份 detail 报告。范围仍是 `internal/ui/**` + `internal/view/**`；无 runtime/agent/im/store/design 改动，无 `go.mod`、无 commit。
+
+## 1. P0-3 身份：行显示编号，查找用域 ID
+
+- `view.TicketRow.Number int`、`view.TicketDetailVM.Number int`；`ID` 明确为域 ID（查找键），编号只用于显示（`view.TicketLabel(id, number)` → "#42"；未投影编号时回退 "#"+ID，永不为空）。
+- UI 显示改用 `TicketLabel`（总览/执行/工作区会话/徽标）；**所有查找仍用 `ID`**：`DetailVMOf(r.ID)`、`DetailOf(r.ID)`、`openTicket(conv.ID)`、`located(...)`、搜索命中跳转（`hit.TicketID` = 域 ID），搜索行的人类可读行也用编号。
+- 夹具改为域 ID（`tk-42`/`tk-44`…）+ `Number`；`Details`/`DetailVMs` map 以域 ID 为 key；工作区会话 ID 与工单域 ID 一致。测试断言同步更新（`lists/ticketdetail/search/workspace` + 新增身份测试）。
+
+## 2. P0-2 异步命令边界
+
+- `internal/ui/commands.go`：`runOffMain`（有 window 时 goroutine；headless 测试同步执行，保持确定性）+ 六个 seam：`startDispatch`、`startCreateWorkspace`、`startNewConversation`、`startRenameWorkspace`、`startDeleteWorkspace`、`startSaveSettings`；结果一律经 `postToUI`（`win.Update`）回主线程。
+- 可见 pending + 防重入：发送中…（按钮禁用、草稿乐观清空、pending 回显）、创建中…（弹窗不关、不可二次提交）、保存中…（settings 与 prompt 共用 `savingGroup`）；测试用"按住"的 seam 断言 pending 与二次点击不会重复调用。
+- 发送失败不再保留红字：Dispatch 拒绝通常是"已答复/需追问"，改中性 note（暗色说明），红色只留给真正的动作/保存失败。设置保存与提示词保存都走异步 seam，原有"无乐观更新"协议不变。
+
+## 3. P0-7 超级Agent 聊天
+
+- `internal/view/chat.go`：`ChatRole`（user/assistant/system）、`ChatKind`（outcome/answer/note/error）、`ChatMessage{Role,Kind,Text,At}`、`ChatVM`（`Tail/Last/LastAnswer/IsFailure`）+ `Snapshot.PublishChat/Chat`（未投影 = nil，不画空聊天）。
+- 总览新增对话卡（最近 8 条，紧凑气泡；用户行浅色、系统行"记录/结果"、失败只有 `ChatKind error` 才红）；**每页输入框上方**固定显示最新 agent 行（`composerContext`），发送中显示"发送中… + 回显"，所以回答/派发结果不再只出现在消息页。
+- 提交乐观清空草稿；聊天回答/追问中性色，红色只留给 `ChatKind error` 与真实动作失败。`ChatMessage.IsFailure` 有 view 单测钉住。
+
+## 4. P1-7 工作区上下文
+
+- `TicketRow.WorkspaceID`（过滤用 ID；`Workspace` 仍是显示名）、`Thread.Workspace`（消息所属工作区 ID）+ `view.FilterTicketsByWorkspace` / `FilterThreadsByWorkspace`（"" = 全部；未分类线程只在"全部"出现）。
+- 选中工作区（侧栏行/工作区页/会话）设置 `filterWorkspace`：执行与消息过滤，页面顶部显示 `工作区：X · 全部` 控件（`全部工作区` 一键恢复）；侧栏选中高亮随 filter 走；过滤后为空时消息页给"这个工作区还没有消息"的诚实空态。执行页脚仍报全局总数 + 当前筛选数。
+
+## 5. P1-6 工作区管理
+
+- 可选接口（ui 定义，运行时实现）：`WorkspaceRenamer{RenameWorkspace(id, name string) error}`、`WorkspaceDeleter{DeleteWorkspace(id string) error}`。
+- 工作区页头部 `重命名` / `删除`；重命名弹窗预填名称；删除先确认，明确写"磁盘上的目录不会被删除"；两者异步（pending：保存中…/删除中…），失败保留弹窗与运行时错误；未接线按钮禁用并写明缺哪个接口（没有假成功）。删除成功后若该工作区正是当前上下文则清除过滤。
+
+## 6. P2
+
+- **传输选项**：运行时 `Options` 仍是权威，但构建只勾选自己真能跑的传输：未知选项显示"（未实现）"且不可选（F-11）；飞书 longpoll、钉钉 dws/stream 均可选（上一轮已按 runtime 事实修正）。
+- **保存条文案按组**：`SettingsGroup.Effect`（运行时优先）+ `view.SaveEffect(id)` 兜底：来源=保存后重启相关渠道、提示词=热更新、执行=下次新工单生效、允许名单=立即生效、部署=重启后生效。不再统一写"并热更新"。
+- **字号 token**：`ViewScale` + `fs()`（385 处显式字号统一走比例），theme 字号 = 15×scale；`ui.font_scale`（0.9/1.0/1.1，clamp 0.8–1.4）在 设置›部署 提供控制（有投影字段时经保存协议写；没有则只读并提示等待投影）。原"一次性 +2"的魔数消失。
+- **窗口/侧栏**：`Run` 最小窗口 1100×720（否则侧栏+页同时被裁）；侧栏工作区名/会话标题 `SingleLine` 省略 + Tooltip 显示全名与根目录。
+
+## 7. 测试与结果
+
+新增 `internal/ui/round3_test.go`（16 个：异步 pending×4、聊天渲染/上下文/边界/错误语义×4、身份×2、工作区过滤×2、改名/删除/未接线×3、传输真值、保存条文案、字号设置）+ `internal/view/chat_test.go`（5 个：ChatVM、过滤器、TicketLabel、SaveEffect、nil）。
+更新既有：`view_test`（发送拒绝改为乐观清空+中性说明）、`lists_test`（身份 + 行推导含工作区）、`ticketdetail_test`、`search_test`、`workspace_test`（token 测试改为 scale token）、夹具（域 ID/Number/WorkspaceID/Thread.Workspace/Chat）。
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/... -count=1   → ok（ui 136 / view 37）
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...             → 干净
+$ gofmt -l internal/ui internal/view                                     → 空
+$ CGO_ENABLED=0 go build ./...                                           → OK
+$ sh scripts/check-nocgo.sh → 步骤 4 红在 internal/runtime/im2_test.go（别人 in-flight 的测试），与 UI/view 无关
+```
+截图核对（临时测试已删）：`/tmp/r4-overview-chat.png`（总览对话 + 输入框上最新回答）、`/tmp/r4-execution-filter.png`（工作区过滤 + 全部）、`/tmp/r4-workspace-actions.png`（重命名/删除 + 过滤条）。
+
+## 8. 跨 scope 待办（runtime，UI 已按契约预留）
+
+1. `TicketRow.Number`（编号）与 `TicketRow.WorkspaceID`（`string(t.Workspace)`）填充；`Workspace` 继续放显示名。
+2. 发布 `ChatVM`：消息 role user/assistant/system，kind `outcome`（"已派发 #N"/"需要你确认"）/`answer`/`note`（中性）——**只有真正失败（网络/DB/权限）用 `error`**，它才会红；"未命中工作区、已答复"不要用 error。
+3. `Thread.Workspace` 填工作区 ID（inbound thread）。
+4. 实现 `WorkspaceRenamer.RenameWorkspace(id, name string)`、`WorkspaceDeleter.DeleteWorkspace(id string)`（string id；UI 已在 goroutine 调用）。
+5. `SettingsSaver.SaveSettings`/`Dispatch`/`CreateWorkspace`/`NewConversation` 保持"只入队/后台执行"，UI 不再等返回；慢操作不要占 main-thread handler。
+6. 发布 `ui.font_scale` 字段（部署组，值 0.9/1.0/1.1）后，设置页字号控制才可编辑；未发布时面板显示当前比例 + 等待投影说明。
+7. 传输 `Options` 只列真实可用的值（构建已知项才可选；未知项 UI 会灰显"未实现"）。
+8. plan/task 可见性本轮未做（等 runtime 投影 task 列表再上 UI）。

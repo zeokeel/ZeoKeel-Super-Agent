@@ -694,3 +694,20 @@ func stripMarker(text string) string {
 	}
 	return text
 }
+
+// 生命周期：Close 幂等，且关闭后 Subscribe 诚实返回 im.ErrClosed（不空转）。
+func TestDriverCloseIsGracefulAndIdempotent(t *testing.T) {
+	d := NewWithTransport(Config{Now: time.Now}, &fakeTransport{})
+	if err := d.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := d.Subscribe(ctx, make(chan im.RawEvent, 1))
+	if !errors.Is(err, im.ErrClosed) {
+		t.Fatalf("Subscribe after Close = %v, want im.ErrClosed", err)
+	}
+}

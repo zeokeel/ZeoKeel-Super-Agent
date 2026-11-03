@@ -133,7 +133,7 @@ func (a *App) openAuthorization(url string) {
 // channelCards draws one card per IM channel in 设置 › 来源.
 func (a *App) channelCards(c *mui.Context, g *view.SettingsGroup) {
 	tk := a.tk
-	mui.Text(c, "IM 通道").FontSize(13).Bold().TextColor(tk.Text)
+	mui.Text(c, "IM 通道").FontSize(fs(13)).Bold().TextColor(tk.Text)
 	mui.Text(c, "通道要启用并填好凭据才会监听；空着的通道不连接（不会假装在线）。").
 		FontSize(11).TextColor(tk.TextFaint)
 	for _, spec := range view.ChannelSpecs() {
@@ -159,36 +159,36 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 	tk := a.tk
 	enabledField, hasEnabled := settingFieldOf(g, spec.EnabledKey)
 	transportField, hasTransport := settingFieldOf(g, spec.TransportKey)
-	enabled := hasEnabled && *a.settingsPtr(g.ID, enabledField) == "true"
+	enabled := hasEnabled && settingBool(*a.settingsPtr(g.ID, enabledField))
 	check := a.checkChannelState(spec.Name)
 
 	card(c, tk, 14, func() {
 		// Header: which channel, and whether it runs.
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Icon(c, channelIcon(spec.Name)).FontSize(14).TextColor(tk.TextMuted)
-			mui.Text(c, spec.Label).FontSize(15).Bold().TextColor(tk.Text)
+			mui.Icon(c, channelIcon(spec.Name)).FontSize(fs(14)).TextColor(tk.TextMuted)
+			mui.Text(c, spec.Label).FontSize(fs(15)).Bold().TextColor(tk.Text)
 			state, fg, bg := a.channelState(spec, hasEnabled, enabled, check)
 			chip(c, tk, state, fg, bg)
 			mui.Spacer(c)
 			if hasEnabled {
 				p := a.settingsPtr(g.ID, enabledField)
-				on := *p == "true"
+				on := settingBool(*p)
 				mui.Row(c).Gap(7).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, "启用").FontSize(12).TextColor(tk.TextMuted)
+					mui.Text(c, "启用").FontSize(fs(12)).TextColor(tk.TextMuted)
 					if mui.Switch(c.Key("channel:"+spec.Name+":enabled"), &on).
 						Label("启用" + spec.Label).Changed() {
 						*p = boolText(on)
 					}
 				})
 			} else {
-				mui.Text(c, "等待运行时投影："+spec.EnabledKey).FontSize(11).TextColor(tk.Amber)
+				mui.Text(c, "等待运行时投影："+spec.EnabledKey).FontSize(fs(11)).TextColor(tk.Amber)
 			}
 		})
 
 		// One honest status line: never "监听中" for a channel that is off.
 		detail := a.channelDetail(hasEnabled, enabled, check)
 		if detail != "" {
-			mui.Text(c, detail).FontSize(11).TextColor(tk.TextMuted)
+			mui.Text(c, detail).FontSize(fs(11)).TextColor(tk.TextMuted)
 		}
 
 		// Transport.
@@ -198,7 +198,7 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 		for _, key := range spec.CredentialKeys {
 			f, ok := settingFieldOf(g, key)
 			if !ok {
-				mui.Text(c, "等待运行时投影："+key).FontSize(11).TextColor(tk.TextFaint)
+				mui.Text(c, "等待运行时投影："+key).FontSize(fs(11)).TextColor(tk.TextFaint)
 				continue
 			}
 			a.settingField(c, g, f)
@@ -210,7 +210,7 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 			if check.pending {
 				label = "检查中…"
 			}
-			btn := mui.Button(c, label).Label(label).Height(26).FontSize(13)
+			btn := mui.Button(c, label).Label(label).Height(26).FontSize(fs(13))
 			if _, wired := a.channelChecker(); !wired {
 				btn.Disabled(true)
 			} else if check.pending {
@@ -219,22 +219,22 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 				a.checkChannel(spec.Name)
 			}
 			if checkedAt := check; checkedAt.authURL != "" {
-				mui.Text(c, "需要打开授权页完成授权").FontSize(11).TextColor(tk.Amber)
-				open := mui.Button(c, "打开授权页").Label("打开授权页").Height(26).FontSize(13)
+				mui.Text(c, "需要打开授权页完成授权").FontSize(fs(11)).TextColor(tk.Amber)
+				open := mui.Button(c, "打开授权页").Label("打开授权页").Height(26).FontSize(fs(13))
 				if open.Clicked() {
 					a.openAuthorization(checkedAt.authURL)
 				}
 			}
 			mui.Spacer(c)
 			if _, wired := a.channelChecker(); !wired {
-				mui.Text(c, "动作未接线：运行时未提供 CheckChannel").FontSize(11).TextColor(tk.Amber)
+				mui.Text(c, "动作未接线：运行时未提供 CheckChannel").FontSize(fs(11)).TextColor(tk.Amber)
 			}
 		})
 		if check.authURL != "" {
-			mui.Text(c, checkedURLText(check.authURL)).FontSize(10).SingleLine().TextColor(tk.TextFaint)
+			mui.Text(c, checkedURLText(check.authURL)).FontSize(fs(10)).SingleLine().TextColor(tk.TextFaint)
 		}
 		if errText := check.err; errText != "" {
-			mui.Text(c, errText).FontSize(11).TextColor(tk.Red)
+			mui.Text(c, errText).FontSize(fs(11)).TextColor(tk.Red)
 		}
 	})
 }
@@ -294,12 +294,16 @@ func (a *App) channelTransport(c *mui.Context, g *view.SettingsGroup, spec view.
 	tk := a.tk
 	options := spec.Options
 	if hasField && len(field.Options) > 0 {
+		// The runtime decides which transports it offers; the build decides which
+		// of those it can actually run. An option the build does not know is shown
+		// as 未实现, never selectable: the transport catalog and the runtime must
+		// agree before a person can pick one (F-11).
 		options = nil
 		for _, id := range field.Options {
-			opt := view.ChannelOption{ID: id, Label: id, Implemented: true}
+			opt := view.ChannelOption{ID: id, Label: id, Implemented: false,
+				Note: "构建未声明该传输；需要先支持它"}
 			if known := findChannelOption(spec, id); known != nil {
 				opt = *known
-				opt.Implemented = true
 			}
 			options = append(options, opt)
 		}
@@ -314,7 +318,7 @@ func (a *App) channelTransport(c *mui.Context, g *view.SettingsGroup, spec view.
 	}
 
 	mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, "传输方式").FontSize(12).TextColor(tk.TextMuted)
+		mui.Text(c, "传输方式").FontSize(fs(12)).TextColor(tk.TextMuted)
 		for _, opt := range options {
 			opt := opt
 			on := current == opt.ID
@@ -335,19 +339,19 @@ func (a *App) channelTransport(c *mui.Context, g *view.SettingsGroup, spec view.
 				if !opt.Implemented {
 					fg = tk.TextFaint
 				}
-				mui.Text(c, label).FontSize(12).TextColor(fg)
+				mui.Text(c, label).FontSize(fs(12)).TextColor(fg)
 			})
 		}
 		mui.Spacer(c)
 		switch {
 		case !hasField:
-			mui.Text(c, "等待运行时投影："+spec.TransportKey).FontSize(11).TextColor(tk.Amber)
+			mui.Text(c, "等待运行时投影："+spec.TransportKey).FontSize(fs(11)).TextColor(tk.Amber)
 		case !enabled:
-			mui.Text(c, "未启用时不连接").FontSize(11).TextColor(tk.TextFaint)
+			mui.Text(c, "未启用时不连接").FontSize(fs(11)).TextColor(tk.TextFaint)
 		}
 	})
 	if hasField && field.Help != "" {
-		mui.Text(c, field.Help).FontSize(10).TextColor(tk.TextFaint)
+		mui.Text(c, field.Help).FontSize(fs(10)).TextColor(tk.TextFaint)
 	}
 	if !hasField {
 		mui.Text(c, "以上为编译期已知的传输方式；运行时投影 "+spec.TransportKey+" 后才能选择。").
@@ -374,12 +378,23 @@ func channelIcon(name string) *mui.SVG {
 	return icBell
 }
 
-// boolText is "true"/"false" for a settings switch's string value.
+// boolText is the canonical settings switch encoding. The runtime writes "1"/"0";
+// older files may still hold true/false, so reads go through settingBool.
 func boolText(on bool) string {
 	if on {
-		return "true"
+		return "1"
 	}
-	return "false"
+	return "0"
+}
+
+// settingBool parses any historical switch spelling. One codec at the UI boundary
+// keeps a stored "1" from rendering as OFF (design-review V-1).
+func settingBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on", "enabled":
+		return true
+	}
+	return false
 }
 
 // checkedURLText shortens the authorization URL for the line under the button.

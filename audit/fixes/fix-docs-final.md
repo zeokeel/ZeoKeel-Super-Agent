@@ -270,3 +270,72 @@ ops-runbook：`cli.go:349→354`、`status.go:111-135→111-128`、`pages.go:549
 - 文档一致性：相对 markdown 链接 0 broken；全 docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据引用。
 - 全量 `verify-fixes.sh`/`release-check.sh` 未在 Round 2/3 代码上重跑（已在 README/RELEASE/CHANGELOG 写明，
   发布前必须重跑）。`VERSION` 仍 `1.0.0-rc.1`，无新 tag。
+
+## 12. 最终代码文档同步（2026-11-04，docs-only，code frozen）
+
+按 Lead “CODE IS FINAL” 指令，在修复波后逐项核对代码再改文档；**没有改任何代码/go.mod**。VERSION 仍 `1.0.0-rc.1`，无新 tag。
+
+**更新文件**
+- `README.md`：状态表重写（IM 审批优先、飞书 ws/longpoll、DWS 真实契约、异步命令、聊天双态、Ticket 身份、工作区过滤/重命名、
+  工具信任边界、设置/secret）；界面结构、内置工具、IM 渠道、FAQ、已知限制、验证（最终闸门由 Lead 跑，不预称全绿）、依赖
+  （`larksuite/oapi-sdk-go/v3 v3.12.2`）。
+- `CHANGELOG.md`：rc.1 下新增「Round 2/3 + 修复波（2026-11-04）」；修正旧条目里“Feishu 无 WS”“提示词无热更新/历史”等过时表述。
+- `RELEASE.md`：A 组按最终代码（IM 审批优先、A3/A7 语义）；B/C 的 build/test/race/verify 勾选改回“待 final gate”；
+  F 组按剩余产品面重排 + F-7 收尾对齐；H 组改为修复波增量；G 仍为 rc.1 语义。
+- `RELEASE-STEPS.md`：顶部状态、IM 审批优先/传输、设置/提示词/环境/闸门说明同步。
+- `design/zeokeel-go-mygo-design.md` §13：整表按最终代码重写（40+ 行），新增 IM 审批优先、三态/生命周期、DWS、飞书 WS/longpoll、
+  聊天双态/忙碌态、Ticket 身份、工作区 opaque ID/过滤、设置 codec/事务/secret、工具信任边界；更新“明确未做”。
+- `design/im-channels.md`：全文重写（审批优先、真实 DWS CLI 契约、飞书 larkws + longpoll fallback、三态/升级、生命周期/secret）。
+- `design/ops-runbook.md`：§6.10 改为审批队列+新契约；新增 §6.11 升级与迁移；§8 未实现清单同步。
+- `design/rejected-concepts.md`：修正 DWS/AGENTS/“未受理”旧登记；新增 §E 修复波概念登记（审批优先、larkws、DWS 身份、异步边界、
+  聊天双态、domain ID、opaque 工作区、AGENTS/web 信任边界、settings codec、font scale）。
+- `audit/verify/design-r2-ux.md`：加“基于 f4200da 历史评审”说明（行号不再随修复波更新）。
+
+**文档一致性（本机重跑）**：相对 markdown 链接 0 broken；全 docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据引用。
+全量 `verify-fixes.sh`/`release-check.sh` **未由我运行**（按 Lead 安排由其在合并前跑）；README/RELEASE/CHANGELOG 均明确不预称全绿。
+
+**代码/文档差异（需 Lead 在 push 前决定是否修；未改代码）**
+1. 飞书 transport 面板目录/默认值落后：`internal/runtime/pages.go:474-476`（Options 含 webhook、Help 写“只实现 longpoll”、Value 默认 longpoll）、
+   `internal/view/channels.go:53-57`（spec 只声明 longpoll）与 runtime 能力不符——runtime 已支持 ws
+   （`internal/runtime/im.go:786-792,859-873`、`internal/im/feishu/ws.go`、`go.mod:12`）。文档按 Lead 口径写“ws 推荐/longpoll fallback”，
+   但**代码缺省仍是 longpoll、面板会把 ws 显示为未实现**。
+2. `ui.font_scale` 未被 runtime 设置投影：UI 有控件与 `fs()`（`internal/ui/settings.go:270-300`、`tokens.go:48-78`），
+   但 `runtime/pages.go` 的设置组没有该字段，页面会显示“等待投影”。
+3. 一次性 settings 迁移未接线：`internal/runtime/settingscodec.go:83` 的 `migrateSettings` 无调用者、
+   `internal/store/settings.go:28-55` 的 `SetSettingsSchema` 无调用者；当前实际生效的是读取层 bool 兼容 + `BootstrapIMFlags`。
+4. `DeleteWorkspace` 总是拒绝（缺 store/engine 删除接口，`internal/runtime/workspaces.go:151-190`）；文档写“明确拒绝”而非“已支持删除”。
+5. `TicketDetailVM.ID` 仍被赋值为展示编号（`internal/runtime/pages.go:385`），而注释/查找键要求 domain ID（`:302,310`）；
+   行/详情查找本身已正确，展示字段是遗留。
+6. `im-channel-spec` 的“每渠道一个串行 worker”在最终代码里是长驻 consumer + 短命令串行（`dws.go:21-28`），不再是“poll/send 共用队列”；
+   文档已按真实实现写，旧 spec 行文未改。
+7. 飞书 `webhook` 仍出现在 settings Options（`pages.go:475`）但 runtime 明确拒绝（`im.go:792`）；文档写“webhook 未实现”。
+
+## 13. 微调后文档复核（V-1…V-6，2026-11-04，docs-only）
+
+Lead 的最终代码微调关闭了 §12 列出的全部收尾差异；本轮重 grep 后更新 README / CHANGELOG / RELEASE / design §13 /
+design/im-channels / design/ops-runbook / rejected-concepts：
+
+1. **V-1 开关 canonical 1/0**：UI 读写 `boolText`/`settingBool`（`internal/ui/channels.go:381-395`、
+   `internal/ui/settings.go:405-414`），读取兼容旧 true/false；设置 VM 输出 `EncodeSettingBool`
+   （`internal/runtime/pages.go:557-559`）。文档不再暗示“开关写 true 显示 off”。
+2. **V-2 一次性迁移已接线**：`LoadSettings` 在 schema 旧/缺失时执行 `migrateSettings` 并 `SetSettingsSchema`
+   （`internal/runtime/pages.go:678-707`；`internal/runtime/settingscodec.go:83`；`internal/store/settings.go:28-55`；
+   测试 `internal/runtime/migration_test.go:14` `TestLegacySettingsMigration`）。README/RELEASE F/§13/ops §6.11 已改为“启动执行”。
+3. **V-3 飞书默认 ws**：默认 `feishu_transport=ws`（`internal/runtime/im.go:87`），面板 Options 只有 `ws`/`longpoll`
+   （`internal/runtime/pages.go:474-476`、`internal/view/channels.go:45-51`），webhook 不再发布。
+   §13/im-channels/ops/README/H 组已写“默认 ws，longpoll 显式 fallback”。
+4. **V-4 font_scale 已投影**：设置›部署字段 `ui.font_scale` 0.9/1.0/1.1（`internal/runtime/pages.go:537-539`），
+   UI `fs()` 缩放（`internal/ui/tokens.go:48-78`）保存立即生效。移除“等待投影”限制。
+5. **V-5 删除空工作区已实现**：`DeleteWorkspace` 检查无工单后删行+策略（`internal/runtime/workspaces.go:155-190`、
+   `internal/store/store.go:390`），有工单拒绝。README/§13/ops/rejected-concepts/RELEASE H 已改为“仅空工作区”。
+6. **V-6 详情 ID=domain ID**：`TicketDetailVM.ID = string(t.ID)`，`Number` 单独（`internal/runtime/pages.go:385`）。
+   README/§13/RELEASE H/CHANGELOG 已改为“查找键与详情 VM 的 ID 都是 domain ID”。
+
+**复核结果**：docs 相对链接 0 broken；所有 docs `file:line` 范围检查 0 错误；§13 无 `_test.go` 证据引用。
+**未改代码**；`VERSION` 仍 `1.0.0-rc.1`、无新 tag；全量闸门仍由 Lead 在 push 前跑（README/RELEASE/CHANGELOG 不预称全绿）。
+
+**补充（2026-11-04 最后一处 nuance）**：旧 Feishu 凭据-only 配置迁移 pin `source.feishu_transport=longpoll`
+（`internal/runtime/settingscodec.go:101-106`），新装仍默认 `ws`（`internal/runtime/im.go:87`、`internal/runtime/pages.go:474-476`）；
+文档已改为“新装默认 ws；旧配置迁移 pin longpoll”。`DeleteWorkspace` 现在删除空工作区（行 `internal/store/store.go:390` +
+engine 路由 `internal/runtime/workspaces.go:182`/`internal/engine/engine.go:157`），有工单拒绝，测试
+`internal/runtime/round3_test.go:244` `TestDeleteWorkspaceRemovesEmptyOnly`；README/§13 已补“策略+engine 路由”。

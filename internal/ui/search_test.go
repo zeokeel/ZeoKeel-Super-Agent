@@ -65,7 +65,7 @@ func TestSearchPaletteOpensFiltersAndJumps(t *testing.T) {
 	if a.sec != view.SecExecution {
 		t.Fatalf("section %q, want execution", a.sec)
 	}
-	if a.locate == nil || a.locate.TicketID != "48" {
+	if a.locate == nil || a.locate.TicketID != "tk-48" {
 		t.Fatalf("located %+v, want ticket #48", a.locate)
 	}
 	// DemoTickets orders #48 last; the jump selects and opens that row in place.

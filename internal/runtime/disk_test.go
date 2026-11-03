@@ -44,9 +44,11 @@ func TestUnwritableStateDirectoryFailsTheTicket(t *testing.T) {
 	if _, err := eng.Receive(withThread(tr)); err != nil {
 		t.Fatal(err)
 	}
-	// An explicit request from a listed colleague is accepted without the
-	// approval gate (002:101: explicit works in every accept mode).
+	// An IM request becomes an approval; approving it authorizes the work.
 	approved := evalNow(eng)
+	if approved.Ticket == "" {
+		approved.Ticket = ticketAfterProposal(t, eng, "disk")
+	}
 
 	// Occupy the session path with a regular file: creating the directory then
 	// fails even for root, which is the portable stand-in for an unwritable disk.

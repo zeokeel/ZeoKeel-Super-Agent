@@ -98,6 +98,20 @@ func (r *Runtime) sourcesVM(now time.Time) *view.SourceVM {
 			CursorAt: s.At, LastPoll: s.Last,
 		})
 	}
+	// "待审批 N": approvals are attention items, not notifications. The number is
+	// per Source so the 来源 page can say which channel is waiting on the operator.
+	pending := map[string]int{}
+	for _, d := range r.eng.Proposals() {
+		if tr, ok := r.eng.TriggerOf(d.ID); ok && tr.Source != "" {
+			pending[tr.Source]++
+		}
+	}
+	for i := range vm.Sources {
+		if n := pending[vm.Sources[i].Kind]; n > 0 {
+			vm.Sources[i].Facts = append(vm.Sources[i].Facts, view.Fact{Label: "待审批", Value: fmt.Sprintf("%d 条", n)})
+		}
+	}
+
 	return vm
 }
 
@@ -285,7 +299,7 @@ func (r *Runtime) ticketsVM(now time.Time) *view.TicketListVM {
 		rows = append(rows, rowAt{
 			at: last,
 			row: view.TicketRow{
-				ID: fmt.Sprint(t.Number), Title: t.Title, Workspace: string(t.Workspace),
+				ID: string(t.ID), Title: t.Title, Workspace: string(t.Workspace), WorkspaceID: string(t.Workspace),
 				Source: t.Mandate.Actor.ID, SourceIcon: "local",
 				Stage: stageWordOfTicket(st), StageID: st,
 				Detail: humanAge(now.Sub(t.CreatedAt)) + "前派发",
@@ -368,7 +382,7 @@ func reportWord(s domain.ReportState) string {
 func (r *Runtime) ticketDetailVM(t domain.Ticket, now time.Time) *view.TicketDetailVM {
 	_, activity := ticketActivity(t, now)
 	d := &view.TicketDetailVM{
-		ID: fmt.Sprint(t.Number), Title: t.Title, Workspace: string(t.Workspace),
+		ID: string(t.ID), Number: t.Number, Title: t.Title, Workspace: string(t.Workspace),
 		Stage: string(domain.StageOf(&t, now)), StageLabel: stageWordOfTicket(string(domain.StageOf(&t, now))),
 		Tone:   toneOfStage(string(domain.StageOf(&t, now))),
 		Source: t.Mandate.Basis.Source, Actor: t.Mandate.Actor.ID,
@@ -444,7 +458,7 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 		}
 		return out
 	}
-	return &view.SettingsVM{
+	vm := &view.SettingsVM{
 		Revision: rev, UpdatedAt: now, Source: r.settingsSource(),
 		Groups: []view.SettingsGroup{
 			{ID: view.SettingsSource, Label: "来源",
@@ -457,9 +471,9 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 
 					{Key: "feishu_enabled", Label: "启用飞书", Value: values["source.feishu_enabled"], Kind: view.SettingSwitch,
 						Help: "关闭时取消订阅、停止轮询，配置保留。默认关闭（未启用）。"},
-					{Key: "feishu_transport", Label: "飞书传输方式", Value: orDefault(values["source.feishu_transport"], "longpoll"), Kind: view.SettingSelect,
-						Options: []string{"longpoll", "ws", "webhook"},
-						Help:    "当前只实现 longpoll；ws/webhook 仅占位，选中后来源报错而不是静默降级。"},
+					{Key: "feishu_transport", Label: "飞书传输方式", Value: orDefault(values["source.feishu_transport"], "ws"), Kind: view.SettingSelect,
+						Options: []string{"ws", "longpoll"},
+						Help:    "ws：飞书官方 larkws 长连接（推荐，无公网回调）；longpoll：HTTP 轮询（显式兜底，保留游标）。"},
 					{Key: "feishu_app_id", Label: "飞书 App ID", Value: values["source.feishu_app_id"], Kind: view.SettingText},
 					{Key: "feishu_app_secret", Label: "飞书 App Secret", Value: values["source.feishu_app_secret"], Kind: view.SettingSecret},
 					{Key: "feishu_chats", Label: "飞书会话 ID（逗号分隔）", Value: values["source.feishu_chats"], Kind: view.SettingText},
@@ -471,12 +485,22 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 						Help:    "dws：本机 DWS CLI（默认，需安装并 `dws auth login`）；stream：官方 Stream SDK（需 app key/secret/robot code）。"},
 					{Key: "dingtalk_dws_cmd", Label: "DWS 可执行文件", Value: orDefault(values["source.dingtalk_dws_cmd"], "dws"), Kind: view.SettingText,
 						Help: "可填绝对路径或包装脚本；命令缺失/未登录时来源报错并给出可操作的修复提示。"},
-					{Key: "dingtalk_bot_id", Label: "钉钉机器人自身 ID（@ 判定）", Value: values["source.dingtalk_bot_id"], Kind: view.SettingText},
-					{Key: "dingtalk_app_key", Label: "钉钉 AppKey（stream/共用）", Value: values["source.dingtalk_app_key"], Kind: view.SettingText},
-					{Key: "dingtalk_app_secret", Label: "钉钉 AppSecret（stream/共用）", Value: values["source.dingtalk_app_secret"], Kind: view.SettingSecret},
+					{Key: "dingtalk_profile", Label: "DWS 登录 profile", Value: values["source.dingtalk_profile"], Kind: view.SettingText,
+						Help: "DWS 多账号时指定 profile；留空用默认登录。"},
+					{Key: "dingtalk_listen_kind", Label: "DWS 监听范围", Value: orDefault(values["source.dingtalk_listen_kind"], "at-me"), Kind: view.SettingSelect,
+						Options: []string{"at-me", "group", "all-direct", "all-group"},
+						Help:    "默认只接 @我 的消息（at-me）；放宽监听范围会增加误派单。"},
+					{Key: "dingtalk_chat_query", Label: "DWS 群过滤", Value: values["source.dingtalk_chat_query"], Kind: view.SettingText,
+						Help: "只在指定群监听时填写；留空表示不按群过滤。"},
+					{Key: "dingtalk_bot_id", Label: "钉钉机器人自身 ID（stream 的 @ 判定）", Value: values["source.dingtalk_bot_id"], Kind: view.SettingText},
+					{Key: "dingtalk_app_key", Label: "钉钉 AppKey（stream）", Value: values["source.dingtalk_app_key"], Kind: view.SettingText},
+					{Key: "dingtalk_app_secret", Label: "钉钉 AppSecret（stream）", Value: values["source.dingtalk_app_secret"], Kind: view.SettingSecret},
 					{Key: "dingtalk_robot", Label: "钉钉机器人 RobotCode（stream）", Value: values["source.dingtalk_robot"], Kind: view.SettingText},
 
-					{Key: "im_self", Label: "机器人自己的账号（@ 判定）", Value: values["source.im_self"], Kind: view.SettingText},
+					{Key: "feishu_self_id", Label: "飞书机器人自身 ID（@ 判定）", Value: values["source.feishu_self_id"], Kind: view.SettingText,
+						Help: "旧 im_self 会作为回退；两个渠道的 ID 空间不同，建议分别填写。"},
+					{Key: "im_self", Label: "机器人自己的账号（兼容旧配置）", Value: values["source.im_self"], Kind: view.SettingText,
+						Help: "旧版共用值；已迁移到飞书/钉钉各自的 ID 字段。"},
 
 					{Key: "github_repo", Label: "GitHub 仓库 owner/name", Value: values["source.github_repo"], Kind: view.SettingText},
 					{Key: "github_login", Label: "GitHub 机器人登录名", Value: values["source.github_login"], Kind: view.SettingText},
@@ -493,6 +517,12 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 					{Key: "model_timeout", Label: labelOfKey("model_timeout"), Value: values["execution.model_timeout"], Kind: view.SettingText},
 					{Key: "prepare", Label: "工单准备命令（首次执行前）", Value: values["execution.prepare"], Kind: view.SettingText,
 						Help: "sh -c 在 execution root（工单目录的父目录）执行；成功必须创建工单目录；失败则工单失败（不自动重试）"},
+					{Key: "plan_tasks", Label: "计划/待办工具", Value: orDefault(values["execution.plan_tasks"], "1"), Kind: view.SettingSwitch,
+						Help: "启用 TaskCreate/TaskGet/TaskUpdate/TaskList；默认开启。"},
+					{Key: "agents_md", Label: "注入 AGENTS.md", Value: orDefault(values["execution.agents_md"], "1"), Kind: view.SettingSwitch,
+						Help: "把工作区根目录的 AGENTS.md 注入模型输入；默认开启。"},
+					{Key: "web_tools", Label: "网络工具", Value: orDefault(values["execution.web_tools"], "1"), Kind: view.SettingSwitch,
+						Help: "启用 web_fetch/web_search；默认开启，仅 http/https。"},
 					{Key: "web_search_url", Label: "web_search 端点", Value: values["execution.web_search_url"], Kind: view.SettingText,
 						Help: "带 %s 占位的 HTML 搜索地址；留空用 DuckDuckGo HTML 端点。"},
 					{Key: "background_timeout", Label: "后台作业上限（秒）", Value: values["execution.background_timeout"], Kind: view.SettingText,
@@ -503,17 +533,46 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 				Fields: pick("people", "allowlist")},
 			{ID: view.SettingsEval, Label: "评估", Note: "只读事实；规则与受理档位的编辑在下一次 UI 迭代接入。", Fields: r.evalFacts()},
 			{ID: view.SettingsPrompt, Label: "提示词", Placeholder: "提示词编辑在「提示词」页；这里保留入口。"},
-			{ID: view.SettingsDeploy, Label: "部署", Note: "只读事实：日志、备份与 schema 由运行时维护。", Fields: r.deployFacts()},
+			{ID: view.SettingsDeploy, Label: "部署", Note: "界面字号可编辑；日志、备份与 schema 只读，由运行时维护。",
+				Fields: append([]view.SettingField{{Key: "font_scale", Label: "界面字号", Value: orDefault(values["ui.font_scale"], "1.0"),
+					Kind: view.SettingSelect, Options: []string{"0.9", "1.0", "1.1"},
+					Help: "0.9 紧凑 / 1.0 标准 / 1.1 放大；保存后立即生效。"}}, r.deployFacts()...)},
 		},
 	}
+	// P1-9/P0-1: never echo credentials back to the panel; a masked field with
+	// "已保存" help tells the person it is stored without exposing it. Empty on
+	// save means "keep the stored value".
+	for gi := range vm.Groups {
+		for fi := range vm.Groups[gi].Fields {
+			f := &vm.Groups[gi].Fields[fi]
+			key := string(vm.Groups[gi].ID) + "." + f.Key
+			if f.Kind == view.SettingSecret && f.Value != "" {
+				f.Value = ""
+				if !strings.Contains(f.Help, "不回显") {
+					f.Help = strings.TrimSpace(f.Help + " 已保存（不回显）；留空保存表示保留原值。")
+				}
+			}
+			if f.Kind == view.SettingSwitch {
+				if val, ok := ParseSettingBool(f.Value); ok {
+					f.Value = EncodeSettingBool(val)
+				} else if f.Value == "" {
+					f.Value = EncodeSettingBool(defaultSwitchValue(key))
+				}
+			}
+		}
+	}
+	return vm
 }
 
 // SaveSettings implements the panel's optional SettingsSaver. It commits to the
 // store when one is attached, so a prompt edited today is still there tomorrow;
 // without a store it is memory-only and the page says so.
 func (r *Runtime) SaveSettings(group string, values map[string]string) (uint64, error) {
+	// The UI calls this from a goroutine; one command at a time (P0-2).
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
 	if group == "" {
-		return 0, fmt.Errorf("runtime: a settings group is required")
+		return r.currentSettingsRev(), fmt.Errorf("runtime: a settings group is required")
 	}
 	if group == string(view.SettingsPrompt) {
 		// Validation happens before anything is written: unknown layer, unknown
@@ -521,83 +580,97 @@ func (r *Runtime) SaveSettings(group string, values map[string]string) (uint64, 
 		// never truncated. Identical values are dropped (no write, no history).
 		filtered, verr := r.preparePromptSave(values)
 		if verr != nil {
-			r.mu.Lock()
-			rev := r.settingsRev
-			r.mu.Unlock()
-			return rev, verr
+			return r.currentSettingsRev(), verr
 		}
 		values = filtered
 	}
+	if group == string(view.SettingsPeople) {
+		// Parse before the commit: a malformed allowlist must not be written at all.
+		if _, err := parseAllowlist(values["allowlist"]); err != nil {
+			return r.currentSettingsRev(), err
+		}
+	}
+
+	baseStr, hasBase := values["__revision"]
+	base, _ := strconv.ParseUint(baseStr, 10, 64)
+
 	r.mu.Lock()
 	if r.settings == nil {
 		r.settings = map[string]string{}
 	}
-	// Snapshot the source group before the write: IM channels restart only when
-	// their configuration actually changed.
+	before := make(map[string]string, len(r.settings))
 	beforeSource := map[string]string{}
 	for k, v := range r.settings {
+		before[k] = v
 		if strings.HasPrefix(k, "source.") {
 			beforeSource[k] = v
 		}
 	}
-	// The caller's revision is compared against the store inside the save
-	// transaction. The in-memory check below only catches the same-process case
-	// early, before any work is done.
-	baseStr, hasBase := values["__revision"]
-	base, _ := strconv.ParseUint(baseStr, 10, 64)
-	if hasBase && base != r.settingsRev {
-		rev := r.settingsRev
-		r.mu.Unlock()
+	rev := r.settingsRev
+	st := r.settingsStore
+	r.mu.Unlock()
+
+	// Memory mode still checks the caller's revision: there is no store CAS.
+	if st == nil && hasBase && base != rev {
 		return rev, fmt.Errorf("runtime: 设置已被其他窗口改过（当前 rev %d），请重新加载", rev)
+	}
+
+	// Build the next snapshot without touching r.settings (P1-4): a failed write
+	// must leave memory, revision and the panel untouched.
+	next := make(map[string]string, len(before)+len(values))
+	for k, v := range before {
+		next[k] = v
 	}
 	for k, v := range values {
 		if k == "__revision" {
 			continue
 		}
-		r.settings[group+"."+k] = v
+		key := group + "." + k
+		if IsSecretSettingKey(key) && v == "" {
+			continue // masked/unedited secret: keep the stored value
+		}
+		next[key] = v
 	}
-	snapshot := make(map[string]string, len(r.settings))
-	for k, v := range r.settings {
-		snapshot[k] = v
-	}
-	st := r.settingsStore
-	r.settingsRev++
-	rev := r.settingsRev
-	r.mu.Unlock()
-
 	if st != nil {
-		savedRev, err := st.SaveSettings(snapshot, base, hasBase)
+		savedRev, err := st.SaveSettings(next, base, hasBase)
 		if err != nil {
+			// No mutation happened: memory, rev and panel are still the old state.
 			if errors.Is(err, store.ErrSettingsConflict) {
 				return rev, fmt.Errorf("runtime: 设置已被其他窗口改过，请重新加载")
 			}
-			return rev, fmt.Errorf("runtime: 设置保存失败: %w", err)
+			return rev, fmt.Errorf("runtime: 设置保存失败：%w", err)
 		}
-		// Adopt the revision the store assigned: another window may have written in
-		// between, and our counter has to follow the file, not the process.
-		r.mu.Lock()
-		r.settingsRev = savedRev
 		rev = savedRev
-		r.mu.Unlock()
+	} else {
+		rev++
 	}
+
+	// The write committed: adopt it, then run the side effects that depend on it.
+	r.mu.Lock()
+	r.settings = next
+	r.settingsRev = rev
+	r.mu.Unlock()
+
 	if group == string(view.SettingsPrompt) {
-		// Version history + the default hash that powers "Default updated".
 		r.recordPromptMeta(values, rev)
 	}
 	if group == string(view.SettingsSource) {
-		// Apply the IM diff after the commit: changed channels stop and restart,
-		// unchanged ones are untouched (im-channel-spec §1).
 		r.imAfterSettingsSave(group, beforeSource)
 	}
 	if group == string(view.SettingsPeople) {
-		// Access control is not a display setting: apply it now, or the page would
-		// say "saved" while the agent still refuses the person you just added.
 		if err := r.applyAllowlist(values["allowlist"]); err != nil {
-			return rev, err
+			return rev, fmt.Errorf("允许名单已保存，但应用到工作区策略失败：%w", err)
 		}
 	}
 	r.Publish()
 	return rev, nil
+}
+
+// currentSettingsRev is the revision the panel should reload after a refusal.
+func (r *Runtime) currentSettingsRev() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.settingsRev
 }
 
 // LoadSettings reads saved settings at startup. A failure is reported, not fatal:
@@ -610,6 +683,29 @@ func (r *Runtime) LoadSettings(st *store.Store) error {
 	if err != nil {
 		return err
 	}
+	// P0-4: one-shot settings migration. Schema v1 normalizes bool encodings,
+	// infers the IM enable tri-state from legacy credentials, splits the shared
+	// im_self, and pins the pre-switch DingTalk transport. It runs before the
+	// in-memory copy so every reader sees the canonical values, and the stamp is
+	// written only after the migrated map is committed.
+	rev, revErr := st.SettingsRevision()
+	if ver, ok, verr := st.SettingsSchema(); verr == nil && (!ok || ver < store.SettingsSchemaVersion) {
+		if changed := migrateSettings(values); len(changed) > 0 {
+			for k, v := range changed {
+				values[k] = v
+			}
+			if revErr == nil {
+				if newRev, serr := st.SaveSettings(values, rev, true); serr == nil {
+					rev = newRev
+				} else if !errors.Is(serr, store.ErrSettingsConflict) {
+					return serr
+				}
+			}
+		}
+		if err := st.SetSettingsSchema(store.SettingsSchemaVersion); err != nil {
+			return err
+		}
+	}
 	r.mu.Lock()
 	r.settingsStore = st
 	if r.settings == nil {
@@ -620,11 +716,25 @@ func (r *Runtime) LoadSettings(st *store.Store) error {
 	}
 	// The revision is read from the store, so a second window (or a restart) sees
 	// the same number and an optimistic save can detect a conflict (design §6.5).
-	rev, revErr := st.SettingsRevision()
+	rev, revErr = st.SettingsRevision()
 	if revErr == nil {
 		r.settingsRev = rev
 	}
 	r.mu.Unlock()
+
+	// P0-7: load the persisted Super-Agent conversation (bounded by the store).
+	if msgs, cerr := st.Chat("superagent"); cerr == nil && len(msgs) > 0 {
+		chat := make([]view.ChatMessage, 0, len(msgs))
+		for _, m := range msgs {
+			chat = append(chat, view.ChatMessage{Role: view.ChatRole(m.Role), Text: m.Text, At: m.At})
+		}
+		if len(chat) > chatHistoryMax {
+			chat = chat[len(chat)-chatHistoryMax:]
+		}
+		r.mu.Lock()
+		r.chat = chat
+		r.mu.Unlock()
+	}
 	r.Publish()
 	return nil
 }
@@ -890,18 +1000,29 @@ func (r *Runtime) applyAllowlist(raw string) error {
 		return err
 	}
 	r.mu.Lock()
-	p := r.persist
+	st := r.settingsStore
 	r.mu.Unlock()
-	for _, w := range r.eng.Workspaces() {
-		policy := engine.Policy{Version: "v1", Allowed: allowed}
-		if p != nil {
-			// Persist through the durable wrapper so a restart keeps the grant.
-			if err := p.Register(w, policy); err != nil {
-				return err
-			}
-			continue
+	if st != nil {
+		// Single transaction, Allowed only; every other policy field is preserved
+		// by the store (P1-5, fix-store §3).
+		if _, err := st.UpdateAllWorkspacePoliciesAllowed(allowed); err != nil {
+			return err
 		}
-		r.eng.Register(w, policy)
+		for _, w := range r.eng.Workspaces() {
+			pol, _ := r.eng.PolicyOf(w.ID)
+			pol.Allowed = allowed
+			r.eng.Register(w, pol)
+		}
+		r.Publish()
+		return nil
+	}
+	for _, w := range r.eng.Workspaces() {
+		pol, _ := r.eng.PolicyOf(w.ID)
+		if pol.Version == "" {
+			pol.Version = "v1"
+		}
+		pol.Allowed = allowed
+		r.eng.Register(w, pol)
 	}
 	r.Publish()
 	return nil
@@ -974,6 +1095,7 @@ func (r *Runtime) workspacesVM(now time.Time, tickets []domain.Ticket) *view.Wor
 		}
 		vm.Workspaces = append(vm.Workspaces, entry)
 	}
+
 	return vm
 }
 
@@ -984,7 +1106,11 @@ func (r *Runtime) conversationVM(t domain.Ticket, now time.Time) view.Conversati
 		if tr.Source != "" {
 			source = tr.Source
 		}
-		if tr.Source != "local" {
+		// "Me" is the operator's own voice: the panel's Self flag, a local trigger,
+		// or a Mandate granted by the operator. Everything a Source brought in is
+		// the agent acting on someone else's behalf (P1-7).
+		operatorGranted := t.Mandate.Actor.ID == "operator"
+		if !(tr.Self || tr.Source == "local" || operatorGranted) {
 			createdBy = view.CreatedByAgent
 		}
 	}
@@ -996,4 +1122,15 @@ func (r *Runtime) conversationVM(t domain.Ticket, now time.Time) view.Conversati
 		Stage: stageWord(st), StageID: string(st),
 		Attention: t.Attention != nil, LastAt: last,
 	}
+}
+
+// defaultSwitchValue is the switch state shown when a boolean key is absent.
+func defaultSwitchValue(key string) bool {
+	switch key {
+	case "source.feishu_enabled", "source.dingtalk_enabled":
+		return false
+	case "execution.plan_tasks", "execution.agents_md", "execution.web_tools":
+		return true
+	}
+	return false
 }

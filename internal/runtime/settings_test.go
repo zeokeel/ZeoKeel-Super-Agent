@@ -161,6 +161,10 @@ func TestSettingsPageListsOnlyWiredFields(t *testing.T) {
 		"source.dingtalk_transport":    true,
 		"source.dingtalk_dws_cmd":      true,
 		"source.dingtalk_bot_id":       true,
+		"source.feishu_self_id":        true,
+		"source.dingtalk_profile":      true,
+		"source.dingtalk_listen_kind":  true,
+		"source.dingtalk_chat_query":   true,
 		"source.feishu_app_id":         true,
 		"source.feishu_app_secret":     true,
 		"source.feishu_chats":          true,
@@ -175,8 +179,12 @@ func TestSettingsPageListsOnlyWiredFields(t *testing.T) {
 		"execution.prepare":            true,
 		"execution.background_timeout": true,
 		"execution.web_search_url":     true,
+		"execution.plan_tasks":         true,
+		"execution.agents_md":          true,
+		"execution.web_tools":          true,
 		"execution.model_timeout":      true,
 		"people.allowlist":             true,
+		"deploy.font_scale":            true,
 	}
 	for _, g := range vm.Groups {
 		for _, f := range g.Fields {
@@ -231,10 +239,10 @@ func TestAllowlistSettingTakesEffect(t *testing.T) {
 			t.Fatal(err)
 		}
 		_ = out
-		// A colleague the policy admits becomes a Ticket (accept); one it does not
-		// admit is filtered before any Ticket exists.
+		// A colleague the policy admits gets an approval proposal; one it does not
+		// admit is filtered before either a proposal or a Ticket exists.
 		ev := evalNow(eng)
-		return ev.Ticket != ""
+		return ev.Ticket != "" || ev.Proposal
 	}
 	if ask("colleague") {
 		t.Fatal("nobody is allowed yet")

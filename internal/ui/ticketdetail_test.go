@@ -14,7 +14,7 @@ import (
 // so the rich detail is drawn from real fields rather than placeholders.
 func ticketDetailFixture(now time.Time) *view.TicketDetailVM {
 	return &view.TicketDetailVM{
-		ID: "42", Title: "修改登录超时配置", Workspace: "acme/webapp",
+		ID: "tk-42", Number: 42, Title: "修改登录超时配置", Workspace: "acme/webapp",
 		Stage: view.StageWorking, StageLabel: "执行中", Tone: view.ToneInfo,
 		Source: "GitHub · Issue #42", Thread: "th-42", Actor: "@lin",
 		Detail:       "step 7 · 正在补 SessionTimeout 默认值",
@@ -51,7 +51,7 @@ func detailApp(t *testing.T, withFull bool) *App {
 	snap.PublishOverview(viewtest.DemoOverview(now))
 	vm := viewtest.DemoTickets(now)
 	if withFull {
-		vm.DetailVMs = map[string]*view.TicketDetailVM{"42": ticketDetailFixture(now)}
+		vm.DetailVMs = map[string]*view.TicketDetailVM{"tk-42": ticketDetailFixture(now)}
 	}
 	snap.PublishTickets(vm)
 	a := newApp(snap, &fakeCmd{})
@@ -110,7 +110,7 @@ func TestOverviewRowOpensTheTicketOnExecution(t *testing.T) {
 		t.Fatalf("section %q, want execution", a.sec)
 	}
 	rows := ticketRowsOf(a)
-	if a.ticketSel < 0 || a.ticketSel >= len(rows) || rows[a.ticketSel].ID != "42" {
+	if a.ticketSel < 0 || a.ticketSel >= len(rows) || rows[a.ticketSel].ID != "tk-42" {
 		t.Fatalf("opened row %d of %d, want #42", a.ticketSel, len(rows))
 	}
 	wantTexts(t, tt, "step 7 · 正在补 SessionTimeout 默认值")

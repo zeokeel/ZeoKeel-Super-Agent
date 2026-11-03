@@ -188,7 +188,7 @@ func ticketHits(q string, vm *TicketListVM) []SearchHit {
 		out = append(out, SearchHit{
 			Kind:      SearchTickets,
 			Title:     humanfmt.Clip(r.Title, 120),
-			Detail:    fmt.Sprintf("#%s · %s · %s", r.ID, r.Workspace, r.Stage),
+			Detail:    fmt.Sprintf("%s · %s · %s", TicketLabel(r.ID, r.Number), r.Workspace, r.Stage),
 			Section:   SecExecution,
 			TicketID:  r.ID,
 			Workspace: r.Workspace,

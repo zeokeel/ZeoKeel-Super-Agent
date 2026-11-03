@@ -151,6 +151,33 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 | 测试 | — | `runtime/im_test.go`：默认值、禁用不监听、半配置错误（含 health）、轮询→Trigger+cursor 持久化、失败不推进 cursor、Apply 重启/不变不重启、飞书 CheckChannel(httptest 覆盖 httpDo：ready/401/网络错误)、DWS CheckChannel(auth/ready/未知渠道)；`TestWorkerToolSwitches`/`TestWebSearchURLComesFromSettings`；`TestIMEventBecomesATrigger`。cmd 侧改写 verifier IM 测试走 IMManager（Receiver-only driver 走 subscribeLoop），sender 路由测试保留。 |
 | 验证 | — | runtime+cmd build ok；scoped tests ok（19.1s/1.3s）；runtime/cmd `-race` ok（34.9s/5.6s）；gofmt/vet 干净；无 go.mod 改动。**全仓 `go test ./... -skip Live` 仍有 3 个失败在 `internal/im/dingtalk`（nih-integrations 新 DWS 测试：missing-executable 分类、cancel unblock 超时、marker 含换行），非本 scope。** |
 
+## 4sexies. design-review-r2 修复（P0/P1）
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| P0-1/P0-4 bool 编码 + 迁移 | fixed | `settingscodec.go`：`ParseSettingBool`（1/0/true/false/yes/no/on/off）与 `EncodeSettingBool`（"1"/"0"）；LoadSettings 归一既有 bool 键、写 `store.SettingsSchema`（version 1）；旧安装有飞书凭据→显式 enabled=1；旧钉钉 app_key/secret(+robot) 且无 transport→`transport=stream`+enabled=1（DWS 迹象则保持 dws）；`im_self` 拆分到 `feishu_self_id`/`dingtalk_bot_id`；`Runtime.BootstrapIMFlags` 让 flag-only 部署在未显式关闭时启用（main 启动前调用）。SettingsVM switch 统一读/写 "1"/"0"。IM 三态字段由 conf-arch 在 im.go 实现（已协调）。 |
+| P0-2 命令边界 | fixed | `Runtime.commandMu` 串行 Dispatch/NewConversation/CreateWorkspace/SaveSettings；SaveSettings 改为事务式：先在副本上合并（secret 空=保留），store CAS 成功后才替换内存与 rev；冲突/失败不改变内存、不增 rev。 |
+| P0-3 Ticket 身份 | fixed | 投影行 `ID=string(t.ID)`、`Number=t.Number`、`WorkspaceID`；详情 map 仍按 domain ID；相关测试/fixture 改为按 ID 断言。 |
+| P0-7 超级Agent 聊天 | fixed | `runtime/chat.go`：有界 20 条历史（store.AppendChat 持久化 200，启动 LoadSettings 读回），`Snapshot.PublishChat`；Dispatch：派发→system outcome「已派发 #N」、proposal/needs-person→「需要你确认…」、无工作→模型回答（assess.NewEinoGenerator，未配置则确定性工作区/下一步答案并注明未配置模型）；chat 消息不再返回 error/红字。 |
+| P1-8 IM 身份 | 协调中 | imTrigger 由 conf-arch 接管（Global scope、ID 含 conversation、At<=0→now、分渠道 self id、DWS 键语义）。SettingsVM 已发布 `feishu_self_id`/`dingtalk_bot_id`/`profile/listen_kind/chat_query`。 |
+| P1-14 异步 Eval | fixed | ReceiveTrigger 仅 Receive + `kickEval()`（coalesced chan + 单 goroutine），不在 IM poll 路径内联 EvaluateDue/Publish；内存模式异步 pass 负责启动新工单。 |
+| P1-15 onboarding 来源 | fixed | SaveOnboarding 把 source_kind 转成真实 `source.*` 设置（github_repo / feishu_enabled / dingtalk_enabled），经 SaveSettings 提交并触发 IM hook；不再只写 onboard.*。 |
+| P1-4/P1-5/P1-9 | fixed | allowlist 走 `store.UpdateAllWorkspacePoliciesAllowed` 单事务只改 Allowed（保留 accept/reply/rules/bots）；secret 字段投影 Value="" + Help「已保存（不回显）」，保存空值=保留；Inspect KV 脱敏由 store 侧完成。 |
+| P1-6/P1-7 workspace | fixed | opaque `ws_<10hex>`；拒绝重复绝对根目录；`RenameWorkspace`（ID 稳定，保留 policy）；`DeleteWorkspace` 有工单拒绝、无 store 删除 API 时明确报错；`Thread.Workspace`/Conversation `CreatedBy` 按 Self/local/Mandate.Actor=="operator" 判定；cmd 断言 ui.WorkspaceRenamer/Deleter。 |
+| P1-1/P1-12/P1-3 | fixed | prompt 工具名改 `TaskCreate/TaskGet/TaskUpdate/TaskList`（测试同步）；`execution.plan_tasks/agents_md/web_tools` 设置（默认 true）接入 agent.Config，`execution.web_search_url` 仍生效；artifact 扫描跳过 `.zeokeel`（既有）；plantask BaseDir 属 agent scope（通知 fix-agent）。 |
+| IM 全量待审批 | fixed | engine 已对 feishu/dingtalk 强制 `DecPropose`；runtime 测试（feishu+dingtalk）覆盖：proposal 出现在 Approvals（Source/Said/DecisionID）、批准前无 Ticket/无启动、Approve 建单、Reject 无残留、两条消息=两个待办不批处理；health 增加「待审批 N」、来源行 Fact「待审批 N」。Dispatch/NewConversation（本地面板）保持直派。 |
+| P2 | partial | workspace panel 已按 50 条/最近活动排序（增量刷新未做投影级缓存）；workspace facts 启动异步刷新未做（scan 在 CreateWorkspace 同步）；secret 掩码、保存副本/Help 已做；onboarding 已接。 |
+
+**验证（本轮最终）**：
+- `CGO_ENABLED=0 go build ./...` → exit 0；gofmt/vet 干净。
+- `CGO_ENABLED=0 go test ./internal/runtime/ -count=1` → ok（含新增 IM 审批测试；conf-arch 的 im2_test 已恢复）。
+- `CGO_ENABLED=1 go test -race ./internal/runtime/` → ok，无 DATA RACE。
+- 全仓 `go test ./... -skip Live -count=1` → **27 包全部 ok，0 FAIL**（Lead 已更新 acceptance A3/A7/Overview）。
+- `CGO_ENABLED=1 go test -race ./internal/runtime/ ./cmd/zeokeel/ -count=1` → ok（37.5s / 5.8s，无 DATA RACE）。conf-arch 的 IM 修复（DWS channel/ws transport/三态/Stop 注销）已合入并全绿。
+- IM 审批语义（Lead 新要求）已由 engine `isIMSource → DecPropose` + runtime 投影/Approve/Reject 测试覆盖：批准前 0 Ticket、Approve 建单、Reject 无残留、两条消息两个待办、health「待审批 N」。
+- 待 conf-arch：Feishu ws transport 接受/启动（我已发布 ws 选项；`channelReadiness` 在其 im.go）、IM Stop 注销 sender、三态 explicit/derived 字段。待 nih-integrations：none（go.sum 已由 Lead 修）。
+- 说明：DWS 已按 Lead 更正为外部 CLI 语义；store 新 API（UpdateAllWorkspacePoliciesAllowed / Chat / SettingsSchema）已接入。plantask BaseDir 与 AGENTS.md 注入在 agent scope（已通知 fix-agent）。
+
 ## 5. 跨 scope 待办 / 未完成
 
 1. **engine（conf-domain）**：缺“把 running Assignment 标记 interrupted”的 API。`RecoverAssignments` 目前只能补 note + 新 Assignment，旧 running 记录仍留在 `Ticket.Assignments`（`runtime/recovery.go`；期望 `Engine.InterruptAssignment(ticketID, assignmentID, reason)` 或 `RecoverAssignments` 内建实现）。
@@ -170,3 +197,22 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 - **稳定性**：`TestSupervisorWritesAHealthRow` 原实现 sleep 等 60s 巡检，在全仓并行下偶发失败；已改为直接验证 `writeHealth` 写路径（无 sleep、无全局时钟依赖），全仓 `-count=1` 连续 2 次通过。
 - **-race**：`internal/runtime` 与 `cmd/zeokeel` 均通过（CGO_ENABLED=1 单步，符合契约 §0.1）。
 - **依赖外部 API**：Assignment 精确中断（§5.1）、Feed 回填（§5.2）、Inspect 计数（§5.3）、prompt 版本表（§5.4）需要对应 owner 提供后再收口；均已用诚实兜底实现并通过测试。
+
+## 4septies. IM 生命周期 / DWS 长驻 / Trigger（conf-arch，2026-11-04，fix-all round）
+
+> scope：`internal/runtime/im.go`、`internal/runtime/dws.go`、`cmd/zeokeel/imwiring.go`、`cmd/zeokeel/main.go`（仅 IM start/stop 行）。未改 `internal/im/**`、`ui/view/agent/store`、`runtime.go/pages.go/workspaces.go/worker.go`。与 nih-integrations（DWS/Feishu ws API）、nih-runtime（settings codec/迁移/审批语义）按消息对齐。
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| P0-6 DWS 串行 consumer | fixed | 删除 runtime 的裸 `dwsPoller`/`commandDWSClient` 路径；`newDWSChannel(cfg, cli)` 直接构造 nih-integrations 的 `*dingtalk.DWSChannel`（`event +listen-im --flatten -f ndjson` 长驻、重连/按 event id 去重、短命令 `cmdMu` 串行）。**无 poll、无 kv cursor**；`CheckChannel` 复用运行中 consumer 的同一 DWSChannel（`dwsBuilt` 计数测试），未运行时才临时建一个并 Close。fake-CLI（NDJSON）注入由 `dingtalk.DWSCLI` 完成。 |
+| P1-10 频道状态机 | fixed | `applyMu` 串行 Start/Apply/Stop + generation（旧 goroutine 的 status/cursor 写入被 `isCurrent` 丢弃）；启动异步：`drv.Self` 在 channel goroutine 内带 `SelfTimeout`（默认 10s），SaveSettings 不再等 30s 网络；stop/disable 立即 cancel+Close 驱动（DWS runner / stream WS / feishu Close），后台排空旧代际；`Stop()` 由 `main` defer 调用（关闭驱动、注销 sender），幂等；disable/stop 注销 outbox sender 并把来源行改为 `未启用/已停止`；sender 仅在驱动构建成功后注册。`BuildDWS`/`BuildFeishu`/`BuildDingtalk`/`DWSCLI` 为测试注入点。 |
+| P1-8 IM Trigger | fixed | `imTrigger`：`Scope=domain.Global`、ID=`Key(Global, source, "trigger", convID, eventID)`（同一 message id 不同会话不再撞）、`ev.At<=0` 在 `UnixMilli` 前替换为 now、self id 分渠道（`FeishuSelfID`/`DingBotID`，回退旧 `SelfID`）。 |
+| P1-11 错误/游标 | fixed | 游标 namespaced `im.cursor.<channel>.<transport>`（旧 `im.cursor.<channel>` 仅一次性迁移源）；transport 变更清该渠道全部游标变体；失败批不推进游标且指数退避（不再 busy-loop）；health/detail 走 `redactIMDetail`（secret/token/sk- 掩码）；cmd 侧 `permanentAwareSender` 把 DWS 永久错误/未登录映射成 outbox `Gone`（不再无限重试），`context.Canceled` 保持可重试；disabled 渠道的 sender 直接返回 Gone。 |
+| IM enabled 三态 | fixed | `IMConfig.FeishuExplicit/DingExplicit`：settings key 存在即显式（`ParseSettingBool` 规范化后），否则由凭据推导（feishu：app_id+secret+longpoll/ws；dingtalk stream：key+secret+robot；dingtalk dws：profile/listen_kind/chat_query/dws_cmd 等意图证据，**app-key/secret 不启用 DWS**）；显式 "0" 永不被 flags 覆盖；`WithFlags` 每次 Apply 重新叠加（flag-only 凭据不会因一次设置保存丢失）；旧 robot code 无 transport 时默认 stream（兼容旧部署），新安装默认 dws；DWS 设置 `profile/listen_kind/chat_query`（默认 at-me）。 |
+| Feishu ws | fixed | `newFeishuWS` 用 `feishu.New(Config{Transport:"ws"})`（官方 larkws，Receiver 无 cursor，Close 随 Stop），`channelReadiness`/推导接受 `ws`；longpoll 保留显式 fallback 与持久化游标。 |
+| 全量待审批（协调） | 无改动 | engine 对 IM 强制 `DecPropose`；manager 只负责 Receive/kickEval，不建单/不自动回执。cmd 的 e2e 断言改为"入站→pending approval→Approve 建单"。 |
+
+**测试**：新增 `internal/runtime/im2_test.go`（DWS 长驻订阅+CheckChannel 复用 runner、Stop 关闭/注销、disable 注销、并发 Apply 不双启、Start 不等 Self、transport 切换清 cursor、三态/flag 语义、Global/id/At、失败退避、游标命名空间、fake-CLI NDJSON 入站+auth+send、feishu ws readiness）；`im_test.go` 游标键改为 namespaced；`cmd/zeokeel/verify_im_test.go` 改 pending-approval→Approve。
+`CGO_ENABLED=0 go build ./...`、`go vet ./internal/runtime ./cmd/zeokeel`、`go test ./internal/runtime ./cmd/zeokeel -count=1`、`CGO_ENABLED=1 go test -race ./internal/runtime ./cmd/zeokeel` 均通过（全仓 `go test ./... -skip Live` 在本轮快照亦绿）。
+
+**保留的兼容/偏离**：`IMManagerOptions.DWS`（旧 `DWSClient`）仅保留给已注入 fake 的测试；生产用 `DWSCLI`/`newDWSChannel`。`CheckChannel` 的飞书分支仍走 runtime 的 `httpDo` token 探针（测试依赖该 seam），语义等价于 `feishu.CheckCredentials`；后续可切换。DWS 的 `PauseListenOnSend`（真实 CLI profile 互斥时）尚未在 settings 暴露，需要时加 `dingtalk_pause_listen_on_send`。`main.go` 的 `BootstrapIMFlags` 行属 nih-runtime/Lead 迁移接线，conf-arch 未改。

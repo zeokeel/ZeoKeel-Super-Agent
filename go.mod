@@ -9,6 +9,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0
 	github.com/egoist/mygo v0.7.4
 	github.com/eino-contrib/jsonschema v1.0.3
+	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	golang.org/x/sys v0.49.0
@@ -26,6 +27,7 @@ require (
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect

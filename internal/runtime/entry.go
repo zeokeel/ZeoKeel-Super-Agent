@@ -35,17 +35,10 @@ func (r *Runtime) ReceiveTrigger(t domain.Trigger) (engine.Outcome, error) {
 		return out, err
 	}
 	r.setErr("")
-	// Receive now only queues the Eval (fix-engine API §0.1): advance it at once so
-	// a Source's message becomes a Ticket in this pass, not two seconds later.
-	if _, evalErr := r.EvaluateDue(r.clock()); evalErr != nil {
-		return out, evalErr
-	}
-	if out.Ticket != "" && p == nil {
-		// Memory mode: nothing will launch the executor, so the runtime does.
-		// Durable mode leaves it to the launch effect (runtime/durable.go).
-		r.startLocalRun(out.Ticket)
-	}
-	r.Publish()
+	// P1-14: the IM poll loop must not block on the model. Queue one asynchronous
+	// eval pass and return; the pass itself creates Tickets/launch effects. The
+	// panel's Dispatch still evaluates synchronously (it is a command boundary).
+	r.kickEval()
 	return out, nil
 }
 

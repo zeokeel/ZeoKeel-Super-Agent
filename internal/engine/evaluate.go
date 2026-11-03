@@ -392,6 +392,13 @@ func (e *Engine) applyEvalLocked(slot *evalSlot, judged AssessOutput, now time.T
 
 	dec.Reply = e.replyPlanLocked(primary, dec, p)
 
+	// Release policy: an admitted IM message never starts work on its own. It
+	// becomes one pending approval per message, even when the gate called it an
+	// explicit request; Approve is the only path that creates the Ticket.
+	if dec.Kind == domain.DecAccept && isIMSource(primary.Source) && !p.AutoApproveIM {
+		return e.proposeIMLocked(ev, judged, dec, now)
+	}
+
 	switch dec.Kind {
 	case domain.DecAccept:
 		// The same Trigger accepted twice creates one Ticket, even across retries
@@ -420,6 +427,56 @@ func (e *Engine) applyEvalLocked(slot *evalSlot, judged AssessOutput, now time.T
 	out.Workspace = ws
 	out.Reasons = dec.Reasons
 	return dec, out
+}
+
+// proposeIMLocked turns an accepted IM batch into one pending approval per
+// message. It creates no Ticket, launches no worker and sends no reply: the
+// operator's Approve is what authorizes the work. Each message is its own item,
+// so two messages never merge into one approval (release requirement).
+func (e *Engine) proposeIMLocked(ev *domain.Eval, judged AssessOutput, base domain.Decision, now time.Time) (domain.Decision, Outcome) {
+	out := Outcome{Trigger: ev.Primary, Workspace: base.Workspace, Proposal: true,
+		TriggerIDs: append([]domain.ID(nil), ev.TriggerIDs...)}
+	var first domain.Decision
+	found := false
+	for _, id := range ev.TriggerIDs {
+		tr, ok := e.triggers[id]
+		if !ok {
+			continue
+		}
+		dec := domain.Decision{
+			ID:   domain.Key(domain.Global, "decision", ev.ID, string(id)),
+			Kind: domain.DecPropose,
+			Reasons: []domain.Reason{{Code: domain.ReasonIMApproval,
+				Values: map[string]string{"source": tr.Source}}},
+			Workspace:  base.Workspace,
+			Thread:     ev.Thread,
+			EvalID:     ev.ID,
+			TriggerIDs: []domain.ID{id},
+			RulesHit:   append([]domain.RuleHit(nil), judged.Rules...),
+			At:         now,
+		}
+		dec.Proposal = e.proposalLocked(tr, dec)
+		// No automatic outward reply while the work is only a proposal.
+		dec.Reply = domain.ReplyPlan{Route: domain.ReplyNone, Purpose: domain.PurposeAck,
+			Reason: dec.Reasons, AuthorizedBy: "policy:im-approval"}
+		// A single-Trigger Eval view links the Decision to exactly this message.
+		e.recordDecisionLocked(dec, &domain.Eval{ID: ev.ID, Thread: ev.Thread,
+			TriggerIDs: []domain.ID{id}, Primary: id})
+		if !found {
+			first = dec
+			found = true
+		}
+	}
+	if !found {
+		first = domain.Decision{ID: domain.Key(domain.Global, "decision", ev.ID),
+			Kind: domain.DecIgnore, Workspace: base.Workspace, Thread: ev.Thread, At: now}
+	}
+	out.Decision = first
+	out.Reasons = first.Reasons
+	if first.Proposal != nil {
+		out.Question = first.Proposal.Intent
+	}
+	return first, out
 }
 
 // recordDecisionLocked stores a Decision and links it to its Thread and Triggers.

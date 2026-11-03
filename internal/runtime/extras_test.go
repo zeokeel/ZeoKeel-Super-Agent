@@ -230,7 +230,7 @@ func TestWorkerCanAskTheOperatorAQuestion(t *testing.T) {
 	rt.Publish()
 	listed := false
 	for _, row := range rt.snap.Overview().NeedsPerson {
-		if row.ID == number(tk.Number) {
+		if row.ID == string(tk.ID) {
 			listed = true
 		}
 	}

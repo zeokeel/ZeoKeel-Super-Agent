@@ -47,26 +47,14 @@ type Config struct {
 	// IdleDelay 传给长轮询循环，避免没有事件时忙等。
 	IdleDelay time.Duration
 
-	// Transport 选择接收传输：
-	//   ""/"stream" —— 官方 Stream SDK（默认，兼容旧配置）；
-	//   "dws"       —— DWS CLI/网关（规格默认；登录态由 dws 管理）。
+	// Transport 选择接收传输（仅 stream；DWS 是独立的个人身份渠道，见
+	// dingtalk.NewDWS / DWSChannel，不复用这个 bot 驱动）。
+	//   ""/"stream" —— 官方 Stream SDK（默认）。
 	Transport string
 
-	// DWSCommand 是 dws 可执行文件/包装脚本；空用 "dws"。
-	DWSCommand string
-	// DWSClient 允许注入 DWS 客户端替身（测试用）；nil 时用命令行实现。
-	DWSClient DWSClient
-	// NoDWS 关闭 DWS 接收（测试或显式不监听）；此时 Subscribe 诚实报不支持。
-	NoDWS bool
-	// DWSTimeout/DWSPollInterval/DWSPollLimit/DWSBackoff/DWSMaxBackoff 透传给
-	// DWS 传输（规格 §2：30s 超时、2s tick、50 条/批、1s→30s 退避）。
-	DWSTimeout                time.Duration
-	DWSPollInterval           time.Duration
-	DWSPollLimit              int
-	DWSBackoff, DWSMaxBackoff time.Duration
-
-	// SelfID 是机器人自己的 id（@ 判定用）。DWS 模式下由 settings 的
-	// dingtalk_bot_id 提供；Stream 模式可留空，回退到 RobotCode。
+	// SelfID 是本渠道（钉钉 bot）的 id（@ 判定用），来自 settings 的
+	// `source.dingtalk_bot_id`；Stream 模式可留空，回退到本渠道的 RobotCode。
+	// **不要**复用飞书的 feishu_self_id：两个 IM 的身份空间不同（review P1-8）。
 	SelfID string
 
 	// NoStream 关闭 Stream 接收（只用 HTTP 发送/成员）。用于没有出网 WebSocket
@@ -80,13 +68,17 @@ type Config struct {
 }
 
 // 编译期断言：driver 额外实现 im.CursorReceiver，runtime 才能持久化 DWS/飞书游标。
-var _ im.CursorReceiver = (*Driver)(nil)
+var (
+	_ im.CursorReceiver = (*Driver)(nil)
+	_ im.Closer         = (*Driver)(nil)
+)
 
 // Driver 实现 im.Provider/Receiver/Poller/Sender 与 im.HealthReporter。
 type Driver struct {
 	cfg    Config
 	tr     Transport
 	health *im.HealthTracker
+	subs   im.Subscriptions
 
 	mu         sync.Mutex
 	unreadable int
@@ -104,9 +96,11 @@ func New(cfg Config) (*Driver, error) {
 	case "stream":
 		return newStreamDriver(cfg)
 	case "dws":
-		return newDWSDriver(cfg)
+		// DWS 不是这个 bot driver 的一种 transport：它是操作员个人 OAuth
+		// 身份、长驻 NDJSON consumer，生命周期/健康/发送语义都不同。
+		return nil, errors.New("dingtalk: DWS is a personal channel; use dingtalk.NewDWS(DWSConfig) or NewDWSChannel")
 	default:
-		return nil, fmt.Errorf("dingtalk: unknown transport %q (want stream or dws)", cfg.Transport)
+		return nil, fmt.Errorf("dingtalk: unknown transport %q (want stream, or use NewDWS for dws)", cfg.Transport)
 	}
 }
 
@@ -150,46 +144,6 @@ func newStreamDriver(cfg Config) (*Driver, error) {
 	return d, nil
 }
 
-// newDWSDriver 是规格默认路径：DWS CLI 负责登录与收发，HTTP 仅用于可选的
-// 发送回退（本实现发送也走 DWS，因此没有 app key/secret 也能工作）。
-func newDWSDriver(cfg Config) (*Driver, error) {
-	// NoDWS：显式不监听。保留 HTTP 传输只为让"只发不收"的测试/部署仍然能构造
-	// driver；此时 Subscribe 会报 ErrUnsupported，而不是偷偷换成 Stream。
-	if cfg.NoDWS {
-		d := NewWithTransport(cfg, NewHTTPTransport(cfg.BaseURL, cfg.AppKey, cfg.AppSecret, cfg.Client))
-		return d, nil
-	}
-	client := cfg.DWSClient
-	if client == nil {
-		client = NewCommandDWSClient(DWSConfig{
-			Command:      cfg.DWSCommand,
-			Timeout:      cfg.DWSTimeout,
-			PollInterval: cfg.DWSPollInterval,
-			PollLimit:    cfg.DWSPollLimit,
-			Backoff:      cfg.DWSBackoff,
-			MaxBackoff:   cfg.DWSMaxBackoff,
-		})
-	}
-	var httpTr *HTTPTransport
-	if cfg.AppKey != "" || cfg.AppSecret != "" {
-		httpTr = NewHTTPTransport(cfg.BaseURL, cfg.AppKey, cfg.AppSecret, cfg.Client)
-	}
-	tr, err := NewDWSTransport(httpTr, client, DWSConfig{
-		Command:      cfg.DWSCommand,
-		Timeout:      cfg.DWSTimeout,
-		PollInterval: cfg.DWSPollInterval,
-		PollLimit:    cfg.DWSPollLimit,
-		Backoff:      cfg.DWSBackoff,
-		MaxBackoff:   cfg.DWSMaxBackoff,
-	})
-	if err != nil {
-		return nil, err
-	}
-	d := NewWithTransport(cfg, tr)
-	tr.SetStatus(d.setStreamStatus)
-	return d, nil
-}
-
 // setStreamStatus 把 Stream 传输的连接状态写到驱动 health（面板"来源"页读它）。
 func (d *Driver) setStreamStatus(state im.HealthState, detail string) {
 	d.health.Set(im.Health{State: state, Detail: detail, At: d.cfg.Now()})
@@ -226,8 +180,8 @@ func (*Driver) Capabilities() im.Capabilities {
 // Self 返回机器人身份：钉钉机器人的身份就是 robotCode，不需要网络调用
 // （Stream 回调里才有 chatbotUserId，启动时没有消息可读）。
 func (d *Driver) Self(context.Context) (im.Identity, error) {
-	// DWS 的 bot id 与 robot code 不是同一个字段：settings 的 dingtalk_bot_id
-	// 写给 SelfID（@ 判定必需），robot code 只用于 Stream/HTTP 发送。
+	// settings 的 dingtalk_bot_id 写给 SelfID（@ 判定必需）；robot code 只用于
+	// Stream/HTTP 发送。空 id 从本渠道的 RobotCode 回退，绝不借用其他渠道。
 	if d.cfg.SelfID != "" {
 		return im.Identity{ID: d.cfg.SelfID, Name: d.cfg.BotName}, nil
 	}
@@ -367,6 +321,12 @@ func (d *Driver) Subscribe(ctx context.Context, out chan<- im.RawEvent) error {
 // 对 Stream/飞书这类"游标在内存里"的传输，save 只是拿到它们自己编码的游标，
 // 同样可以持久化（重启后从上次位置继续，而不是从头）。
 func (d *Driver) SubscribeFrom(ctx context.Context, cursor string, save func(string) error, out chan<- im.RawEvent) error {
+	subCtx, release, err := d.subs.Track(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	ctx = subCtx
 	if support, ok := d.tr.(StreamSupport); ok && !support.SupportsStream() {
 		d.health.Failed(d.cfg.Now(), "dingtalk receive transport is not configured (NoStream/NoDWS or HTTP-only)")
 		return fmt.Errorf("dingtalk: %w", im.ErrUnsupported)
@@ -376,16 +336,10 @@ func (d *Driver) SubscribeFrom(ctx context.Context, cursor string, save func(str
 	if closer, ok := d.tr.(StreamCloser); ok {
 		defer func() { _ = closer.Close() }()
 	}
-	backoff, maxBackoff := d.cfg.Retry.Base, 30*time.Second
-	if _, dws := d.tr.(*DWSTransport); dws {
-		// DWS 传输自己在 StreamEvents 里做 2s tick 与 1s→30s 失败退避；
-		// 轮询循环的重试间隔放到最小，只保留"连续失败 3 次标红"的职责。
-		backoff, maxBackoff = time.Millisecond, time.Millisecond
-	}
 	return im.SubscribeLongPoll(ctx, d, im.SubscribeOptions{
 		Cursor:     cursor,
-		Backoff:    backoff,
-		MaxBackoff: maxBackoff,
+		Backoff:    d.cfg.Retry.Base,
+		MaxBackoff: 30 * time.Second,
 		IdleDelay:  d.cfg.IdleDelay,
 		Health:     d.health,
 		Now:        d.cfg.Now,
@@ -393,21 +347,14 @@ func (d *Driver) SubscribeFrom(ctx context.Context, cursor string, save func(str
 	}, out)
 }
 
-// AuthStatus 让 runtime 的"检查/授权"按钮问 DWS 登录态；非 DWS 传输返回
-// im.ErrUnsupported（飞书有自己的检查路径）。
-func (d *Driver) AuthStatus(ctx context.Context) (AuthStatus, error) {
-	if tr, ok := d.tr.(*DWSTransport); ok {
-		return tr.AuthStatus(ctx)
+// Close 实现 im.Closer：取消所有在跑的订阅（poll 循环），并关闭传输持有的
+// 子进程/长连接。幂等；runtime 的渠道 Stop 必须调用它（review P1-10）。
+func (d *Driver) Close() error {
+	d.subs.Close()
+	if closer, ok := d.tr.(im.Closer); ok {
+		return closer.Close()
 	}
-	return AuthStatus{}, fmt.Errorf("%w: this transport has no dws login", im.ErrUnsupported)
-}
-
-// DWSHealth 让 runtime 读取渠道级状态（ok/auth/error）与可打开的 authUrl。
-func (d *Driver) DWSHealth(ctx context.Context) (DWSHealth, error) {
-	if tr, ok := d.tr.(*DWSTransport); ok {
-		return tr.DWSHealth(ctx)
-	}
-	return DWSHealth{State: "ok", Detail: "not a dws transport"}, fmt.Errorf("%w: this transport has no dws health", im.ErrUnsupported)
+	return nil
 }
 
 // sendText 是 im.TextSender 路径的发送：纯文本 + 业务幂等键 + 进程内去重。

@@ -122,7 +122,7 @@ func TestConversationOpensItsTicket(t *testing.T) {
 	if a.ticketSel < 0 || a.ticketSel >= len(rows) {
 		t.Fatalf("no row selected (%d of %d)", a.ticketSel, len(rows))
 	}
-	if got := rows[a.ticketSel].ID; got != "42" {
+	if got := rows[a.ticketSel].ID; got != "tk-42" {
 		t.Fatalf("opened ticket %q, want 42", got)
 	}
 	wantTexts(t, tt, "step 7 · 正在补 SessionTimeout 默认值")
@@ -259,10 +259,15 @@ func TestSystemFacts(t *testing.T) {
 }
 
 // The font scale is one token: +2 on the panel's 13, and a theme derived from it.
-func TestFontScaleIsPlusTwo(t *testing.T) {
+func TestFontScaleToken(t *testing.T) {
+	old := viewScale
+	t.Cleanup(func() { viewScale = old })
 	if baseFontSize != 15 {
 		t.Fatalf("base font size %v, want 15 (13+2)", float32(baseFontSize))
 	}
+	// One scale: the theme and every explicit size go through it, and 1 is the
+	// design's own size (this replaced the magic +2 at every number).
+	viewScale = 1
 	for _, dark := range []bool{false, true} {
 		base := mui.LightTheme()
 		if dark {
@@ -272,6 +277,10 @@ func TestFontScaleIsPlusTwo(t *testing.T) {
 		if th.FontSize != float32(baseFontSize) {
 			t.Fatalf("dark=%v: theme font %v, want %v", dark, th.FontSize, float32(baseFontSize))
 		}
+	}
+	viewScale = 1.1
+	if got := fs(10); got < 10.99 || got > 11.01 {
+		t.Fatalf("fs(10) at 1.1 = %v", got)
 	}
 	// A text drawn with an explicit size in the panel is large enough to read:
 	// the smallest text size after the bump is 11.

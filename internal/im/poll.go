@@ -2,6 +2,7 @@ package im
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -89,6 +90,10 @@ func SubscribeLongPoll(ctx context.Context, p Poller, opts SubscribeOptions, out
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
+			}
+			// 已关闭的驱动/传输是终态：继续退避重试只会在关闭后空转。
+			if errors.Is(err, ErrClosed) {
+				return err
 			}
 			failures++
 			if opts.Health != nil {

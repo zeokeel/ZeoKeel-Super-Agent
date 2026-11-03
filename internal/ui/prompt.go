@@ -32,14 +32,14 @@ func (a *App) promptGroup(c *mui.Context, g *view.SettingsGroup) {
 	if vm == nil {
 		mui.Row(c).Padding(9, 12).Radius(8).Background(tk.SurfaceAlt).Gap(8).
 			AlignItems(mui.Start).Children(func() {
-			mui.Icon(c, icClock).FontSize(12).TextColor(tk.TextMuted)
-			mui.Text(c, "等待运行时发布提示词快照…").FontSize(13).Grow(1).TextColor(tk.TextMuted)
+			mui.Icon(c, icClock).FontSize(fs(12)).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布提示词快照…").FontSize(fs(13)).Grow(1).TextColor(tk.TextMuted)
 		})
 		for _, f := range g.Fields {
 			a.settingField(c, g, f)
 		}
 		if !wired {
-			mui.Text(c, "当前运行时不能保存设置：可编辑，但保存写不出去").FontSize(12).
+			mui.Text(c, "当前运行时不能保存设置：可编辑，但保存写不出去").FontSize(fs(12)).
 				TextColor(tk.Amber)
 		}
 		return
@@ -67,7 +67,7 @@ func (a *App) promptGroup(c *mui.Context, g *view.SettingsGroup) {
 	}
 
 	if !wired {
-		mui.Text(c, "当前运行时不能保存设置：可编辑，但保存写不出去").FontSize(12).
+		mui.Text(c, "当前运行时不能保存设置：可编辑，但保存写不出去").FontSize(fs(12)).
 			TextColor(tk.Amber)
 	}
 }
@@ -81,7 +81,7 @@ func (a *App) promptLayer(c *mui.Context, l view.PromptLayer) {
 
 	mui.Column(c).Gap(7).Children(func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, l.Label).FontSize(15).Bold().TextColor(tk.Text)
+			mui.Text(c, l.Label).FontSize(fs(15)).Bold().TextColor(tk.Text)
 			if l.Revision != 0 {
 				chip(c, tk, fmt.Sprintf("rev %d", l.Revision), tk.TextMuted, tk.SurfaceAlt)
 			}
@@ -112,16 +112,16 @@ func (a *App) promptLayer(c *mui.Context, l view.PromptLayer) {
 				}
 			}
 		})
-		mui.Text(c, l.Note).FontSize(13).TextColor(tk.TextMuted)
+		mui.Text(c, l.Note).FontSize(fs(13)).TextColor(tk.TextMuted)
 		switch {
 		case !l.Editable:
 			if l.ReadOnlyNote != "" {
-				mui.Text(c, l.ReadOnlyNote).FontSize(12).TextColor(tk.TextFaint)
+				mui.Text(c, l.ReadOnlyNote).FontSize(fs(12)).TextColor(tk.TextFaint)
 			}
 			a.promptPreview(c, l.Content)
 		case editing:
 			ta := mui.TextArea(c.Key("prompt-edit:"+string(l.ID)), a.promptPtr(l)).
-				Height(190).FontSize(13).Font("monospace").Label(l.Label)
+				Height(190).FontSize(fs(13)).Font("monospace").Label(l.Label)
 			ta.Bind(&a.promptFocus)
 		default:
 			a.promptPreview(c, l.Content)
@@ -136,10 +136,10 @@ func (a *App) promptPreview(c *mui.Context, content string) {
 	mui.Scroll(c).Height(132).Radius(8).Background(tk.CodeBg).Children(func() {
 		mui.Column(c).Padding(9, 12).Children(func() {
 			if content == "" {
-				mui.Text(c, "（空）").FontSize(13).Font("monospace").TextColor(tk.CodeText)
+				mui.Text(c, "（空）").FontSize(fs(13)).Font("monospace").TextColor(tk.CodeText)
 				return
 			}
-			mui.Text(c, content).FontSize(13).Font("monospace").TextColor(tk.CodeText)
+			mui.Text(c, content).FontSize(fs(13)).Font("monospace").TextColor(tk.CodeText)
 		})
 	})
 }
@@ -157,19 +157,27 @@ func (a *App) promptSaveBar(c *mui.Context, vm *view.PromptVM, dirty int) {
 			mui.Row(c).Padding(10, 14).Gap(10).Radius(10).Background(tk.Surface).
 				Border(1, tk.Border).AlignItems(mui.Center).Children(func() {
 				dot(c, tk.Amber, 7)
-				mui.Text(c, fmt.Sprintf("%d 处未保存更改", dirty)).FontSize(14).TextColor(tk.Text)
-				mui.Text(c, "· 保存后写入 "+vm.Source+" 并热更新").FontSize(12).TextColor(tk.TextFaint)
+				mui.Text(c, fmt.Sprintf("%d 处未保存更改", dirty)).FontSize(fs(14)).TextColor(tk.Text)
+				mui.Text(c, "· 保存到 "+vm.Source+" · 热更新：下一次模型调用生效").
+					FontSize(12).TextColor(tk.TextFaint)
 				mui.Spacer(c)
 				if wired && !a.promptConflict {
-					if mui.PrimaryButton(c, "保存").Label("保存").Height(26).Clicked() {
+					label := "保存"
+					if a.savingSettings(view.SettingsPrompt) {
+						label = "保存中…"
+					}
+					btn := mui.PrimaryButton(c, label).Label(label).Height(26)
+					if a.savingSettings(view.SettingsPrompt) {
+						btn.Disabled(true)
+					} else if btn.Clicked() {
 						a.savePrompts(vm)
 					}
 				} else if wired {
-					mui.Text(c, "先重新加载").FontSize(12).TextColor(tk.Amber)
+					mui.Text(c, "先重新加载").FontSize(fs(12)).TextColor(tk.Amber)
 				} else {
 					btn := mui.Row(c).Height(26).Padding(0, 12).Radius(7).
 						Background(tk.SurfaceAlt).AlignItems(mui.Center).Children(func() {
-						mui.Text(c, "保存").FontSize(14).TextColor(tk.TextFaint)
+						mui.Text(c, "保存").FontSize(fs(14)).TextColor(tk.TextFaint)
 					})
 					if btn.Clicked() {
 						a.promptErr = "当前运行时不能保存设置：没有保存通道。"
@@ -178,11 +186,11 @@ func (a *App) promptSaveBar(c *mui.Context, vm *view.PromptVM, dirty int) {
 			})
 		}
 		if !wired && dirty > 0 {
-			mui.Text(c, "当前运行时不能保存设置").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, "当前运行时不能保存设置").FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 		if a.promptConflict {
 			mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
-				mui.Icon(c, icBell).FontSize(12).TextColor(tk.Amber)
+				mui.Icon(c, icBell).FontSize(fs(12)).TextColor(tk.Amber)
 				mui.Text(c, "提示词已被别人改过，重新加载后再改。").
 					FontSize(10).Grow(1).TextColor(tk.Amber)
 				if mui.Button(c, "重新加载").Height(22).Clicked() {
@@ -191,7 +199,7 @@ func (a *App) promptSaveBar(c *mui.Context, vm *view.PromptVM, dirty int) {
 			})
 		}
 		if a.promptErr != "" {
-			mui.Text(c, a.promptErr).FontSize(12).TextColor(tk.Red)
+			mui.Text(c, a.promptErr).FontSize(fs(12)).TextColor(tk.Red)
 		}
 		if a.promptReloaded != 0 {
 			mui.Text(c, fmt.Sprintf("已重新加载（rev %d），本地未保存的改动已丢弃。", a.promptReloaded)).
@@ -289,20 +297,23 @@ func (a *App) savePrompts(vm *view.PromptVM) {
 	}
 	base := vm.Revision
 	values[SettingsRevisionKey] = strconv.FormatUint(base, 10)
-	rev, err := saver.SaveSettings(string(view.SettingsPrompt), values)
-	if err != nil {
-		if a.promptRevisionMoved(vm, rev) {
-			a.promptConflict = true
-			a.promptErr = ""
-		} else {
-			a.promptErr = err.Error()
-		}
-		return
-	}
 	a.promptErr = ""
-	a.promptConflict = false
-	a.promptReloaded = 0
-	_ = rev // the edit stays until the published content matches it
+	a.markSaving(string(view.SettingsPrompt))
+	startSaveSettings(a, string(view.SettingsPrompt), values, func(rev uint64, err error) {
+		a.savingGroup = ""
+		if err != nil {
+			if a.promptRevisionMoved(vm, rev) {
+				a.promptConflict = true
+				a.promptErr = ""
+			} else {
+				a.promptErr = err.Error()
+			}
+			return
+		}
+		a.promptConflict = false
+		a.promptReloaded = 0
+		_ = rev // the edit stays until the published content matches it
+	})
 }
 
 // promptRevisionMoved reports that the configuration changed under the edits.

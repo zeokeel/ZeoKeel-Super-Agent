@@ -381,3 +381,101 @@ $ sh scripts/check-nocgo.sh                                       # PASS
   （迁移草稿见 `audit/nih-integrations.md` F2/F3/F4）。
 - **IM 接线**属 Wave2 fix-runtime；本 scope 只把驱动修到"可接线"。
 - **真实凭据联调**（飞书/钉钉/GitHub 租户）按审计规则未执行；所有测试都是 httptest / fake Command / fake transport。
+
+## Wave 3 更正（权威）：DWS 真实契约 + 飞书官方长连接
+
+> 下面这一节**取代**上文所有 `dws poll --cursor ... --json` / `dws health --json`
+> 的描述。项目事实：DWS 是 `github.com/DingTalk-Real-AI/dingtalk-workspace-cli`
+> （Apache-2.0，Go **CLI**，不是可 import 的客户端库；公开面只有 root 包
+> `EmbeddedSkills`，真实命令在 `internal/`）。因此适配方式是外部进程，不是 JSON poll。
+
+### DWS 真实命令模板（internal/im/dingtalk/dws.go）
+
+```text
+接收（长驻，每渠道一个）：
+  dws event +listen-im --kind at-me|group|all-direct|all-group \
+      [--chat-query <自然语言>] --profile <p> --flatten -f ndjson
+  # 底层 fallback：dws event consume <EventKey> --flatten -f ndjson
+  # stdout：每行一个事件 JSON；stderr 等到 `[event] ready` 才算就绪。
+发送（个人 OAuth 身份，无 --idempotency-key）：
+  dws chat +messages-send --as user --group <conversation_id> --text <正文+marker> --format json
+  dws chat +messages-send --as user --open-dingtalk-id <sender_open_dingtalk_id> --text ...
+  # Markdown：--markdown；底层/Bot：chat message send / chat message send-by-bot
+授权：
+  dws auth status --format json
+  dws auth login            # 浏览器
+  dws auth login --device   # headless
+  # profile：--profile <p>（同一渠道的 status/consume/stop 必须同 profile）
+```
+
+DWS 模式是**操作员个人钉钉 OAuth 身份**，不是 bot/app；AppKey/AppSecret 只属于
+`stream`（官方 Stream SDK）模式。DWS 没有 poll、没有 health 子命令、没有 cursor。
+
+### 导出 API（runtime 唯一接线点）
+
+```go
+// 生产构造：每渠道一个；command 缺省 "dws"。
+func dingtalk.NewDWS(cfg dingtalk.DWSConfig) (*dingtalk.DWSChannel, error)
+func dingtalk.NewDWSChannel(cfg dingtalk.DWSConfig, cli dingtalk.DWSCLI) (*dingtalk.DWSChannel, error)
+
+type dingtalk.DWSConfig struct {
+    Command, Profile, ListenKind, ChatQuery, EventKey, SendAs, RobotCode string
+    Timeout, Backoff, MaxBackoff time.Duration
+    PauseListenOnSend, LoginHeadless bool
+    Secrets []string
+    MarkerMode DWSMarkerMode // html（默认）/zero-width
+    Client DWSCLI            // 测试注入；nil = exec
+}
+
+// *DWSChannel 实现：
+//   im.Provider  Name/Capabilities/Self/Members
+//   im.Receiver  Subscribe(ctx, out)      // 长驻 NDJSON，内部重连 1s→30s、按 event id 去重
+//   im.Sender    Send(ctx, im.Outbound)   // +messages-send；marker；返回 messageId/openTaskId
+//   im.Closer    Close()                  // 幂等，杀 consumer，ctx cancel 立即生效
+// 额外：AuthStatus(ctx) (AuthStatus, error)   // LoggedIn/Account/Profile/AuthURL/LoginCommand
+//       Status() (state, detail)              // starting|ready|auth|error|stopped
+//       SetStatus(fn func(im.HealthState, string)) // 面板 health
+//       NextBatch(ctx, n) ([]DWSMessage, error)    // 兼容 seam
+//       Reset()/Failures()/LastError()/Dropped()/Duplicates()
+```
+
+串行语义：短命令（auth/send）用同一把 `cmdMu` 串行，同一时刻只起一个短命令；
+长驻 consumer 由 CLI 设计常驻（发送时不打断它）。若真实 CLI 在 profile 上有互斥，
+设 `PauseListenOnSend=true`（发送前停 consumer、后重启）。`DWSCLI` 只是
+`Run(ctx,args...)` + `StartStream(ctx,args...)` 两个方法，fake CLI 注入点即为此。
+
+兼容缝（deprecated，仅 runtime 旧占位/测试用）：`DWSClient`、`NewCommandDWSClient`、
+`PollPage`、`DWSHealth` 仍在，但内部已改为懒启动 `DWSChannel`；新代码不要用。
+
+### 飞书官方长连接（internal/im/feishu/ws.go）
+
+- 依赖：`github.com/larksuite/oapi-sdk-go/v3 v3.12.2`（Lead 批准；CGO=0，
+  传递依赖 `gogo/protobuf v1.3.2`，gorilla/websocket 已有）。
+- 用法：`larkws.NewClient(appID, appSecret, larkws.WithEventHandler(dispatcher))` +
+  `dispatcher.OnP2MessageReceiveV1(handler)` + `client.Start(ctx)`；ctx 取消即优雅停
+  （SDK 自带重连）。
+- `feishu.Config.Transport`：`""`/`"longpoll"`（HTTP 长轮询，显式 fallback，保留游标）；
+  `"ws"`（推荐，无 cursor，按 message_id 去重）。`feishu.TransportModes()` =
+  `["longpoll","ws"]`，`SupportsTransport` 只认这两个；webhook 未实现不发布。
+- 转换规则：`P2MessageReceiveV1` → `im.RawEvent`（sender/conversation/text/mentions/
+  at/message id）；忽略 bot 与自己；群聊 p2p/group 由 `chat_type` 决定。
+- `feishu.CheckCredentials(ctx, Config)` 保留给 runtime CheckChannel（真实
+  tenant_access_token 请求，401/403 归一为授权问题）。
+- 测试注入：`Config.WSConnectorFactory`（fake 不碰网络）；生产 nil 用官方 SDK。
+
+### 跨 scope 契约（runtime/outbox）
+
+- runtime：`feishu_transport` 选项只从 `feishu.TransportModes()` 取；DWS 用
+  `NewDWS` 构造，配置读 `dingtalk_dws_cmd/profile/listen_kind/chat_query`，**不要**把
+  app-key/secret 传给 DWS；DWS 无 cursor、无 poll，`Stop` 调 `Close()`；
+  `CheckChannel` 调 `AuthStatus`，health 用 `Status()`/`SetStatus`。
+- outbox：DWS send 没有幂等键，去重靠正文尾部 marker（html/zero-width 两种形态，
+  `MarkerFor/HasMarker/StripMarker` 可审计）；错误用 `IsPermanent/IsAuthRequired/
+  IsRetryable/RetryAfter` 分类，4xx/未登录不无限重试，5xx/限流/取消可重试；
+  回执 id 取 `messageId`/`message_id`/`openTaskId`。
+
+验证：`CGO_ENABLED=0 go test ./internal/im/... -count=1` 全绿；`-race` 全绿；
+`go build ./...` clean；`scripts/check-nocgo.sh` PASS；DWS 用 POSIX fake `dws`
+脚本测 NDJSON/发送模板/超时/取消/缺失命令，Feishu 用 fake `WSConnector` 测
+转换/去重/bot-self 过滤/停止。
+

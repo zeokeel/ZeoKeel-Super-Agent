@@ -16,13 +16,14 @@ func (a *App) overview(c *mui.Context, ov *view.OverviewVM) {
 	tk := a.tk
 	if ov == nil {
 		mui.Column(c).Fill().Padding(32).Children(func() {
-			mui.Text(c, "等待运行时发布快照…").FontSize(15).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布快照…").FontSize(fs(15)).TextColor(tk.TextMuted)
 		})
 		return
 	}
 
 	mui.Column(c).Fill().Padding(24).Gap(16).Children(func() {
 		heading(c, tk, "总览", fmt.Sprintf("需要你关注的只有 %d 件事，其余都在后台运行", ov.PersonCount()))
+		a.chatPanel(c)
 		a.approvals(c, ov)
 		a.needsPerson(c, ov)
 		a.goalsStrip(c)
@@ -54,11 +55,11 @@ func (a *App) approvals(c *mui.Context, ov *view.OverviewVM) {
 	}
 	card(c, tk, 0, func() {
 		mui.Row(c).Padding(14, 16).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Icon(c, icBell).FontSize(15).TextColor(tk.Amber)
-			mui.Text(c, "待你批准").FontSize(17).Bold().TextColor(tk.Text)
+			mui.Icon(c, icBell).FontSize(fs(15)).TextColor(tk.Amber)
+			mui.Text(c, "待你批准").FontSize(fs(17)).Bold().TextColor(tk.Text)
 			chip(c, tk, fmt.Sprint(len(ov.Approvals)), tk.Amber, tk.AmberSoft)
 			mui.Spacer(c)
-			mui.Text(c, "批准后才会开工").FontSize(13).TextColor(tk.TextFaint)
+			mui.Text(c, "批准后才会开工").FontSize(fs(13)).TextColor(tk.TextFaint)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		for i, ap := range ov.Approvals {
@@ -75,19 +76,19 @@ func (a *App) approvalRow(c *mui.Context, ap view.ApprovalRow) {
 	tk := a.tk
 	mui.Row(c).Padding(14, 16).Gap(12).AlignItems(mui.Start).Children(func() {
 		mui.Row(c).Size(28, 28).Radius(8).Background(tk.AmberSoft).Center().
-			Children(func() { mui.Icon(c, icBell).FontSize(14).TextColor(tk.Amber) })
+			Children(func() { mui.Icon(c, icBell).FontSize(fs(14)).TextColor(tk.Amber) })
 		mui.Column(c).Grow(1).Gap(3).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, ap.From+" 找你").FontSize(15).TextColor(tk.Text)
+				mui.Text(c, ap.From+" 找你").FontSize(fs(15)).TextColor(tk.Text)
 				textChip(c, tk, ap.Source)
 				textChip(c, tk, ap.Workspace)
 			})
-			mui.Text(c, "他说："+ap.Said).FontSize(14).SingleLine().TextColor(tk.TextMuted)
-			mui.Text(c, "要做："+ap.Intent).FontSize(14).SingleLine().TextColor(tk.Text)
+			mui.Text(c, "他说："+ap.Said).FontSize(fs(14)).SingleLine().TextColor(tk.TextMuted)
+			mui.Text(c, "要做："+ap.Intent).FontSize(fs(14)).SingleLine().TextColor(tk.Text)
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "产出："+ap.Deliverable).FontSize(13).TextColor(tk.TextFaint)
+				mui.Text(c, "产出："+ap.Deliverable).FontSize(fs(13)).TextColor(tk.TextFaint)
 				for _, s := range ap.Sensitive {
-					mui.Text(c, "⚠ "+s).FontSize(13).TextColor(tk.Red)
+					mui.Text(c, "⚠ "+s).FontSize(fs(13)).TextColor(tk.Red)
 				}
 			})
 		})
@@ -100,7 +101,7 @@ func (a *App) approvalRow(c *mui.Context, ap view.ApprovalRow) {
 					a.reject(ap.DecisionID)
 				}
 			})
-			mui.Text(c, humanfmt.Ago(ap.Age)).FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, humanfmt.Ago(ap.Age)).FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 	})
 }
@@ -109,21 +110,21 @@ func (a *App) needsPerson(c *mui.Context, ov *view.OverviewVM) {
 	tk := a.tk
 	card(c, tk, 0, func() {
 		mui.Row(c).Padding(14, 16).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "需要我处理").FontSize(17).Bold().TextColor(tk.Text)
+			mui.Text(c, "需要我处理").FontSize(fs(17)).Bold().TextColor(tk.Text)
 			chip(c, tk, fmt.Sprint(len(ov.NeedsPerson)), tk.Amber, tk.AmberSoft)
 			mui.Spacer(c)
-			mui.Text(c, "按等待时长排序").FontSize(13).TextColor(tk.TextFaint)
+			mui.Text(c, "按等待时长排序").FontSize(fs(13)).TextColor(tk.TextFaint)
 		})
 		// An action's outcome is reported even when no row is left: the band is
 		// where the action was offered, so it is where its error belongs.
 		if a.actionErr != "" {
 			mui.Row(c).Padding(0, 16).Children(func() {
-				mui.Text(c, a.actionErr).FontSize(12).TextColor(tk.Red)
+				mui.Text(c, a.actionErr).FontSize(fs(12)).TextColor(tk.Red)
 			})
 		}
 		if len(ov.NeedsPerson) == 0 {
 			mui.Row(c).Padding(16, 16).Children(func() {
-				mui.Text(c, "没有需要你处理的事。").FontSize(15).TextColor(tk.TextMuted)
+				mui.Text(c, "没有需要你处理的事。").FontSize(fs(15)).TextColor(tk.TextMuted)
 			})
 			return
 		}
@@ -131,7 +132,7 @@ func (a *App) needsPerson(c *mui.Context, ov *view.OverviewVM) {
 		// and this line names the interface the runtime is missing.
 		if note := a.missingActionsNote(ov.NeedsPerson); note != "" {
 			mui.Row(c).Padding(0, 16).Children(func() {
-				mui.Text(c, note).FontSize(12).TextColor(tk.Amber)
+				mui.Text(c, note).FontSize(fs(12)).TextColor(tk.Amber)
 			})
 		}
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
@@ -154,19 +155,19 @@ func (a *App) personRow(c *mui.Context, r view.TicketRow, actions bool) {
 		mui.Row(c).Grow(1).OnClick(func() { a.openTicket(r.ID) }).Children(func() {
 			mui.Column(c).Grow(1).Gap(2).Children(func() {
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, fmt.Sprintf("#%s  %s", r.ID, r.Title)).FontSize(15).
+					mui.Text(c, fmt.Sprintf("%s  %s", view.TicketLabel(r.ID, r.Number), r.Title)).FontSize(fs(15)).
 						SingleLine().TextColor(tk.Text)
 					textChip(c, tk, r.Workspace)
 				})
-				mui.Text(c, r.Detail).FontSize(13).SingleLine().TextColor(tk.TextMuted)
+				mui.Text(c, r.Detail).FontSize(fs(13)).SingleLine().TextColor(tk.TextMuted)
 			})
 		})
 		chip(c, tk, r.Stage, toneFg(tk, r.Tone), toneBg(tk, r.Tone))
-		mui.Text(c, humanfmt.Age(r.Age)).FontSize(13).TextColor(tk.TextFaint)
+		mui.Text(c, humanfmt.Age(r.Age)).FontSize(fs(13)).TextColor(tk.TextFaint)
 		if actions {
 			a.overviewActions(c, r)
 		}
-		mui.Icon(c, icChevR).FontSize(14).TextColor(tk.TextFaint)
+		mui.Icon(c, icChevR).FontSize(fs(14)).TextColor(tk.TextFaint)
 	})
 }
 
@@ -177,10 +178,10 @@ func (a *App) recent(c *mui.Context, ov *view.OverviewVM) {
 	}
 	card(c, tk, 0, func() {
 		mui.Row(c).Padding(14, 16).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "我派的任务").FontSize(17).Bold().TextColor(tk.Text)
+			mui.Text(c, "我派的任务").FontSize(fs(17)).Bold().TextColor(tk.Text)
 			chip(c, tk, fmt.Sprint(len(ov.Recent)), tk.TextMuted, tk.SurfaceAlt)
 			mui.Spacer(c)
-			mui.Text(c, "按最近活动排序").FontSize(13).TextColor(tk.TextFaint)
+			mui.Text(c, "按最近活动排序").FontSize(fs(13)).TextColor(tk.TextFaint)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		for i, row := range ov.Recent {
@@ -210,7 +211,7 @@ func (a *App) health(c *mui.Context, ov *view.OverviewVM) {
 	bad := healthProblems(ov)
 	cardG(c, tk, 16, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "系统健康").FontSize(16).Bold().TextColor(tk.Text)
+			mui.Text(c, "系统健康").FontSize(fs(16)).Bold().TextColor(tk.Text)
 			if bad > 0 {
 				chip(c, tk, fmt.Sprintf("%d 项待处理", bad), tk.Amber, tk.AmberSoft)
 			}
@@ -218,9 +219,9 @@ func (a *App) health(c *mui.Context, ov *view.OverviewVM) {
 		for _, h := range ov.Health {
 			mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 				dot(c, ifColor(h.OK, tk.Green, tk.Amber), 7)
-				mui.Text(c, h.Name).FontSize(14).TextColor(tk.Text)
+				mui.Text(c, h.Name).FontSize(fs(14)).TextColor(tk.Text)
 				mui.Spacer(c)
-				mui.Text(c, h.Detail).FontSize(13).TextColor(tk.TextMuted)
+				mui.Text(c, h.Detail).FontSize(fs(13)).TextColor(tk.TextMuted)
 			})
 		}
 	})
@@ -230,9 +231,9 @@ func (a *App) activity(c *mui.Context, ov *view.OverviewVM) {
 	tk := a.tk
 	cardG(c, tk, 16, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "过去 24 小时").FontSize(16).Bold().TextColor(tk.Text)
+			mui.Text(c, "过去 24 小时").FontSize(fs(16)).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, fmt.Sprintf("%d Triggers", ov.Counts.Triggers)).FontSize(13).
+			mui.Text(c, fmt.Sprintf("%d Triggers", ov.Counts.Triggers)).FontSize(fs(13)).
 				TextColor(tk.TextFaint)
 		})
 		// A bar per hour; the tallest bar sets the scale so a quiet day still reads.
@@ -264,7 +265,7 @@ func (a *App) runtime(c *mui.Context, ov *view.OverviewVM) {
 	tk := a.tk
 	card(c, tk, 16, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "运行时").FontSize(16).Bold().TextColor(tk.Text)
+			mui.Text(c, "运行时").FontSize(fs(16)).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
 			// The runtime card says what the health rows say: it used to read
 			// "正常" while a source's token had expired (design §6.5).
@@ -275,8 +276,8 @@ func (a *App) runtime(c *mui.Context, ov *view.OverviewVM) {
 			}
 		})
 		mui.Row(c).Gap(6).AlignItems(mui.Baseline).Children(func() {
-			mui.Text(c, fmt.Sprint(ov.Runtime.Running)).FontSize(28).Bold().TextColor(tk.Text)
-			mui.Text(c, fmt.Sprintf("/ %d executor 忙", ov.Runtime.MaxJobs)).FontSize(14).
+			mui.Text(c, fmt.Sprint(ov.Runtime.Running)).FontSize(fs(28)).Bold().TextColor(tk.Text)
+			mui.Text(c, fmt.Sprintf("/ %d executor 忙", ov.Runtime.MaxJobs)).FontSize(fs(14)).
 				TextColor(tk.TextMuted)
 		})
 		mui.Row(c).Height(6).Radius(3).Background(tk.SurfaceAlt).Children(func() {
@@ -306,23 +307,23 @@ func (a *App) artifacts(c *mui.Context, ov *view.OverviewVM) {
 	tk := a.tk
 	card(c, tk, 16, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "最近交付物").FontSize(16).Bold().TextColor(tk.Text)
+			mui.Text(c, "最近交付物").FontSize(fs(16)).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, "全部").FontSize(13).TextColor(tk.Accent).
+			mui.Text(c, "全部").FontSize(fs(13)).TextColor(tk.Accent).
 				OnClick(func() { a.artifactsOpen = true })
 		})
 		if len(ov.Artifacts) == 0 {
-			mui.Text(c, "还没有交付物。工单产出后会出现在这里。").FontSize(13).
+			mui.Text(c, "还没有交付物。工单产出后会出现在这里。").FontSize(fs(13)).
 				TextColor(tk.TextFaint)
 		}
 		for _, art := range ov.Artifacts {
 			mui.Row(c).Padding(6, 0).Gap(10).AlignItems(mui.Center).Children(func() {
 				iconForArtifact(c, tk, art.Kind)
 				mui.Column(c).Grow(1).Gap(1).Children(func() {
-					mui.Text(c, art.Title).FontSize(14).TextColor(tk.Text)
-					mui.Text(c, art.Detail).FontSize(13).TextColor(tk.TextFaint)
+					mui.Text(c, art.Title).FontSize(fs(14)).TextColor(tk.Text)
+					mui.Text(c, art.Detail).FontSize(fs(13)).TextColor(tk.TextFaint)
 				})
-				mui.Icon(c, icChevR).FontSize(13).TextColor(tk.TextFaint)
+				mui.Icon(c, icChevR).FontSize(fs(13)).TextColor(tk.TextFaint)
 			})
 		}
 	})
@@ -331,7 +332,7 @@ func (a *App) artifacts(c *mui.Context, ov *view.OverviewVM) {
 func (a *App) storage(c *mui.Context, ov *view.OverviewVM) {
 	tk := a.tk
 	card(c, tk, 16, func() {
-		mui.Text(c, "存储与保留").FontSize(16).Bold().TextColor(tk.Text)
+		mui.Text(c, "存储与保留").FontSize(fs(16)).Bold().TextColor(tk.Text)
 		kv(c, tk, "SQLite", ov.Storage.DB)
 		events := "—"
 		if ov.Storage.Events >= 0 {
@@ -344,16 +345,16 @@ func (a *App) storage(c *mui.Context, ov *view.OverviewVM) {
 
 func kv(c *mui.Context, tk Tokens, k, v string) {
 	mui.Row(c).Gap(8).Children(func() {
-		mui.Text(c, k).FontSize(14).TextColor(tk.TextMuted)
+		mui.Text(c, k).FontSize(fs(14)).TextColor(tk.TextMuted)
 		mui.Spacer(c)
-		mui.Text(c, v).FontSize(14).TextColor(tk.Text)
+		mui.Text(c, v).FontSize(fs(14)).TextColor(tk.Text)
 	})
 }
 
 func stat(c *mui.Context, tk Tokens, label string, n int) {
 	mui.Column(c).Gap(1).Children(func() {
-		mui.Text(c, fmt.Sprint(n)).FontSize(20).Bold().TextColor(tk.Text)
-		mui.Text(c, label).FontSize(13).TextColor(tk.TextFaint)
+		mui.Text(c, fmt.Sprint(n)).FontSize(fs(20)).Bold().TextColor(tk.Text)
+		mui.Text(c, label).FontSize(fs(13)).TextColor(tk.TextFaint)
 	})
 }
 
@@ -369,7 +370,7 @@ func iconForArtifact(c *mui.Context, tk Tokens, kind string) {
 		icon, fg, bg = icFile, tk.Violet, tk.VioletSoft
 	}
 	mui.Row(c).Size(28, 28).Radius(7).Background(bg).Center().Children(func() {
-		mui.Icon(c, icon).FontSize(14).TextColor(fg)
+		mui.Icon(c, icon).FontSize(fs(14)).TextColor(fg)
 	})
 }
 

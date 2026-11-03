@@ -73,6 +73,17 @@ type Runtime struct {
 	// im is the IM channel manager attached at boot (nil when no IM is wired).
 	im       *IMManager
 	jobWatch map[string]bool
+	// evalKick coalesces asynchronous eval passes requested by Source entry points
+	// (ReceiveTrigger). One goroutine drains it, so a burst of IM messages costs
+	// one pass, not one goroutine each (P1-14).
+	evalKick chan struct{}
+	evalStop chan struct{}
+	// commandMu serializes the UI command boundary: the panel calls Dispatch,
+	// NewConversation, CreateWorkspace and SaveSettings from goroutines, and the
+	// runtime must never run two of them at once (P0-2).
+	commandMu sync.Mutex
+	// chat is the bounded Super-Agent conversation (P0-7).
+	chat []view.ChatMessage
 	// bgKilled marks jobs the timeout rule killed, so their late Wait result can
 	// never wake the session. bgLimit overrides the 30m setting (tests).
 	bgKilled map[string]bool
@@ -98,7 +109,44 @@ type Runtime struct {
 
 // New returns a runtime that publishes into snap.
 func New(eng *engine.Engine, snap *view.Snapshot) *Runtime {
-	return &Runtime{eng: eng, snap: snap, clock: time.Now}
+	r := &Runtime{eng: eng, snap: snap, clock: time.Now,
+		evalKick: make(chan struct{}, 1)}
+	go r.evalLoop()
+	return r
+}
+
+// kickEval requests one asynchronous eval pass. It never blocks: a pending request
+// already covers this one.
+func (r *Runtime) kickEval() {
+	select {
+	case r.evalKick <- struct{}{}:
+	default:
+	}
+}
+
+// evalLoop drains eval requests. A failure is logged, never fatal: the periodic
+// pass in the app retries.
+func (r *Runtime) evalLoop() {
+	for range r.evalKick {
+		if _, err := r.EvaluateDue(r.clock()); err != nil {
+			r.slogger().Warn("asynchronous eval pass failed", "error", err)
+			continue
+		}
+		if !r.durable() {
+			for _, t := range r.eng.AllTickets() {
+				if t.Ended == nil && t.LastAssignment().State == domain.AssignPending {
+					r.startLocalRun(t.ID)
+				}
+			}
+		}
+	}
+}
+
+// durable reports whether the runtime has a persistence layer attached.
+func (r *Runtime) durable() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.persist != nil
 }
 
 // SetLogger attaches the process logger. cmd owns the file handler; the runtime
@@ -196,16 +244,18 @@ func (r *Runtime) Publish() {
 		st := domain.StageOf(&t, now)
 		if isPersonStage(st) {
 			row := view.TicketRow{
-				ID:         number(t.Number),
-				Title:      t.Title,
-				Workspace:  string(t.Workspace),
-				SourceIcon: "local",
-				Stage:      waitingLabel(st),
-				StageID:    string(st),
-				Detail:     waitingFor(st, &t),
-				CanRetry:   t.CanRetry(),
-				Tone:       toneOf(st),
-				Age:        now.Sub(t.CreatedAt),
+				ID:          string(t.ID),
+				Number:      t.Number,
+				Title:       t.Title,
+				Workspace:   string(t.Workspace),
+				WorkspaceID: string(t.Workspace),
+				SourceIcon:  "local",
+				Stage:       waitingLabel(st),
+				StageID:     string(st),
+				Detail:      waitingFor(st, &t),
+				CanRetry:    t.CanRetry(),
+				Tone:        toneOf(st),
+				Age:         now.Sub(t.CreatedAt),
 			}
 			if t.Attention != nil {
 				row.Attention = &view.TicketAttention{
@@ -222,14 +272,16 @@ func (r *Runtime) Publish() {
 		}
 		if len(ov.Recent) < 4 {
 			ov.Recent = append(ov.Recent, view.TicketRow{
-				ID:         number(t.Number),
-				Title:      t.Title,
-				Workspace:  string(t.Workspace),
-				SourceIcon: "local",
-				Stage:      stageWord(st),
-				Detail:     "由你派发 · " + string(t.Workspace),
-				Tone:       toneOf(st),
-				Age:        now.Sub(t.CreatedAt),
+				ID:          string(t.ID),
+				Number:      t.Number,
+				Title:       t.Title,
+				Workspace:   string(t.Workspace),
+				WorkspaceID: string(t.Workspace),
+				SourceIcon:  "local",
+				Stage:       stageWord(st),
+				Detail:      "由你派发 · " + string(t.Workspace),
+				Tone:        toneOf(st),
+				Age:         now.Sub(t.CreatedAt),
 			})
 		}
 	}
@@ -249,6 +301,7 @@ func (r *Runtime) Publish() {
 	r.snap.PublishDecisions(r.decisionsVM(now))
 	r.snap.PublishTickets(r.ticketsVM(now))
 	r.snap.PublishWorkspaces(r.workspacesVM(now, all))
+	r.snap.PublishChat(r.chatVM())
 	r.snap.PublishSettings(r.settingsVM(now))
 	r.snap.PublishPrompts(r.promptsVM())
 	r.snap.PublishOnboarding(r.onboardingVM())
@@ -363,6 +416,9 @@ func (r *Runtime) healthItems(ws []domain.Workspace, running, maxJobs int, now t
 	}
 	items = append(items, exec)
 	items = append(items, r.modelHealth()...)
+	if n := len(r.eng.Proposals()); n > 0 {
+		items = append(items, view.HealthItem{Name: "待审批", Detail: fmt.Sprintf("%d 条 IM/批准待办", n), OK: true})
+	}
 	items = append(items, r.sourceHealth()...)
 	for _, e := range r.healthEntries(now) {
 		if e.State == "error" {
@@ -436,6 +492,10 @@ func (r *Runtime) stream() *view.StreamVM {
 		// the stream never shows "未受理" next to a Ticket that exists.
 		itemTicket := ticketFor(item, tickets)
 		th := view.Thread{ID: string(t.ID), Head: inboundLine(t)}
+		th.Workspace = string(t.DefaultWorkspace)
+		if itemTicket != nil {
+			th.Workspace = string(itemTicket.Workspace)
+		}
 		st := domain.Stage(reportStage(itemTicket, now))
 
 		// What the agent did with it.
@@ -750,6 +810,8 @@ func reasonText(code string) string {
 // Dispatch submits a line the operator typed. Where it goes is the Router's job,
 // so no workspace is passed: deciding that is the whole reason the agent exists.
 func (r *Runtime) Dispatch(text string) error {
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
 	r.mu.Lock()
 	p := r.persist
 	r.mu.Unlock()
@@ -772,37 +834,39 @@ func (r *Runtime) Dispatch(text string) error {
 	// The Ticket is created by EvaluateDue in the two-phase Eval, not by the
 	// Receive that Dispatch returned; read the fresh outcome.
 	out = mergeEvalOutcome(out, outs)
-	if q := questionFrom(outs); q != "" {
-		err = fmt.Errorf("%s", q)
-		r.setErr(err.Error())
-		r.Publish()
-		return err
-	}
-	if out.NeedsPerson {
-		err = fmt.Errorf("%s", out.Question)
-		r.setErr(err.Error())
-		r.Publish()
-		return err
-	}
-	if out.Ticket == "" {
-		if out.Proposal {
-			// A proposal is a real outcome: it waits in the panel for approval.
-			r.setErr("")
-			r.Publish()
-			return nil
+	r.appendChat(view.ChatUser, view.ChatNote, text)
+
+	// P0-7: every message gets an answer in the chat. A dispatched Ticket or a
+	// pending approval is an outcome, not a failure; only a chat answer that
+	// genuinely failed comes back as an error.
+	question := questionFrom(outs)
+	switch {
+	case out.Ticket != "":
+		r.appendChat(view.ChatSystem, view.ChatOutcome,
+			fmt.Sprintf("已派发 #%d", ticketNumber(r.eng, out.Ticket)))
+	case out.Proposal:
+		r.appendChat(view.ChatSystem, view.ChatOutcome, "需要你确认：这条请求要等你批准后才会开始。")
+	case out.NeedsPerson || question != "":
+		q := out.Question
+		if q == "" {
+			q = question
 		}
-		// No Ticket and no proposal: the composer must say what happened and what
-		// to do, not leave the person staring at "未受理" (ui2-spec §4).
-		msg := r.noDispatchMessage(text)
-		r.setErr(msg)
-		r.Publish()
-		return fmt.Errorf("%s", msg)
+		r.appendChat(view.ChatSystem, view.ChatOutcome, "需要你确认："+q)
+	default:
+		answer := r.answerChat(text)
+		r.appendChat(view.ChatAssistant, view.ChatAnswer, answer)
 	}
 	r.setErr("")
-	// The Ticket exists; EvaluateDue already started it in memory mode (and queued
-	// a launch effect in durable mode), so Dispatch only publishes.
 	r.Publish()
 	return nil
+}
+
+// ticketNumber is the "#42" part for a Ticket id, 0 when it is unknown.
+func ticketNumber(eng *engine.Engine, id domain.ID) int {
+	if t, ok := eng.TicketSnapshot(id); ok {
+		return t.Number
+	}
+	return 0
 }
 
 // mergeEvalOutcome folds the EvaluateDue outcomes (where two-phase work actually

@@ -71,21 +71,30 @@ func verifyIMInbound(t *testing.T, drv im.Provider, tr *im.Transport, actor, con
 		Mentions: []string{"bot-self"},
 	}
 	tr.Push(ev)
+	// IM inbound is a PENDING APPROVAL: the Trigger reaches the engine and an
+	// approval decision appears; nothing runs until a person approves it.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, _, tickets := eng.Counts(); tickets > 0 {
-			// The source row must say it is listening and receiving.
+		if _, decisions, _ := eng.Counts(); decisions > 0 {
 			for _, row := range rt.SourceRows(time.Now()) {
 				if row.Enabled && row.LastPoll.Outcome == view.PollOK {
-					return
+					// Approving the pending request creates and launches the Ticket.
+					for _, d := range eng.Proposals() {
+						if err := rt.Approve(string(d.ID)); err != nil {
+							t.Fatalf("approve pending IM request: %v", err)
+						}
+						if _, _, tickets := eng.Counts(); tickets > 0 {
+							return
+						}
+					}
 				}
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	triggers, decisions, tickets := eng.Counts()
-	t.Fatalf("inbound IM event did not become a ready Ticket: triggers=%d decisions=%d tickets=%d sources=%+v",
-		triggers, decisions, tickets, rt.SourceRows(time.Now()))
+	t.Fatalf("inbound IM event did not become a pending approval/Ticket: triggers=%d decisions=%d tickets=%d proposals=%d sources=%+v",
+		triggers, decisions, tickets, len(eng.Proposals()), rt.SourceRows(time.Now()))
 }
 
 func TestVerifyFeishuLongPollInboundBecomesTicket(t *testing.T) {

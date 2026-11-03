@@ -21,9 +21,9 @@ func (e *Engine) Receive(t domain.Trigger) (Outcome, error) {
 	if _, ok := e.triggers[t.ID]; ok {
 		return Outcome{}, ErrDuplicate
 	}
-	if t.At.IsZero() {
-		t.At = e.clock()
-	}
+	// A driver that could not read the event time leaves At zero (or stamps it at
+	// the epoch); a bad clock must not sort the message before every real event.
+	t.EnsureAt(e.clock())
 	tr := t
 	e.triggers[t.ID] = &tr
 	out := Outcome{Trigger: t.ID}

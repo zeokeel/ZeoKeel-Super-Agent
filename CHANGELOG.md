@@ -5,12 +5,12 @@
 
 ## [1.0.0-rc.1] — 发布候选（2026-11-03，Wave 2 后）
 
-**候选版不等于功能完成。** Wave 2 把审计中的领域/引擎/运行时/运维大部分缺口做完了；机械闸门
-（build/vet/zero-cgo/package/release-check 文档产物）在 2026-11-03 最终冻结树木实测通过：
-非 race 全量 `go test ./... -skip Live` 连续 2 次全绿，全量 `-race` 全绿。仍未完成的是产品面：
-**打包只有 tar/zip（无 .dmg/deb/安装器）**、**系统钥匙串未做（API Key 明文 SQLite 0600）**、
-**设置页规则/admission/Source 实例不可编辑**、**飞书只有 HTTP 长轮询（无 WS）且无媒体下载**、`steer/inject` 未做；
-Round 2/3 已补侧栏/工作区/IM 渠道管理/内置工具（见下），但打包与钥匙串仍未做。
+**候选版不等于功能完成。** Wave 2 + 2026-11-04 修复波把领域/引擎/运行时/UI/IM/工具的主要缺口做完了：
+IM 改为审批优先、飞书接入官方长连接、钉钉 DWS 按真实 CLI 契约重写、UI 命令异步化、超级Agent 聊天+派活、
+Ticket/工作区身份与设置/secret 收口。全量机械闸门由 Lead 在合并前统一跑（本文不预称全绿）。
+仍未完成的是产品面：**打包只有 tar/zip（无 .dmg/deb/安装器）**、**系统钥匙串未做（API Key 明文 SQLite 0600）**、
+**设置页规则/admission/Source 实例不可编辑**、**飞书 webhook/IM 媒体下载**、`steer/inject` 未做；
+Round 2/3 已补侧栏/工作区/IM 渠道管理/内置工具，2026-11-04 修复波补上 IM 审批优先、飞书 WS、DWS 真实契约、异步命令边界、聊天双态、身份/迁移/secret/工具安全；打包与钥匙串仍未做。
 `VERSION` 是否升 1.0.0 由发布负责人按 RELEASE.md F 组决定。
 
 机械闸门只有一条命令，本地与 CI 完全相同：
@@ -46,41 +46,48 @@ sh scripts/release-check.sh   # 版本/产物/文档 + 上面的闸门
 - 面板：待办行内动作（批准/拒绝/回答/重试/停止）、暂停恢复、Ticket 详情（Mandate/Inputs/Assignments/Follows/Artifacts/Delivery/Attention）、
   名词表（⌘/）、数量诚实化（Running/MaxJobs/Today/Queued/24h 活动由 runtime 真实投影）、深浅色跟随系统。
 - 提示词：扩展为 6 层（Router/Worker/规则说明 + 团队三段 communication/scope/delivery），保存时校验未知变量/必须保留的占位符/超长拒绝、与默认相同则清除覆盖；`internal/runtime/prompts.go` 另有 base-hash/“Default updated”/最近 20 版历史的实现，保存路径已调用 `recordPromptMeta`（`pages.go:557`）。
-- IM：飞书/钉钉**已接线**（`-feishu-*`/`-dingtalk-*` flag 或设置›来源 8 个字段；钉钉走官方 Stream SDK 长连接，
-  飞书走 HTTP 长轮询（无 WS）、均不下载媒体；未配置=不监听）；
-  Outbox 在无驱动时不再返回假 `sent`，而是返回错误让投递问题可见（sender.go）。
+- IM：飞书/钉钉**已接线**（flag 或设置›来源可配）；2026-11-04 修复波改为**审批优先**、飞书官方长连接（longpoll fallback）、
+  钉钉 DWS 真实契约（Stream 为 bot 模式可选）；均不下载媒体，未启用=不监听；Outbox 无驱动时返回错误而非假 `sent`。
 - 运维：`status/check/setup/login/backup/archive/stop`、`-headless` 真服务、slog JSON 日志按天轮转 14 天、
   进程内 supervisor（60s、health 表、卡住 Assignment）、state dir 单实例锁（早于恢复）、systemd/launchd 样例、
   `scripts/watchdog-check.sh`（006 小时巡检语义；`stop` 写 `STOPPED` 标记）、schema v3（v3 表折入有序迁移）。
 - 提示词热更新：研判提示每次 Eval 重读设置（`cmd/zeokeel/assess.go` 的 `hotAssessor`）；Worker 提示下一次运行生效。
 
-### Round 2/3（2026-11-03 晚，同一 rc.1，不新增 tag）
+### Round 2/3 + 修复波（2026-11-04，同一 rc.1，不新增 tag）
 
-- **界面结构**：侧边栏改为 DSH 式——顶部「超级Agent」、中部「工作区」树、底部「监控」（消息/来源/触发/评估/执行）+「设置」，
-  footer 显示 `OS/arch · 时区 (UTC±h)`；全局基础字号 15（`internal/ui/chrome.go:54-99`、`internal/ui/tokens.go:49`、
-  `internal/runtime/runtime.go:172-175`）。
-- **工作区与会话**：面板可新建工作区（名称/根目录/用途/类型，根目录用 mygo **原生目录选择器**，三平台）；
-  工作区展开显示会话（Ticket），按「我创建的 / 超级Agent 创建的」分组、每工作区最近 50 条；
-  「＋ 新建会话」显式指定工作区并**直接派发**，不过 Router（`internal/ui/workspace.go`、`internal/runtime/workspaces.go:20,101`、
-  `internal/runtime/pages.go:953-995`）。设置›部署组新增操作系统/时区事实（`internal/runtime/pages.go:763-764`）。
-- **修复「未受理」**：操作员面板消息若没有变成 Ticket，现在会在同一条消息下得到「已答复」+「超级Agent：…」：
-  问工作区相关就列出工作区（名称/用途/类型），否则说明没派发的原因与下一步；真活仍然建 Ticket。
-  文本是确定性生成，不调用模型（`internal/runtime/runtime.go:456-482`、`internal/runtime/workspaces.go:159-214`）。
-- **IM 渠道管理**：飞书/钉钉可**单独启用/停用**，各自有 transport/凭据/「检查通道」/「打开授权页」；禁用=未监听，
-  保存后只重启变化的渠道（`internal/runtime/im.go:51,173,189,239,328,588`、`internal/ui/channels.go:134-230`；
-  契约见 [design/im-channels.md](design/im-channels.md)）。
-  - 飞书：HTTP 长轮询；检查换 tenant token，401/403 给 `open.feishu.cn/app` 入口。
-  - 钉钉：默认 **`dws` CLI**（`auth status`/`poll`/`send`/`health --json`，30s 超时、每渠道串行 worker、
-    send 优先、1s→30s 退避、**整批接受后才推进 cursor**、发送带隐藏幂等 marker、缺 dws 明确报错）；
-    官方 Stream SDK 保留为 `dingtalk_transport=stream` 的可选 transport（`internal/im/dingtalk/dws.go`、`internal/runtime/dws.go`）。
-- **内置工具**：Worker 默认获得 eino `plantask`（TaskCreate/TaskGet/TaskUpdate/TaskList，JSON 存工单目录）、
-  `agentsmd`（工作区根 AGENTS.md 注入，≤256KB，缺失不报错）、`web_fetch`（仅公网 http(s)、拒私网、10s、2MiB）、
-  `web_search`（前 5 条、默认 DuckDuckGo HTML、端点为 `execution.web_search_url`）；清单写进 Worker 提示词
-  （`internal/agent/builtin.go:44,96`、`internal/agent/webtools.go`、`internal/runtime/worker.go:480-482,573-575`）。
-- 已知 UI 不一致：钉钉 Stream 在 runtime 已支持（`internal/runtime/im.go:394-398`），但
-  `internal/view/channels.go:44-66` 仍把它标成"未实现"、面板不可选（owner: fix-ui2）。
-- 验证（23:10）：build/vet 通过；ui/view/runtime/agent/cmd 目标测试通过；
-  全量 verify-fixes/release-check 未在本轮代码上重跑（发布前必须重跑，rc.1 tag 不变）。
+- **IM 审批优先（行为变更，最重要）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**恰好一个**待批准项
+  （`DecPropose`，不建 Ticket/不启动 Worker/不自动回复）；Approve 才创建并唤醒，Reject 什么都不留；
+  来源页与 health 显示「待审批 N」；重复投递只产生一个待批项。
+  验收 A3 改为“IM 消息也要批准”，A7 先审批后建单（`cmd/zeokeel/acceptance_test.go:129-160,207-232`；
+  `internal/engine/evaluate.go:396-461`）。
+- **飞书接收**：接入官方 `larksuite/oapi-sdk-go/v3 v3.12.2` 的 `larkws` 长连接：**新装默认 transport=ws**；
+  旧凭据-only 配置升级时 pin `longpoll`（保持原接收路径）；HTTP 长轮询是显式 fallback（cursor），面板 Options 只有 ws/longpoll；凭据检查仍走 tenant token（401/403 给 `open.feishu.cn/app`）。
+  媒体仍只保留引用，webhook 未实现。
+- **钉钉 DWS 重写为真实契约**：默认 transport 是 DWS（操作员个人 OAuth，不是 bot/app；DWS 不使用 app-key/secret）。
+  用长驻 `dws event +listen-im … -f ndjson` 接收（**无 poll/cursor**，event id 去重，断线 1s→30s 重连）；
+  `dws chat +messages-send --as user …` 发送（无 `--idempotency-key`，隐藏 marker 去重）；
+  `dws auth status --format json` 检查、`dws auth login [--device]` 登录；短命令串行、30s 超时、stderr 脱敏。
+  官方 Stream SDK 保留为 `dingtalk_transport=stream` 的 bot 模式。
+- **IM 生命周期/配置**：三态启用（显式 1/0 优先，缺省按凭据/flag 推导；flag-only 部署由 `BootstrapIMFlags` 补写）；
+  bool 编码读兼容 `true/false/1/0`、写统一 `1/0`；每渠道 generation + 调用串行化，
+  停止 cancel→Close driver→注销 outbox sender，切换 transport 清 cursor；`CheckChannel` 复用运行中的 DWS 后端。
+  设置键新增 transport/self/profile/listen-kind/chat-query 等；secret 不回显。
+- **异步命令边界**：Dispatch/CreateWorkspace/NewConversation/SaveSettings 从 UI 帧移出到后台命令锁，
+  面板显示「发送中…/保存中…/连接中」；错误不再默认标红。
+- **超级Agent 聊天 + 派活双态**：全局输入提问得到模型回答（未配置模型时确定性回答并说明），
+  派活回「已派发 #N」，待批回「需要你确认」；最近回答内联在输入框上方（所有页面）与总览对话（最多 8 条，
+  历史最多 20 条并持久化）；非失败不标红；回答不再只落在「消息」页。
+- **Ticket 身份**：执行列表行/详情查找键与详情 VM 的 ID 都用 domain ID，`Number` 单独显示 `#number`；工作区会话点击同一 Ticket。
+- **工作区**：opaque `ws_*` ID（重命名不改历史）、绝对路径/重复 root 拒绝、重命名已接线、删除空工作区（有工单拒绝）；
+  工作区过滤作用于「消息/执行」（顶部「工作区 X / 全部」）。
+- **设置/安全**：UI 开关读写 canonical `1/0`（读兼容旧 true/false）；`LoadSettings` 启动时一次性迁移 bool、旧 IM 启用/transport、
+  `im_self` 拆分并写 schema stamp；SaveSettings 改为“构造快照→事务提交→再换内存”并在失败时不改内存；
+  设置 VM/Inspect/status/health detail 统一 redaction（`***`）；worker 执行侧仍剥离凭证变量。
+- **工具**：plantask 工具名与注册一致（TaskCreate/Get/Update/List），任务 JSON 移到 `.zeokeel/plan`；
+  AGENTS.md 改为不可信仓库内容信封（≤64KB）；web_fetch 用 DNS 解析后 pin IP、`Proxy:nil`、拒绝私网、
+  返回 `<untrusted-web-content>` 信封；设置›执行新增 `plan_tasks/agents_md/web_tools` 开关（默认开）。
+- **界面**：字号从 magic +2 改为 `ui.font_scale`（设置›部署可编辑，90/100/110%）经 `fs()` 统一缩放；启动窗口最小 1100×720；
+  OS/arch·时区仍在 footer 与设置›部署；保存条按组写真实生效方式（来源=重启渠道几秒/执行=下次工单/提示词=热更新/部署=重启后生效）。
 
 **仍未完成（RELEASE.md F 组）**：Source 实例/规则/admission/accept mode 的设置 UI；系统钥匙串；
 `.dmg`/deb/PKGBUILD/NSIS/自动更新；`domain.Source`/`domain.Thread`/`domain.UserError`；`steer/inject`；
@@ -249,7 +256,7 @@ sh scripts/release-check.sh   # 版本/产物/文档 + 上面的闸门
 - 一张表把 7 种工单状态的「阶段 / 执行页桶 / 总览是否待办」钉死，防止三处各说各话
 
 **设置真的生效**
-- 提示词编辑器改动会进入执行器（下一次运行生效）与研判器（**重启后**生效；无热更新/版本历史，Wave 2）
+- 提示词编辑器改动进入执行器（下一次运行生效）与研判器（热更新）；历史/base-hash/Default updated 已接线（每层最近 20 版）
 - 「并发执行器」「命令超时」「轮询间隔」真正改变行为
 - 删掉存了没人用的假开关（GitHub Token、丢弃机器人、预算、自动继续），页面只列生效项
 

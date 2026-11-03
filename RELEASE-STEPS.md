@@ -1,9 +1,9 @@
 # 从 rc 到 1.0.0：发布动作清单
 
-**先读这一段（2026-11-03 最终快照）：** rc.1 代表“候选版可构建、机械闸门全绿”（build/vet/test/zero-cgo/`-race`/package/release-check），
-不代表产品完成。`RELEASE.md` F 组仍有阻塞项（**打包无 .dmg/deb/安装器**、**系统钥匙串未做**、
-设置页规则/admission/Source 实例不可编辑、Feishu 无 WS、无 IM 媒体下载、`steer/inject` 等），
-它们全部关闭前，本文的发布动作**不能**把 rc 变成 1.0.0。
+**先读这一段（2026-11-04 最终代码）：** rc.1 代表“候选版可构建”，不代表产品完成；全量闸门由 Lead 合并前统一跑。
+`RELEASE.md` F 组仍有阻塞项（**打包无 .dmg/deb/安装器**、**系统钥匙串未做**、设置页规则/admission/Source 实例不可编辑、
+飞书 webhook/IM 媒体下载、`steer/inject` 等），它们全部关闭前，本文的发布动作**不能**把 rc 变成 1.0.0。
+IM 入站已改为审批优先（每条消息先待批，Approve 才建单）。
 
 本文件剩下的部分是“具备硬件/凭据才能做”的发布动作。每完成一项勾掉；
 F 组清空且文档最终 pass 通过后，才把 `VERSION` 改成 `1.0.0` 并重跑：
@@ -112,20 +112,25 @@ go test ./internal/runtime/ -run Live -v
 - [ ] `make package` 用正式版本号重新出包
 - [ ] 打 tag：`git tag -a v1.0.0 -m "ZeoKeel Super Agent 1.0.0" && git push --tags`
 
-## 已知限制（写进发布说明；本版为 2026-11-03 Wave 2 事实）
+## 已知限制（写进发布说明；本版为 2026-11-04 最终代码事实）
 
 - macOS 包在完成第 1 步前是未签名的，首次打开需右键 → 打开；`.dmg`/deb/PKGBUILD/自动更新未实现。
 - Windows 只有 zip + `install.ps1`，没有 MSI/NSIS 安装器；CI 只交叉编译 + 查体积，不出包。
-- **飞书/钉钉已接线**：flag 或设置›来源的 8 个字段可配。钉钉走官方 Stream SDK 长连接；飞书只做 HTTP 长轮询（无 WS）；
-  两者都不下载图片/文件；真实凭据端到端未验证。发布说明里不得写“IM 全平台稳定”。
-- 设置页的来源/评估两组还**不能编辑** Source 实例、规则、admission 表、accept mode（显示"等待运行时投影"）；
-  来源只能 `-repo/-gh-login` 或 `setup` 配置。
-- 提示词：研判提示热更新 ✓、Worker 下一次运行生效 ✓；但没有**版本历史 / base-hash / Default updated / 团队三段**。
-- **系统钥匙串未实现**：API Key 明文存 SQLite（文件 0600）；worker shell 仍继承操作者环境（密钥变量未剥离）。
-  备份数据库时按密钥对待。
+- **IM 渠道可启停但入站=审批优先**：飞书新装默认官方长连接（ws，推荐）、旧配置迁移 pin longpoll（fallback）；钉钉默认 DWS 个人 OAuth CLI
+  （长驻 NDJSON，无 poll/cursor），官方 Stream 为 bot 模式可选 transport；每条消息（含操作员）先成为待批准项，
+  Approve 才建单，Reject 无痕。飞书 webhook/媒体下载未实现；真实凭据/DWS 租户 E2E 未验证。
+  发布说明里不得写“IM 全平台稳定/自动接活”。
+- 设置›来源可配置 IM 三态启停/transport/凭据/检查/授权；但**没有 Source 实例表**（GitHub 仍 `-repo/-gh-login`，
+  改设置需重启）；评估组只读（规则/admission/accept mode 不可编辑）。
+- 提示词：研判提示热更新 ✓、Worker 下一次运行生效 ✓；历史/base-hash/Default updated 已接线（每层最近 20 版），
+  面板还没有历史列表页。
+- 设置：UI 开关 canonical 1/0；启动一次性迁移旧 bool/IM enabled/transport/im_self；`ui.font_scale` 可在设置›部署调（0.9/1.0/1.1）。
+- **系统钥匙串未实现**：API Key 明文存 SQLite（文件 0600）；worker shell 已剥离凭证变量，读取侧已 redaction。
+  备份数据库时仍按密钥对待。
 - `zeokeel stop` 写 `<stateDir>/STOPPED` 手动停标记（`status` 在“手动停且未运行”时返回 0），可选 `--pid` 发 SIGTERM；
   `--respect-stop` 没有独立 flag，语义由 stop 标记 + 巡检脚本承担。
-- `sh scripts/verify-fixes.sh` 在最终快照全绿（含 `-race`）；任何发布前改动都要重跑。
+- **最终代码 2026-11-04**：全量闸门由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` + `release-check.sh`；
+  本文不预称全绿。此前 2026-11-03 快照全绿只作历史参考。
 - 没有开机自启、休眠唤醒、自动更新（systemd/launchd 样例可用，但开机自启靠系统配置）。
 - workflow 只有 `-pipeline` 的持久层在用；agent 工具侧没有 workflow 编排。
 - `design/prototype/` 只是视觉参考（已钉 `mygo v0.7.4` 可渲染），不要回迁代码到 `internal/ui`。

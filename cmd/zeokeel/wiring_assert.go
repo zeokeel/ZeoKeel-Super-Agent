@@ -25,3 +25,9 @@ var (
 
 // The panel's 检查/授权 button type-asserts ChannelAuthorizer (im-channel-spec §4).
 var _ ui.ChannelAuthorizer = (*runtime.Runtime)(nil)
+
+// 工作区重命名/删除 (ui2 P1-6/P1-7).
+var (
+	_ ui.WorkspaceRenamer = (*runtime.Runtime)(nil)
+	_ ui.WorkspaceDeleter = (*runtime.Runtime)(nil)
+)

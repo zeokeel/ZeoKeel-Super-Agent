@@ -101,7 +101,7 @@ func TestRunningTicketShowsElapsed(t *testing.T) {
 	vm := rt.ticketsVM(time.Now())
 	var activity string
 	for _, row := range vm.Rows {
-		if row.ID == "1" {
+		if row.ID == string(out.Ticket) {
 			activity = row.Activity
 		}
 	}

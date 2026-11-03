@@ -104,7 +104,7 @@ plist 里的 `/usr/local/bin/zeokeel` 与 `/Users/CHANGEME/.zeokeel` 是占位�
 | 后台作业超时后工单变 waiting | 30 分钟规则（`execution.background_timeout`）：作业被 kill，工单等下一次输入；子智能体不适用 | ✅ |
 | PR 合并了但工单还 waiting/没结束 | 确认 Worker 调过 `follow`（消息流有"已关注 Thread"）且绑对 PR；`CloseThread` 只在 GitHub 轮询到 merged/closed 时触发 | ✅ |
 | 重启后工单还停在"执行中" | 启动时 `RecoverAssignments` 会恢复（中断 note + 新 Assignment）；超过 6h 未完成会被 supervisor 点名 | ✅ |
-| 飞书/钉钉没反应 | 先确认已配置（设置›来源 8 字段或对应 flag）；未配置=不监听（日志 `IM not configured`）；配置不全=来源页 error 行并写明缺哪个 key；WS 未实现，只有 HTTP 长轮询 | ✅（真实凭据 E2E 未验证） |
+| 飞书/钉钉没反应 | 先看启用状态（三态：显式/缺省推导）与来源页 error 行；飞书 transport=ws（官方长连接）或 longpoll；钉钉 DWS 需 `dws auth status --format json` 为 loggedIn；配置不全/dws 缺失都会给出可操作 detail | ✅（真实凭据 E2E 未验证） |
 | 想“人主动停、别被自动拉起” | `zeokeel stop`（可加 `--pid`）；`status` 会返回 0 且 `manually_stopped=true`，巡检不会重启；下次启动清标记 | ✅ |
 | 面板计数 | 执行中/今日/24h/队列已真实投影（`internal/runtime/runtime.go:152-168`） | ✅ |
 
@@ -191,25 +191,48 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - 排障：PR 已合并但工单没结束，先看消息流有没有 "已关注 Thread …"，再看 `Ticket.Follows` 是否绑到了正确的 `owner/repo#N`
   （`domain.ThreadKey` 用 `<scope>|github|<id>`）；重复关闭事件是幂等的。
 
-## 6.10 IM 渠道（飞书 / 钉钉）
+## 6.10 IM 渠道（飞书 / 钉钉）与审批队列
 
-完整契约、DWS JSON 形状与故障矩阵见 **[im-channels.md](im-channels.md)**；这里只列运维动作：
+完整契约、DWS 命令形状与故障矩阵见 **[im-channels.md](im-channels.md)**；这里只列运维动作：
 
-1. **启用/停用**：设置›来源里每个渠道有开关。禁用 = 取消订阅、停止轮询、来源状态"未启用"、health ok；
-   配置保留。保存后只有 enable/transport/凭据/self 变化的渠道会被重启（`internal/runtime/im.go:189,224`）。
-2. **飞书**：transport 只有 `longpoll`；填 app id/secret/chats 后点「检查通道」。
-   检查会换 tenant token；401/403 时按提示打开 `https://open.feishu.cn/app` 修应用权限/发布版本。
-   没有 WS/webhook、不下载媒体。
-3. **钉钉（默认 `dws`）**：本机要安装并登录 DWS：
-   - `dws auth status --json` → `loggedIn:true`；未登录时 `dws auth login`（或面板「打开授权页」）；
-   - 契约命令：`dws poll --cursor <c> --limit 50 --json`、`dws send --conversation <id> --text <t> --idempotency-key <k> --json`、
-     `dws health --json`；单次 30s，不经 shell；
-   - **未安装/不可执行** → 来源 error + "安装 dws 或设置 dingtalk_dws_cmd"；不会自动 fallback 到 Stream；
-   - 每渠道一个**串行 worker**（send > auth/health > poll）；poll 失败 1s→30s 退避；
-     **cursor 只在本批全部被接受后落 kv**；发送带隐藏幂等 marker（`<!-- zeokeel:<key> -->`）；
-   - 想用官方 SDK：`dingtalk_transport=stream` + app key/secret/robot code（检查只验证凭据齐全）。
-4. **排障**：`zeokeel status --json` 看 `im:feishu`/`im:dingtalk` 的 health；日志搜 `IM poll failed` /
-   `IM driver failed` / `IM channel started`；DWS 自身用 `dws health --json`。
+1. **审批优先（首要注意）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**一个待批准项**；
+   总览「待你批准」逐条 Approve/Reject。**批准才建 Ticket 并启动 Worker；拒绝什么都不留**；
+   来源页显示「待审批 N」。重复投递只产生一个待批项。没有"IM 消息自动开工"的路径（除非部署显式打开
+   Policy 的 `AutoApproveIM`，默认关闭）。
+2. **启用/停用（三态）**：设置›来源每渠道有开关。显式 1/0 优先；没写过开关时按凭据/flags 推导；
+   flag-only 部署由启动 bootstrap 补写启用。禁用=停止监听、来源"未启用"、health 不假装在线。
+   保存后只重启 enable/transport/凭据/self/profile 变化的渠道（`internal/runtime/im.go:345-470`）。
+3. **飞书**：**新装默认 ws（官方 SDK 长连接，推荐）**；旧凭据-only 配置在迁移时被 pin 到 longpoll，保持原接收路径；longpoll 是显式 fallback（需要 `feishu_chats`）。面板 Options 只有 `ws`/`longpoll`，没有 webhook。
+   填 app id/secret 后点「检查通道」（换 tenant token）；401/403 时按提示打开 `https://open.feishu.cn/app`
+   修应用权限/发布版本。没有 webhook，不下载媒体。WS 由 SDK 自带重连；longpoll 的 cursor 存 kv
+   （`im.cursor.<channel>.<transport>`），整批接受后才推进，切换 transport 会清 cursor。
+4. **钉钉（默认 DWS，个人 OAuth，不是 bot/app）**：本机安装并登录 DWS：
+   - `dws auth status --format json` → `loggedIn:true`；未登录 `dws auth login`（headless 用 `--device`）；
+   - 接收是**长驻进程**：`dws event +listen-im --kind at-me|group|all-direct|all-group [--chat-query q] [--profile p] --flatten -f ndjson`
+     （无 poll/cursor；断线 1s→30s 重连，event id 去重）；
+   - 发送：`dws chat +messages-send --as user --group <cid> --text <t> --format json`（单聊用 `--open-dingtalk-id`；
+     **没有 idempotency-key**，靠文本尾部隐藏 marker；可 `--as bot --robot-code` 用 bot 身份）；
+   - 短命令串行、30s 超时、不经 shell、stderr 脱敏；检查复用运行中的 DWS 后端；
+   - **未安装/未登录** → 来源 error/auth + 可操作提示；不会自动 fallback 到 Stream。
+   - **DWS 不用 app key/secret**；`dingtalk_app_key/app_secret/robot` 只属于 Stream（bot）模式。
+5. **钉钉 Stream（bot）**：`dingtalk_transport=stream` + app key/secret/robot code；检查只验凭据齐全。
+6. **排障**：`zeokeel status --json` 看 `im:feishu`/`im:dingtalk` 的 health（secret 已 redaction）；
+   日志搜 `IM channel started` / `IM poll failed` / `IM driver failed` / `dws`；DWS 自身用
+   `dws auth status --format json`。审批类问题看「待审批 N」与总览批准列表。
+
+## 6.11 升级与迁移（IM / settings）
+
+- **旧 IM 配置**：旧版本只有 `source.*_app_id/secret` 等凭据、没有 `*_enabled` 键。新版本启动时：
+  读取层把旧 bool（`true/false`）解析为规范值；缺少 `*_enabled` 时按凭据/flags 推导；flag-only 部署由
+  `BootstrapIMFlags` 补写启用。旧共享 `im_self` 会作为每渠道 self id 的回退/复制来源。
+- **DWS/Stream 区分**：旧版只有 Stream，因此缺 `dingtalk_transport` 时若有 app key/secret/robot 证据则按 stream 处理；
+  已有 `dingtalk_profile/listen_kind/chat_query/dws_cmd` 证据则按 dws 处理。升级不应把已工作的渠道切到不存在的 `dws`。
+- **settings schema / 一次性迁移**：`LoadSettings` 在首次启动或 schema 旧时执行 `migrateSettings`（bool 归一为 `1/0`、
+  旧 IM 凭据推导启用/transport（**旧飞书凭据-only pin longpoll**）、`im_self` 拆分），成功后写 `SettingsSchema` stamp（`internal/runtime/pages.go:678-707`、
+  `internal/runtime/settingscodec.go:83`、`internal/store/settings.go:28-55`；测试 `TestLegacySettingsMigration`）。
+  升级前仍建议备份 `zeokeel.db`；升级后检查设置›来源的启用状态与「检查通道」结果。
+- **cursor**：per-channel+transport 命名空间；旧 `im.cursor.<channel>` 会被读取一次以兼容升级；切换 transport 清 cursor。
+- **secret**：设置页不回显（留空=保留）；`status --json`/Inspect/health detail 的 secret 已 redaction。
 
 ## 7. 外部巡检（006 小时检查的等价物）
 
@@ -228,9 +251,12 @@ ZEOKEEL_BIN=/usr/local/bin/zeokeel scripts/watchdog-check.sh --restart-cmd "syst
 ## 8. 未实现/未覆盖（诚实清单）
 
 - 开机自启、休眠唤醒补跑、自动更新：没有内置实现；用 systemd/launchd 的开机启动 + 系统唤醒策略替代（文档化，不假装内置）。
-- IM：钉钉默认 DWS 外部 CLI（官方 Stream SDK 可选），飞书只有 HTTP 长轮询（无 WS）、无媒体下载；
-  钉钉 Stream 选项在面板仍标未实现（runtime 已支持，owner fix-ui2）；真实凭据 E2E 未验证。
+- IM：飞书 webhook 与媒体下载未实现（面板只提供 ws/longpoll）；DWS 依赖外部 CLI，真实 CLI 版本/登录/租户 E2E 未验证；
+  官方 Stream 是 bot 模式（app key/secret/robot）。
+- 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
+- `ui.font_scale` 已投影并可在设置›部署编辑（0.9/1.0/1.1，保存立即生效）。
+- 升级迁移已接线（`LoadSettings` 的 `migrateSettings` + schema stamp）；历史旧文件仍按读取层兼容。
 - 监控指标导出（Prometheus 等）：没有；只有 `status --json` 与日志。
 - 设置页规则/admission/accept mode 与 GitHub Source 实例：不可编辑（只读事实或 CLI flag）。
-- 系统钥匙串未实现（API Key 明文 SQLite 0600）。
+- 系统钥匙串未实现（API Key 明文 SQLite 0600；读取侧已 redaction）。
 - 多实例/多副本/远端状态：单机单写者（ADR-1/ADR-5），节点级 HA 不在范围内。

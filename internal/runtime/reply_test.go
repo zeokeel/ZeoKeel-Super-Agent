@@ -68,11 +68,16 @@ func TestDeliverReplyAnswersTheOriginConversation(t *testing.T) {
 	if _, err := eng.Receive(withThread(tr)); err != nil {
 		t.Fatal(err)
 	}
-	// A listed colleague asking explicitly is accepted directly; the approval
-	// gate is for inferred requests only (002:101).
+	// IM messages wait for the operator's approval; approving authorizes the
+	// Ticket the reply test needs.
 	out := evalNow(eng)
 	if out.Ticket == "" {
-		t.Fatalf("expected a ticket for the colleague request: %+v", out)
+		if id := approvePending(t, eng); id != "" {
+			out.Ticket = id
+		}
+	}
+	if out.Ticket == "" {
+		t.Fatalf("expected a ticket after approving the colleague request: %+v", out)
 	}
 	tk, ok := eng.TicketSnapshot(out.Ticket)
 	if !ok {

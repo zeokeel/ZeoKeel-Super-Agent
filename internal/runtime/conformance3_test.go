@@ -311,7 +311,7 @@ func TestWorkerToolSwitches(t *testing.T) {
 			got.PlanTasks, got.AgentsMD, got.WebTools)
 	}
 	prompt := rt.systemPromptFor(tk, cfg)
-	for _, want := range []string{"task_create", "web_fetch", "AGENTS.md"} {
+	for _, want := range []string{"TaskCreate", "web_fetch", "AGENTS.md"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("worker prompt does not mention %q", want)
 		}

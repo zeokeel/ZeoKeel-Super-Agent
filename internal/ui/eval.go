@@ -20,13 +20,13 @@ func (a *App) evalPage(c *mui.Context) {
 		mui.Row(c).AlignItems(mui.Center).Gap(8).Children(func() {
 			heading(c, tk, "评估", "每个 Decision 都带可检查的 reason 码与命中规则；不用自由文本猜")
 			mui.Spacer(c)
-			mui.Text(c, "过去 24 小时").FontSize(13).TextColor(tk.TextFaint)
+			mui.Text(c, "过去 24 小时").FontSize(fs(13)).TextColor(tk.TextFaint)
 			if vm != nil && vm.PolicyVersion != "" {
 				textChip(c, tk, "Policy "+vm.PolicyVersion+" · 只读")
 			}
 		})
 		if vm == nil {
-			mui.Text(c, "等待运行时发布评估快照…").FontSize(15).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布评估快照…").FontSize(fs(15)).TextColor(tk.TextMuted)
 			return
 		}
 
@@ -52,11 +52,11 @@ func (a *App) evalCounts(c *mui.Context, vm *view.DecisionVM) {
 				stat(c, tk, "建 Ticket", vm.Counts.Tickets)
 				mui.Spacer(c)
 				mui.Column(c).Gap(1).Children(func() {
-					mui.Text(c, "golden 用例").FontSize(12).TextColor(tk.TextFaint)
+					mui.Text(c, "golden 用例").FontSize(fs(12)).TextColor(tk.TextFaint)
 					for _, g := range vm.Golden {
 						mui.Row(c).Gap(6).Children(func() {
-							mui.Text(c, g.Name).FontSize(12).TextColor(tk.TextMuted)
-							mui.Text(c, fmt.Sprintf("%d / %d", g.Passed, g.Total)).FontSize(12).
+							mui.Text(c, g.Name).FontSize(fs(12)).TextColor(tk.TextMuted)
+							mui.Text(c, fmt.Sprintf("%d / %d", g.Passed, g.Total)).FontSize(fs(12)).
 								TextColor(ifColor(g.Passed == g.Total, tk.Green, tk.Red))
 						})
 					}
@@ -107,7 +107,7 @@ func (a *App) evalList(c *mui.Context, vm *view.DecisionVM) {
 		Border(1, tk.Border).Children(func() {
 		if len(rows) == 0 {
 			mui.Row(c).Padding(16, 14).Children(func() {
-				mui.Text(c, "这个筛选下没有 Decision。").FontSize(14).TextColor(tk.TextMuted)
+				mui.Text(c, "这个筛选下没有 Decision。").FontSize(fs(14)).TextColor(tk.TextMuted)
 			})
 			return
 		}
@@ -129,14 +129,14 @@ func (a *App) decisionCell(c *mui.Context, d view.DecisionRow, col int) {
 	located := a.located(view.SearchDecisions, d.ID)
 	switch col {
 	case 0:
-		mui.Text(c, d.At.Format("15:04")).FontSize(12).Font("monospace").
+		mui.Text(c, d.At.Format("15:04")).FontSize(fs(12)).Font("monospace").
 			TextColor(ifColor(located, tk.Accent, tk.TextFaint))
 	case 1:
 		chip(c, tk, d.KindLabel, toneFg(tk, d.Tone), toneBg(tk, d.Tone))
 	case 2:
 		mui.Column(c).Gap(2).Children(func() {
-			mui.Text(c, d.Trigger).FontSize(14).SingleLine().TextColor(tk.Text)
-			mui.Text(c, d.Summary).FontSize(12).SingleLine().TextColor(tk.TextMuted)
+			mui.Text(c, d.Trigger).FontSize(fs(14)).SingleLine().TextColor(tk.Text)
+			mui.Text(c, d.Summary).FontSize(fs(12)).SingleLine().TextColor(tk.TextMuted)
 		})
 	case 3:
 		mui.Column(c).Gap(2).Children(func() {
@@ -145,15 +145,15 @@ func (a *App) decisionCell(c *mui.Context, d view.DecisionRow, col int) {
 					chip(c, tk, "定位", tk.Accent, tk.AccentSoft)
 				}
 				mono(c, tk, d.ReasonCode)
-				mui.Text(c, d.ReasonText).FontSize(13).SingleLine().Grow(1).TextColor(tk.Text)
+				mui.Text(c, d.ReasonText).FontSize(fs(13)).SingleLine().Grow(1).TextColor(tk.Text)
 				if d.Workspace != "" {
 					textChip(c, tk, d.Workspace)
 				}
 			})
 			if d.Rule != "" {
 				mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
-					mui.Icon(c, icShield).FontSize(10).TextColor(tk.TextFaint)
-					mui.Text(c, "命中规则："+d.Rule).FontSize(12).SingleLine().TextColor(tk.TextFaint)
+					mui.Icon(c, icShield).FontSize(fs(10)).TextColor(tk.TextFaint)
+					mui.Text(c, "命中规则："+d.Rule).FontSize(fs(12)).SingleLine().TextColor(tk.TextFaint)
 				})
 			}
 		})

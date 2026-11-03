@@ -295,10 +295,14 @@ func realMain() int {
 		defer stopSig()
 		baseCtx = sigCtx
 	}
+	// P0-4: flag-only IM deployments must be enabled before the manager starts;
+	// explicit "0" still wins (migration is a no-op then).
+	rt.BootstrapIMFlags(imOpts.flags())
 	appCtx, stop := context.WithCancel(baseCtx)
 	defer stop()
 	// IM is opt-in: no credentials means no listener and no "online" row.
-	startConfiguredIM(appCtx, rt, sender, imOpts, logger)
+	imManager := startConfiguredIM(appCtx, rt, sender, imOpts, logger)
+	defer imManager.Stop()
 	if ex != nil && !*noSchedule {
 		startScheduleLoop(appCtx, rt, ex.sched, 30*time.Second)
 	}

@@ -44,7 +44,10 @@ func ChannelSpecs() []ChannelSpec {
 			EnabledKey: "feishu_enabled", TransportKey: "feishu_transport",
 			CredentialKeys: []string{"feishu_app_id", "feishu_app_secret", "feishu_chats"},
 			Options: []ChannelOption{
-				{ID: "longpoll", Label: "长轮询", Implemented: true},
+				{ID: "ws", Label: "官方长连接", Implemented: true,
+					Note: "飞书官方 larkws 长连接（推荐）；需要网络可达飞书"},
+				{ID: "longpoll", Label: "HTTP 长轮询", Implemented: true,
+					Note: "显式兜底；保留游标"},
 			},
 		},
 		{

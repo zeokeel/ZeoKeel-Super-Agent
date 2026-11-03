@@ -60,6 +60,10 @@ const (
 	ReasonMandateRevoked = "mandateRevoked"
 	ReasonNotRetryable   = "notRetryable"
 	ReasonPaused         = "paused"
+	// ReasonIMApproval marks a Decision that waits for the operator because the
+	// message arrived on an IM Source: inbound IM work is always proposed, never
+	// started on its own (release policy; see engine.isIMSource).
+	ReasonIMApproval = "im_approval_required"
 )
 
 // ReplyRoute is who an answer goes to. Design §4.10.

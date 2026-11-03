@@ -1,128 +1,149 @@
-# IM 渠道管理：飞书与钉钉（2026-11-03 Round 3）
+# IM 渠道：飞书 / 钉钉（2026-11-04 最终状态）
 
-> 规格来源：`audit/fixes/im-channel-spec.md`。本文描述**已实现**的行为与外部 `dws` CLI 契约；
-> 未能从代码证实的地方明确写"未实现"。证据行以生产代码为准，文件行号随代码移动，以函数名为主。
+> 规格来源：`audit/fixes/im-channel-spec.md` + `audit/design-review-r2.md`（P0-1/P0-4/P0-6/P0-7/P1-10/P1-11）。
+> 本文写**已实现**行为；结论尽量给生产代码 file:line。行号随代码移动，以函数名为主。
+> 产品策略：**IM 入站=审批优先**。任何 IM 消息（包括操作员自己的）都先变成一个待批准项；
+> 批准才创建 Ticket，拒绝什么都不留。
 
 ## 0. 一句话
 
-两个渠道各自有**启用开关 + 传输方式 + 凭据**；禁用就是"未监听"，不假装在线。
-飞书只有 **HTTP 长轮询**；钉钉默认走**本机 DWS 网关 CLI**，官方 Stream SDK 作为可选 transport。
-设置页每渠道有**检查 / 打开授权页**按钮；轮询与人工检查共用**每渠道一个串行 worker**。
+两个渠道各自有生命周期：飞书走官方 SDK 长连接（`larkws`，推荐；HTTP 长轮询保留为显式 fallback），
+钉钉默认走本机 DWS CLI（**操作员个人 OAuth 身份**，长驻 NDJSON consumer，不是 bot/app；官方 Stream SDK 是 bot 模式的可选 transport）。
+入站消息全部进入审批队列，`待审批 N` 是来源页的注意力项。
 
-## 1. 配置模型（settings group `source`）
+## 1. 审批优先（release policy）
 
-| key | 类型 | 默认 | 说明 |
+- 所有 IM 来源（`feishu` / `dingtalk`）被 gate 判为可接受（`DecAccept`）时，Eval **不建 Ticket**：
+  `internal/engine/evaluate.go:396-399` 把这些消息交给 `proposeIMLocked`（`:432-461`），**每条消息一个** `DecPropose`，
+  ReplyPlan=`none`（不自动回复），不启动 Worker。
+- 批准路径：`Runtime.Approve`（`internal/runtime/runtime.go:894-912`）→ `Engine/Persistence.Approve` 创建 Ticket 并唤醒；
+  拒绝路径：`Reject`（`:915-930`）只留 Decision，不留 Ticket/Worker/回复。
+- 逃生阀：Policy 的 `AutoApproveIM` 可关闭该策略（`internal/engine/gate.go:56-60`，默认 false）。
+- 面板：总览「待你批准」（`internal/ui/overview.go:51-130`）；来源页每渠道 `待审批 N`
+  （`internal/runtime/pages.go:101-111`）；health 也有「待审批」项（`internal/runtime/runtime.go:420`）。
+- 重复投递：同一消息重发只产生一个待批项/一个 Ticket（内容派生 ID 幂等；验收 A7 `cmd/zeokeel/acceptance_test.go:207-232`）。
+- 验收语义变化：A3 从“操作员请求直接执行”改为**“操作员自己的 IM 消息也要批准”**（`acceptance_test.go:129-160`）；
+  A7 也走先审批后建单。
+
+## 2. 配置模型（settings group `source`）
+
+| key | 类型 | 默认/语义 | 说明 |
 | --- | --- | --- | --- |
-| `feishu_enabled` | switch | false | 启用飞书渠道；关闭=取消订阅/停止轮询，配置保留 |
-| `feishu_transport` | select | `longpoll` | 当前实现只有长轮询；ws/webhook 是占位，选中后来源明确报错（不静默降级） |
-| `feishu_app_id` / `feishu_app_secret` / `feishu_chats` | text/secret | — | 已有凭据；chats 逗号分隔 |
-| `im_self` | text | — | 机器人自己的 id（@ 判定）；钉钉缺 `dingtalk_bot_id` 时回退到它 |
-| `dingtalk_enabled` | switch | false | 启用钉钉渠道 |
-| `dingtalk_transport` | select | `dws` | `dws`（默认，外部 CLI）/ `stream`（官方 Stream SDK） |
-| `dingtalk_dws_cmd` | text | `dws` | DWS 可执行文件或包装脚本 |
-| `dingtalk_app_key` / `dingtalk_app_secret` / `dingtalk_robot` | text/secret | — | Stream 模式与 DWS 登录共用（DWS 自管登录可留空） |
-| `dingtalk_bot_id` | text | — | 机器人自身 id，用于 @ 判定；空则用 `im_self` |
+| `feishu_enabled` | switch/三态 | 未显式写时按凭据推导 | 显式 `1/0` 优先；缺省由 app id/secret 完整性推导（P0-4） |
+| `feishu_transport` | select | **新装默认 `ws`**；`longpoll` 为显式 fallback（旧凭据-only 配置迁移时 pin longpoll） | ws=官方 larkws 长连接（推荐）；longpoll=HTTP 历史接口 + cursor。面板 Options 只有 `ws`/`longpoll`，无 webhook |
+| `feishu_app_id` / `feishu_app_secret` | text/secret | — | 两种 transport 都使用 |
+| `feishu_chats` | text | — | 长轮询时监听的会话 id；WS 由事件推送决定 |
+| `feishu_self_id` | text | 回退 `im_self` | 飞书机器人自身 id（@ 判定） |
+| `dingtalk_enabled` | switch/三态 | 未显式写时按证据推导 | DWS 需要操作员信号（profile/listen/chat filter/cmd）才推导为启用，避免新机器报“dws 未安装” |
+| `dingtalk_transport` | select | `dws` / `stream` | dws=个人 OAuth CLI；stream=官方 Stream SDK（bot） |
+| `dingtalk_dws_cmd` | text | `dws` | DWS 可执行文件/包装脚本 |
+| `dingtalk_profile` | text | 空=CLI 当前 profile | DWS 多账号 |
+| `dingtalk_listen_kind` | select | `at-me` | `at-me`/`group`/`all-direct`/`all-group`（`dws.go:63-68`） |
+| `dingtalk_chat_query` | text | 空 | `--chat-query` 群过滤 |
+| `dingtalk_bot_id` | text | 回退 `im_self` | Stream 模式的 bot 自身 id（@ 判定） |
+| `dingtalk_app_key`/`app_secret`/`robot` | text/secret | — | **只属于 stream（bot）模式**；DWS 不用 app-key/secret |
+| `im_self` | text | — | 旧版共用值；迁移为每渠道 id 的回退 |
 
-代码：`internal/runtime/im.go:31`（`IMConfig`）、`:51`（`IMConfigFromSettings`，默认值在这里）、
-`:88-107`（命令行凭据覆盖 settings，flag 只覆盖凭据，不覆盖 enable/transport）。
-设置页字段：`internal/runtime/pages.go:458-484`（开关/transport/命令/凭据）。
+代码：`internal/runtime/im.go:33-130`（`IMConfig`/`IMConfigFromSettings`，含显式 vs 推导三态）、`:186-230`（flag overlay）、
+`internal/runtime/pages.go:468-500`（设置字段）。bool 编码统一在 `internal/runtime/settingscodec.go:1-70`：
+读兼容 `1/0/true/false/yes/no/on/off`，写只写 `1/0`；flag-only 部署由 `BootstrapIMFlags`（`:186-230`，
+在 `cmd/zeokeel/main.go:300`/`cmd/zeokeel/imwiring.go:91` 调用）补 `enabled`。
+旧文件兼容：bool 解析在读取层完成（`settingscodec.go:67-74`、`im.go:120-130`），旧 `true/false` 不会被误读成“关”。
 
-## 2. 生命周期与状态
+## 3. 飞书：官方长连接（推荐）+ HTTP 长轮询（fallback）
 
-- 保存设置后，runtime 比较旧/新配置（`imAfterSettingsSave` → `IMManager.ApplyIMSettings`，
-  `internal/runtime/im.go:189`、`:224` 的 `channelChanged`）：**只有该渠道的 enable/transport/凭据/self 变化才优雅停止并重启**，
-  未变化不重启。启动时 `IMConfig().WithFlags(flags)` 后同样走 `Start`（`:173`）。
-- 启用/禁用/半配置的判定在 `channelReadiness`（`:328`）：
-  - 未启用 → 状态"未启用"，health `ready`（"未启用"），不监听、不报错、不说"在线"（`applyChannel` `:239`，禁用分支 `:268-273`）；
-  - 半配置（只填一半、或选了未实现的 transport）→ 来源 `error` + 可操作 detail，不静默启动；
-  - 完整 → 启动 driver，来源状态 `启动中` → `ready`（`setStatus` `:571`）。
-- 收件循环在 `pollLoop`（`:408`）：每轮 poll → 逐事件 `ReceiveTrigger` → **本批全部成功后才持久化 cursor**
-  （`:446-458`）；任一事件失败则 cursor 不动，下一轮重试同一批（幂等由 Trigger/内容 ID 保证）。
-  失败退避 1s→30s（`:415-437`）；cursor 存 kv `im.cursor.<ch>`（`cursor`/`setCursor` `:538/:550`）。
-- 健康：来源卡片与 `health` 表都写；错误分类 `classifyIMError`（`:519`）把 401/403/unauthorized/token expired
-  归为 `auth`，其余为 `error`。
+- **WS（推荐）**：`internal/im/feishu/ws.go:1-100` 用 `github.com/larksuite/oapi-sdk-go/v3 v3.12.2`
+  （`go.mod:12`）的 `larkws.Client` + `OnP2MessageReceiveV1`；`Run(ctx)` 阻塞消费，SDK 自带重连；
+  无 cursor，channel 停止时 `Close` 关连接（`internal/runtime/im.go:859-873` 构建）。事件经与长轮询相同的
+  `im.RawEvent`/审批入口进入引擎。
+- **longpoll（显式 fallback）**：`internal/im/feishu/transport.go` 用 `im/v1/messages` 游标增量轮询；
+  cursor 以 `<channel>.<transport>` 命名空间持久化（`internal/runtime/im.go:1045-1075`），整批被接受后才推进；
+  切换 transport 会清掉旧 cursor（`:500-505`）。
+- 凭据检查：设置卡片「检查通道」→ `checkFeishuAuth`（`internal/runtime/dws.go`）：POST tenant_access_token；
+  401/403 返回授权入口 `https://open.feishu.cn/app`。WS 模式检查的是 app id/secret 是否可用（事件订阅权限需在开放平台开通）。
+- **新装**默认 transport 是 **ws**（`internal/runtime/im.go:87`、`internal/runtime/pages.go:474-476`）；**旧版本只有 Feishu 凭据、没有 transport 键时，迁移会 pin `longpoll`**，不让升级改变已工作的接收路径（`internal/runtime/settingscodec.go:101-106`）。面板 Options 只有 `ws`/`longpoll`（`internal/view/channels.go:45-51`），webhook 未实现。
+- 媒体：不下载图片/文件，只保留 image_key/file_key 引用。
 
-## 3. 飞书：HTTP 长轮询 + 凭据检查
+## 4. 钉钉：DWS（默认，个人 OAuth）+ 官方 Stream（可选，bot）
 
-- 传输：`internal/im/feishu` 用 `im/v1/messages` 历史接口做"游标 + 增量"长轮询（`transport.go:1-31`）；
-  **没有 WS 长连接、没有 webhook、没有媒体下载**（`mapping.go` 只保留 image_key/file_key 引用）。
-- 检查/授权：`CheckChannel("feishu")` → `checkFeishuAuth`（`internal/runtime/dws.go:101-140`）：
-  - 凭据不完整 → state `auth`，detail 说明缺 app id/secret，authURL = `https://open.feishu.cn/app`；
-  - POST `https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal`（10s 级超时）；
-  - 401/403 → `auth` + 授权入口；网络/5xx → `error`。
-- 授权按钮：面板用 `ChannelAuthorizer.CheckChannel`（`internal/ui/channels.go:14-25`）在后台线程检查，
-  返回 authURL 时显示「打开授权页」，用 `mygo.Shell.OpenExternal` 打开（`channels.go` 的 `openAuthorizationURL`）；
-  只有 http(s) 地址才打开（防注入）。
+### 4.1 DWS 真实 CLI 契约
 
-## 4. 钉钉：默认 DWS（外部命令契约）
+来源：`github.com/DingTalk-Real-AI/dingtalk-workspace-cli`（外部 CLI，不可 import；适配为“外部命令 + NDJSON 长连接”）。
+契约实现在 `internal/im/dingtalk/dws.go:1-30`：
 
-### 4.1 契约
+| 操作 | 命令 | 行为 |
+| --- | --- | --- |
+| 接收（长驻） | `dws event +listen-im --kind at-me\|group\|all-direct\|all-group [--chat-query <q>] [--profile <p>] --flatten -f ndjson` | stdout 每行一个事件 JSON；stderr 出现 `[event] ready` 才算就绪；**没有 poll/cursor** |
+| 接收（底层 fallback） | `dws event consume <EventKey> --flatten -f ndjson` | `EventKey` 显式配置时使用 |
+| 发送 | `dws chat +messages-send --as user ... --format json`（群 `--group <cid>`；单聊 `--open-dingtalk-id <id>`；`--text`/`--markdown`；可加 `--profile`） | **没有 `--idempotency-key`**；幂等靠文本尾部隐藏 marker（`markerForDWS`，`dws.go:286-330`） |
+| 发送（bot） | `--as bot --robot-code <code> --groups <cid>` | 仅 Stream/bot 身份可用 |
+| 授权检查 | `dws auth status --format json` | `loggedIn/account/profile/authUrl`；未登录→state `auth` + 登录命令 |
+| 登录（人类/headless） | `dws auth login` / `dws auth login --device` | `LoginCommand` 由 `LoginHeadless` 决定（`dws.go:1024-1032`） |
 
-所有调用 `exec.CommandContext` 直接执行（不经 shell），单次超时 **30s**（`internal/im/dingtalk/dws.go:87-95` 的
-`DWSConfig.Timeout` 默认值），stderr 截断后进 health detail（去密钥）。
+工程纪律（`dws.go:21-28`）：
+- **每渠道一个长驻 consumer**，断线由适配器按 **1s→30s** 退避重连（`:994-998`）；事件按 **event id 去重**（有界 seen 集合）。
+- 短命令（auth/send）串行：`execMu` 保证同一时刻只起一个短命令子进程；长驻 consumer 不打断；
+  profile 互斥的真实 CLI 可开 `PauseListenOnSend`（默认 false）。
+- 永不经过 shell；30s 超时 + `WaitDelay` 杀子进程；stderr 脱敏后进 health（`Secrets`）。
+- 生命周期：manager 每渠道一个 generation，`ApplyIMSettings` 串行化（`internal/runtime/im.go:344-420`），
+  停止时 cancel → 等 `StopGrace` → `Close` driver → 注销 outbox sender（`:397-470`、`:749-760`）；
+  `Stop` 幂等，main 退出会调用（`:397`）。
+- 检查复用运行中的 DWS 后端，不另起客户端（`im.go:1152-1179`，`dwsBuilt` 计数用于测试）。
+- 命令缺失/未登录：来源 `error`/`auth` + 可操作 detail（安装 dws、`dws auth login`、设置 `dingtalk_dws_cmd`），
+  **不自动 fallback 到 stream**（transport 由用户选）。
 
-| 操作 | 命令 | 期望 JSON | 失败处理 |
-| --- | --- | --- | --- |
-| 授权检查 | `dws auth status --json` | `{"loggedIn":true,"account":"...","authUrl":"https://..."}` | 未登录 → state `auth`，detail 给 `dws auth login` 或 authUrl |
-| 收件轮询 | `dws poll --cursor <c> --limit 50 --json` | `{"cursor":"c2","messages":[{"id","conversation":{"id","type","name"},"sender":{"id","name","bot"},"text","at","mentions","replyToBot"}]}` | 坏 JSON/超时 → 报错退避；**cursor 不前进** |
-| 发件 | `dws send --conversation <id> --text <t> --idempotency-key <k> --json` | `{"messageId":"..."}` | 4xx 永久错误 / 5xx 交给 Outbox 重试；文本尾部附加隐藏 marker |
-| 健康（可选） | `dws health --json` | `{"ok":true,"detail":"..."}` | 失败/未实现不判死，回退到 auth status |
+### 4.2 Stream（bot）模式
 
-实现：`commandDWSClient`（`dws.go:255`，`run` `:305`）、`AuthStatus`（`:337`）、`Health`（`:351`）、
-`Poll`（`:398`）、`Send`（`:434`）；传输适配 `DWSTransport`（`:718` 起），`SendText` 优先用 `TextSender`+幂等键（`:810`）。
+`dingtalk_transport=stream` 时使用官方 Stream SDK（`internal/im/dingtalk/stream.go`、`driver.go`），
+需要 app key/secret/robot code；这是 **bot 身份**，与 DWS 的个人 OAuth 身份不同。
+检查只验凭据齐全（`checkDingStreamAuth`），真实连接由订阅验证。
 
-### 4.2 串行 worker（为什么）
+## 5. 面板与状态
 
-**每渠道一个 `dwsRunner`**（`dws.go:561-700`）：poll tick、send、auth/health check 全部进同一队列，
-同一时刻最多一个 `dws` 子进程；优先级 **send > auth/health > poll**（`dws.go:577-581`），同优先级 FIFO；
-`ctx` 取消会杀掉正在跑的子进程（`Stop` `:647`）。
+- 来源组每渠道一张卡片：三态启用（显式开关覆盖推导；卡片状态来自运行时投影）、transport、"检查通道"、
+  未登录时"打开授权页"（mygo `Shell.OpenExternal`，只接受 http(s)）、凭据字段（secret 不回显，留空=保留）。
+- 禁用=未监听，来源行显示"未启用"，health 不假装在线；运行中显示"连接中"→`ready`。
+- 检查在后台 goroutine 执行（`internal/ui/channels.go:38-50`）；面板不持有 payload 密钥。
+- 保存设置异步：UI 显示"保存中…"，runtime 在后台命令锁内完成写库/渠道重启；来源页看到"连接中"。
+- 来源页 `待审批 N`；总览「待你批准」；批准/拒绝行内完成。
 
-理由：DWS 是**外部 CLI**，登录态/配置文件是全局的；并发调用会互相打断登录刷新、让 stdout 交错、让"检查"和"轮询"
-同时改本地状态。串行队列把竞态收敛到一个进程内，代价只是 send 最多等一个 poll（2s 级）。
+## 6. 秘密与诊断
 
-### 4.3 游标、幂等、退避
-
-- **cursor 只在本批全部被引擎接受后持久化**（`internal/runtime/im.go:446-458`）：失败批次重试而不是跳过；
-  引擎侧同 ID 幂等（内容派生 Trigger ID），所以重读安全。
-- **幂等标记**：发送文本尾部附加 `<!-- zeokeel:<key> -->`（`markerForDWS` `dws.go:458-465`），
-  对方客户端不渲染；重试用同一 key，配合 DWS 的 `--idempotency-key` 避免重复消息。
-- **退避**：poll 失败 1s 起、×2 到 30s 封顶（`dws.go:114-121`，runtime 侧同节奏 `im.go:415-437`）；
-  成功后重置为 1s。
-- **未安装/不可执行**：`dws auth status` 失败 → 来源 `error` + "安装 dws 或设置 dingtalk_dws_cmd"
-  （`internal/runtime/im.go:617`）；**不自动 fallback 到 stream**，除非用户把 transport 改成 `stream`。
-- 只支持接口里声明的能力：DWS 没有成员列表/消息历史/机器人模板发送，驱动对它们明确返回 `ErrUnsupported`
-  （`internal/runtime/dws.go:53,96`；`dws.go` 的 `SendRobot`/`ListMembers`/`AccessToken`）。
-
-## 5. 官方 Stream（可选 transport）
-
-`dingtalk_transport=stream` 时用官方 SDK：`internal/im/dingtalk/driver.go:102`（`New`，流式客户端在
-`stream.go:28-29,60,98`；依赖 `open-dingtalk/dingtalk-stream-sdk-go v0.9.1`）。
-检查按钮对 stream 只验证凭据是否齐全（`checkDingStreamAuth` `internal/runtime/im.go:631`），
-真实连接由启动后的订阅验证。**默认仍是 DWS**。
-
-> **已知 UI 偏差（owner: fix-ui2）**：`internal/view/channels.go:44-66` 把 stream 标成 `Implemented: false`
-> （面板显示"未实现"且不可选），但 runtime 已能构建官方 Stream 驱动（`internal/runtime/im.go:394-398`），
-> 设置字段的 Help 也写"stream：官方 Stream SDK"。要么把该选项改为可用，要么在设置 Help 里去掉 stream 说法。
-
-## 6. 面板交互
-
-- 来源组每渠道一张卡片：开关、传输方式、凭据字段、状态行、「检查通道」按钮（`internal/ui/channels.go:134-230`）；
-  禁用时状态"未启用"，绝不显示"监听中"（`channelState` `:244`）。
-- 检查在后台 goroutine 执行（`startChannelCheck` `:38-50`），答案回主线程；auth 状态显示「打开授权页」。
-- 运行时未接 `ChannelAuthorizer` 时按钮文案说明"动作未接线"，不假装检查过（`:62`）。
+- 设置页不回显 secret（`internal/runtime/pages.go:539-550`）；留空保存=保留旧值。
+- `store.Inspect`/`status --json` 的 KV 与 health detail 走 redaction（`internal/store/redact.go:23-87`、
+  `internal/store/inspect.go:46-117,231,260`）：`***` 保留"已配置/未配置"事实，不泄露值。
+- IM 驱动错误/health detail 经 `redactIMDetail` 脱敏；DWS stderr 按 `Secrets` 列表脱敏。
 
 ## 7. 运维步骤
 
-1. 安装 DWS 并登录：`dws auth login`（或点面板「检查通道」拿 authUrl）；`dws auth status --json` 应 `loggedIn:true`。
-2. 设置›来源：打开「启用钉钉」，transport 选 `dws`，`dws` 命令可用（或填绝对路径/包装脚本）；点「检查通道」。
-3. 飞书：填 app id/secret/chats → 启用 → 检查；401/403 时按 authURL 去开放平台修应用权限/发布版本。
-4. 禁用渠道：关开关保存即可；轮询停止、来源状态"未启用"，配置保留。
-5. 排障：`zeokeel status --json` 的 health 里看 `im:feishu` / `im:dingtalk`；日志 `logs/zeokeel.log` 搜
-   `IM poll failed` / `IM driver failed`；DWS 细节看 `dws health --json`。
+1. 飞书（推荐 WS）：开放平台建应用、开事件订阅/长连接权限；设置›来源填 app id/secret，transport 选 ws，启用，点检查。
+   若网络/环境不适合长连接，选 longpoll（需要 `feishu_chats`，cursor 存在 kv）。
+2. 钉钉 DWS：安装 `dws` → `dws auth login`（headless `--device`）→ `dws auth status --format json` 应为 `loggedIn:true`；
+   设置›来源启用钉钉，transport=dws，必要时填 profile/listen kind/chat-query；点检查。
+3. 钉钉 Stream（bot）：transport=stream，填 app key/secret/robot code，启用。
+4. 收到消息后：到总览「待你批准」逐条批准/拒绝；批准才开工，拒绝什么都不留。
+5. 排障：`status --json` 看 `im:feishu`/`im:dingtalk` health；日志搜 `IM channel started`/`IM poll failed`/
+   `dws`；DWS 自身 `dws auth status --format json`。
+6. 升级：旧配置的 `*_enabled` 缺省时由凭据/flag 推导；flag-only 部署由 `BootstrapIMFlags` 补写启用；
+   旧共享 `im_self` 复制到每渠道 id（`settingscodec.go:106-130`）。`LoadSettings` 在首次启动/升级时真正执行 `migrateSettings`
+   并写 `SettingsSchema` stamp（`internal/runtime/pages.go:678-707`；测试 `TestLegacySettingsMigration`）；失败不会静默写入半套值。
 
-## 8. 未实现 / 已知限制
+## 8. 已知边界
 
-- 飞书 WS/webhook、IM 媒体下载（只保留引用）。
-- DWS 成员列表/消息历史/模板发送（明确 `ErrUnsupported`）。
-- 钉钉 Stream 选项的 UI 可用性（见 §5 偏差）。
-- 真实凭据端到端未在本机验证（CI/发布前需要凭据）。
+- 飞书 webhook 未实现（面板不再提供）；飞书媒体只保留引用。
+- DWS 能力受 CLI 契约限制（无成员列表/历史/模板发送）；真实 CLI 版本/登录流程仍需真实租户验证。
+- 审批逃生阀 `AutoApproveIM` 只给测试/嵌入方，默认关闭。
+- `ui.font_scale`/删除工作区/详情 ID/迁移等曾登记为差异，已在 2026-11-04 微调修齐；见 README/设计 §13。
+
+## 9. 代码证据索引
+
+- 审批优先：`internal/engine/evaluate.go:396-461`；`internal/engine/gate.go:56-60`；`internal/runtime/runtime.go:894-930`；
+  `cmd/zeokeel/acceptance_test.go:129-160,207-232`；`internal/runtime/im_approval_test.go:55-129`。
+- 三态/迁移：`internal/runtime/im.go:33-130,186-248`；`internal/runtime/settingscodec.go:1-70,106-160,182-230`；
+  `cmd/zeokeel/main.go:300`、`cmd/zeokeel/imwiring.go:91`。
+- 飞书 WS/longpoll：`internal/im/feishu/ws.go:1-100`；`internal/im/feishu/driver.go:71,94-107`；
+  `internal/runtime/im.go:180-205,500-505,859-873,1045-1075`；`go.mod:12`。
+- DWS 契约/生命周期：`internal/im/dingtalk/dws.go:1-28,63-68,90-130,286-330,569-700,842-890,970-1032,1069-1240`；
+  `internal/runtime/dws.go:1-20,130-205`；`internal/runtime/im.go:344-470,749-760,1152-1179`。
+- 面板/来源：`internal/ui/channels.go:1-360`；`internal/ui/overview.go:51-130`；`internal/runtime/pages.go:101-111,468-500`。
+- 秘密：`internal/runtime/pages.go:539-550`；`internal/store/redact.go:23-87`；`internal/store/inspect.go:46-117,231,260`。

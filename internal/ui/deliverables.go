@@ -20,16 +20,16 @@ func (a *App) artifactsPanel(c *mui.Context) {
 	mui.Modal(c, &a.artifactsOpen, func() {
 		mui.Column(c).Width(720).Gap(10).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "交付物").FontSize(17).Bold().TextColor(tk.Text)
+				mui.Text(c, "交付物").FontSize(fs(17)).Bold().TextColor(tk.Text)
 				if vm != nil && vm.Total > 0 {
 					textChip(c, tk, fmt.Sprintf("%d 个", vm.Total))
 				}
 				mui.Spacer(c)
-				mui.Text(c, "Esc 关闭").FontSize(12).TextColor(tk.TextFaint)
+				mui.Text(c, "Esc 关闭").FontSize(fs(12)).TextColor(tk.TextFaint)
 			})
 
 			if vm == nil || vm.Empty() {
-				mui.Text(c, "还没有交付物。工单产出后会出现在这里。").FontSize(14).
+				mui.Text(c, "还没有交付物。工单产出后会出现在这里。").FontSize(fs(14)).
 					TextColor(tk.TextFaint)
 				return
 			}
@@ -49,7 +49,7 @@ func (a *App) artifactsPanel(c *mui.Context) {
 
 			rows := vm.Filter(a.artifactWS)
 			if len(rows) == 0 {
-				mui.Text(c, "这个工作区还没有交付物。").FontSize(13).TextColor(tk.TextFaint)
+				mui.Text(c, "这个工作区还没有交付物。").FontSize(fs(13)).TextColor(tk.TextFaint)
 				return
 			}
 			mui.Scroll(c).Height(420).Children(func() {
@@ -59,7 +59,7 @@ func (a *App) artifactsPanel(c *mui.Context) {
 						AlignItems(mui.Center).Children(func() {
 						iconForArtifact(c, tk, r.Kind)
 						mui.Column(c).Grow(1).Gap(2).Children(func() {
-							mui.Text(c, r.Title).FontSize(14).TextColor(tk.Text)
+							mui.Text(c, r.Title).FontSize(fs(14)).TextColor(tk.Text)
 							// Detail already carries size and time from the producer;
 							// adding another timestamp here printed it twice.
 							meta := fmt.Sprintf("%s · %s", r.Workspace, r.Ticket)
@@ -68,7 +68,7 @@ func (a *App) artifactsPanel(c *mui.Context) {
 							} else {
 								meta = r.At.Format("01-02 15:04") + " · " + meta
 							}
-							mui.Text(c, meta).FontSize(12).SingleLine().TextColor(tk.TextFaint)
+							mui.Text(c, meta).FontSize(fs(12)).SingleLine().TextColor(tk.TextFaint)
 						})
 						textChip(c, tk, r.Kind)
 					})
@@ -83,7 +83,7 @@ func chipButton(c *mui.Context, tk Tokens, label string, active bool, fn func())
 	mui.Row(c).Padding(4, 10).Radius(6).
 		Background(ifColor(active, tk.SurfaceAlt, tk.Surface)).
 		OnClick(fn).Children(func() {
-		mui.Text(c, label).FontSize(13).
+		mui.Text(c, label).FontSize(fs(13)).
 			TextColor(ifColor(active, tk.Text, tk.TextMuted))
 	})
 }

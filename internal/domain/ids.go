@@ -4,6 +4,7 @@
 package domain
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -30,8 +31,43 @@ const Global = Scope("global")
 // renaming a directory must not orphan the workspace's history. See design §4.5.
 type WorkspaceID string
 
-// WorkspaceScope returns the Scope of one workspace.
-func WorkspaceScope(id WorkspaceID) Scope { return Scope("ws:" + string(id)) }
+// WorkspaceIDPrefix marks a real workspace id. A Scope of a workspace is
+// "ws:<id>"; the bare prefix is never a workspace.
+const WorkspaceIDPrefix = "ws_"
+
+// NewWorkspaceID returns a fresh, stable workspace id. It is generated once when
+// the workspace is created and persisted with it; it is never derived from a
+// path or a display name, so moving or renaming a repository cannot orphan the
+// workspace's history (design §4.5). The id is random, not content-derived: a
+// workspace is a local configuration entity with no content to hash.
+//
+// crypto/rand can only fail when the platform has no entropy source at all; a
+// process that cannot mint an identity should not pretend it did, so the failure
+// panics with a clear message instead of producing a duplicate id.
+func NewWorkspaceID() WorkspaceID {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("domain: cannot generate a workspace id: " + err.Error())
+	}
+	return WorkspaceID(WorkspaceIDPrefix + hex.EncodeToString(b[:]))
+}
+
+// Valid reports whether a workspace id is usable as an identity: non-empty and
+// free of the separators that scope and Thread keys use.
+func (id WorkspaceID) Valid() bool {
+	s := string(id)
+	return s != "" && s == strings.TrimSpace(s) && !strings.ContainsAny(s, "|:")
+}
+
+// WorkspaceScope returns the Scope of one workspace. An empty id is not a
+// workspace: it yields Global, never the malformed "ws:" scope, because a fake
+// workspace scope would let two different things collide on one id namespace.
+func WorkspaceScope(id WorkspaceID) Scope {
+	if id == "" {
+		return Global
+	}
+	return Scope("ws:" + string(id))
+}
 
 // Key derives an ID from a scope and a list of parts. Including the scope first
 // keeps two workspaces from colliding: repo A's issue #12 and repo B's issue #12
@@ -52,11 +88,16 @@ func ThreadKey(scope Scope, source, id string) string {
 	return strings.Join([]string{string(scope), source, id}, "|")
 }
 
-// WorkspaceIDOf reports which workspace a scope names, or false for Global.
+// WorkspaceIDOf reports which workspace a scope names, or false for Global and
+// for malformed scopes such as the bare "ws:".
 func (s Scope) WorkspaceIDOf() (WorkspaceID, bool) {
 	const prefix = "ws:"
-	if len(s) <= len(prefix) || string(s)[:len(prefix)] != prefix {
+	if len(s) <= len(prefix) || !strings.HasPrefix(string(s), prefix) {
 		return "", false
 	}
-	return WorkspaceID(string(s)[len(prefix):]), true
+	id := WorkspaceID(string(s)[len(prefix):])
+	if !id.Valid() {
+		return "", false
+	}
+	return id, true
 }

@@ -151,3 +151,39 @@ merged-policy 确定性/最终强度测试仍绿。
 
 - `Engine.Ticket(id) (*domain.Ticket, bool)` 已删除（全仓零调用方，且返回内部指针是潜在 race 风险）；
   跨 goroutine/面板读取一律走 `TicketSnapshot`（深拷贝）。engine 测试与 `go build ./...` 均绿。
+
+
+## 结构小修（domain + engine 同源正确性问题）
+
+1. **`WorkspaceScope("")` = Global**（不再产生畸形 `"ws:"`）：`Scope.WorkspaceIDOf` 额外校验 id 非空/无空白/无分隔符，
+   裸 `ws:`、`ws:|…` 一律不算工作区；`Key(WorkspaceScope(""), …)` 与 `Key(Global, …)` 完全一致。
+   `cmd` 里 IM Trigger 用 `WorkspaceScope("")` 的地方因此归到 Global（符合设计 §4.7；无 cmd 改动，构建绿）。
+2. **`domain.NewWorkspaceID()`**：`crypto/rand` 6 字节 → `ws_` + 12 hex；`WorkspaceID.Valid()` 校验；测试 200 个唯一、
+   前缀/长度、scope round-trip；entropy 不可能时才 panic（不静默产生重复 id）。
+3. **operator/self 语义**（`internal/domain/actors.go`）：`OperatorActorID`、`Trigger.IsOperatorMessage()`/`CreatedByMe()`
+   = `Self` 或 actor==operator 或（local 且无显式 actor）；`Mandate.IsOperatorGrant()` / `Ticket.CreatedByOperator()`
+   读 Mandate（授权事实），不被后续同事消息改写。测试覆盖 7 种来源组合。
+4. **事件时间**：`MinEventTime`（2000-01-01）、`Trigger.EnsureAt(now)`（零值/2000 前/未来 24h+ → now）、
+   `Trigger.Validate()`（id/source/时间/Threads/human actor）。engine `Receive` 改用 `EnsureAt`（同源正确性，
+   防止 IM 1970 事件污染排序与 Eval deadline）；engine 测试 `TestReceiveNormalizesEpochTimestamps`。
+验证：domain/engine/assess 测试绿；`go build ./...` 绿；`gofmt` 干净。
+（第 5 项独立验证 `audit/verify/design-fix-verify.md` 待 Lead 通知后写。）
+
+
+## 产品规则变更：入站 IM 一律待批（supersedes auto-processing）
+
+- `internal/engine/gate.go`：`imSources = {feishu, dingtalk}`、`isIMSource`、`Policy.AutoApproveIM`（默认 false，
+  仅未来显式 opt-out 用）。这是代码里的发布策略，不随工作区配置静默失效。
+- `internal/engine/evaluate.go`：Eval 本会 `DecAccept` 的 IM 消息一律转 `DecPropose`（**不看 strength / accept mode /
+  RequireApproval**）；批内**每条消息各自一个** proposal（`proposeIMLocked`，Decision ID = key(decision, evalID, triggerID)），
+  不建 Ticket、不 launch Worker、不发 IM 回复（`Reply.Route=none`），只进待办。`Approve(decisionID)` 是唯一建 Ticket 的路径；
+  Reject/ignore 什么都不留。Decision 的 reason = `im_approval_required`，disposition 仍记录 gate 的 strength/basis（审计）。
+- 非 IM（GitHub、local 面板、schedule、测试）行为不变（仍按 gate + accept mode）。
+- 持久化：`Persistence.EvaluateDue` 会保存批内每条 disposition 的 Decision；`Load` 从 `Decision.TriggerIDs` 重建
+  Decision→Trigger 边，使重启后 `Approve` 仍可用（新增 `TestIMProposalsSurviveRestart`）。
+- 测试：`TestIMExplicitBecomesProposal`、`TestIMApproveCreatesTicketRejectCreatesNothing`、
+  `TestNonIMExplicitStillAccepts`、`TestIMMessagesAreSeparateProposals`、`TestIMStrangerIsNotProposed`、
+  `TestIMProposalsSurviveRestart`。
+
+**跨 scope 影响**：`cmd/zeokeel/acceptance_test.go` 的 A3/A7/Overview 三个用例仍断言"操作员自己的 IM 消息直接开单"，
+这是被本次产品规则取代的旧行为，需要 runtime/Lead 更新（engine 不编辑 cmd）。

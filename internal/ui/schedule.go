@@ -20,8 +20,8 @@ func (a *App) scheduleSection(c *mui.Context) {
 	mui.Column(c).Grow(1).MinWidth(0).Background(tk.Surface).Radius(tk.Radius).
 		Border(1, tk.Border).Children(func() {
 		mui.Row(c).Height(34).Padding(0, 14).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Icon(c, icClock).FontSize(13).TextColor(tk.Violet)
-			mui.Text(c, "定时").FontSize(15).Bold().TextColor(tk.Text)
+			mui.Icon(c, icClock).FontSize(fs(13)).TextColor(tk.Violet)
+			mui.Text(c, "定时").FontSize(fs(15)).Bold().TextColor(tk.Text)
 			if !vm.Empty() {
 				chip(c, tk, fmt.Sprint(len(vm.Rows)), tk.TextMuted, tk.SurfaceAlt)
 				if n := vm.RunningCount(); n > 0 {
@@ -29,7 +29,7 @@ func (a *App) scheduleSection(c *mui.Context) {
 				}
 			}
 			mui.Spacer(c)
-			mui.Text(c, "由 agent 创建").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, "由 agent 创建").FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		switch {
@@ -68,7 +68,7 @@ func (a *App) scheduleRow(c *mui.Context, r view.ScheduleRow) {
 			if task == "" {
 				task = r.ID // a schedule the core could not describe is still visible
 			}
-			mui.Text(c, task).FontSize(14).SingleLine().Grow(1).TextColor(tk.Text)
+			mui.Text(c, task).FontSize(fs(14)).SingleLine().Grow(1).TextColor(tk.Text)
 			if r.Workspace != "" {
 				textChip(c, tk, r.Workspace)
 			}
@@ -82,8 +82,8 @@ func (a *App) scheduleRow(c *mui.Context, r view.ScheduleRow) {
 			chip(c, tk, r.EnabledLabel(), fg, bg)
 		})
 		mui.Row(c).Gap(12).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, r.Spec).FontSize(12).TextColor(tk.TextMuted)
-			mui.Text(c, a.scheduleNext(r)).FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, r.Spec).FontSize(fs(12)).TextColor(tk.TextMuted)
+			mui.Text(c, a.scheduleNext(r)).FontSize(fs(12)).TextColor(tk.TextFaint)
 			mui.Spacer(c)
 			a.scheduleLast(c, r)
 		})
@@ -95,20 +95,20 @@ func (a *App) scheduleRow(c *mui.Context, r view.ScheduleRow) {
 func (a *App) scheduleLast(c *mui.Context, r view.ScheduleRow) {
 	tk := a.tk
 	if r.LastStatus == "" {
-		mui.Text(c, "还没触发过").FontSize(12).TextColor(tk.TextFaint)
+		mui.Text(c, "还没触发过").FontSize(fs(12)).TextColor(tk.TextFaint)
 		return
 	}
 	fg := tk.Green
 	if r.LastStatus == "skipped" {
 		fg = tk.Amber
 	}
-	mui.Text(c, "上次 "+r.LastStatusLabel()).FontSize(12).TextColor(fg)
+	mui.Text(c, "上次 "+r.LastStatusLabel()).FontSize(fs(12)).TextColor(fg)
 	if r.LastSkipReason != "" {
-		mui.Text(c, "· "+r.LastSkipReason).FontSize(12).SingleLine().TextColor(tk.Amber)
+		mui.Text(c, "· "+r.LastSkipReason).FontSize(fs(12)).SingleLine().TextColor(tk.Amber)
 		return
 	}
 	if !r.LastFiredAt.IsZero() {
-		mui.Text(c, "· "+humanfmt.Ago(a.age(r.LastFiredAt))).FontSize(12).TextColor(tk.TextFaint)
+		mui.Text(c, "· "+humanfmt.Ago(a.age(r.LastFiredAt))).FontSize(fs(12)).TextColor(tk.TextFaint)
 	}
 }
 
@@ -136,6 +136,6 @@ func (a *App) until(t time.Time) time.Duration {
 // panelNote is one honest line of a section that has nothing to list.
 func (a *App) panelNote(c *mui.Context, text string, color mui.Color) {
 	mui.Row(c).Padding(10, 14).Children(func() {
-		mui.Text(c, text).FontSize(13).TextColor(color)
+		mui.Text(c, text).FontSize(fs(13)).TextColor(color)
 	})
 }

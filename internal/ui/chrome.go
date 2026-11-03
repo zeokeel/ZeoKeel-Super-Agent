@@ -18,7 +18,7 @@ func (a *App) topbar(c *mui.Context) {
 	mui.Row(c).Height(48).Padding(0, 16).Gap(12).AlignItems(mui.Center).
 		Background(tk.Surface).Children(func() {
 		uiLogo(c, 22)
-		mui.Text(c, "ZeoKeel").FontSize(16).Bold().TextColor(tk.Text)
+		mui.Text(c, "ZeoKeel").FontSize(fs(16)).Bold().TextColor(tk.Text)
 
 		mui.Spacer(c)
 
@@ -27,9 +27,9 @@ func (a *App) topbar(c *mui.Context) {
 		search := mui.Row(c).Height(26).Padding(0, 10).Radius(8).Gap(7).
 			Background(tk.SurfaceAlt).Border(1, tk.BorderSoft).AlignItems(mui.Center).
 			Children(func() {
-				mui.Icon(c, icSearch).FontSize(12).TextColor(tk.TextMuted)
-				mui.Text(c, "搜索").FontSize(13).TextColor(tk.TextMuted)
-				mui.Text(c, searchKeyHint()).FontSize(12).TextColor(tk.TextFaint)
+				mui.Icon(c, icSearch).FontSize(fs(12)).TextColor(tk.TextMuted)
+				mui.Text(c, "搜索").FontSize(fs(13)).TextColor(tk.TextMuted)
+				mui.Text(c, searchKeyHint()).FontSize(fs(12)).TextColor(tk.TextFaint)
 			})
 		if search.Clicked() {
 			a.openSearch()
@@ -78,7 +78,7 @@ func (a *App) sidebar(c *mui.Context) {
 		// 监控: the inspection pages, unchanged in order and meaning.
 		mui.Column(c).Padding(6, 8).Gap(2).Children(func() {
 			mui.Row(c).Padding(2, 8, 2, 8).Children(func() {
-				mui.Text(c, "监控").FontSize(13).Bold().TextColor(tk.TextFaint)
+				mui.Text(c, "监控").FontSize(fs(13)).Bold().TextColor(tk.TextFaint)
 			})
 			for _, it := range items[1 : len(items)-1] {
 				a.railItem(c, it, 14, 15, false)
@@ -95,7 +95,7 @@ func (a *App) sidebar(c *mui.Context) {
 		// (UTC±h)" fits the rail's width, and wraps instead of being cut when a
 		// timezone name is long.
 		mui.Column(c).Padding(4, 10).Children(func() {
-			mui.Text(c, a.systemLabel()).FontSize(10).TextColor(tk.TextFaint)
+			mui.Text(c, a.systemLabel()).FontSize(fs(10)).TextColor(tk.TextFaint)
 		})
 	})
 }
@@ -110,9 +110,9 @@ func (a *App) railItem(c *mui.Context, it view.NavItem, iconSize, textSize float
 	}
 	clicked := row.Clicked()
 	row.Children(func() {
-		mui.Icon(c, iconFor(it.Section)).FontSize(iconSize).
+		mui.Icon(c, iconFor(it.Section)).FontSize(fs(iconSize)).
 			TextColor(ifColor(on, tk.Accent, tk.TextMuted))
-		txt := mui.Text(c, it.Label).FontSize(textSize).TextColor(ifColor(on, tk.Accent, tk.Text))
+		txt := mui.Text(c, it.Label).FontSize(fs(textSize)).TextColor(ifColor(on, tk.Accent, tk.Text))
 		if big {
 			txt.Bold()
 		}
@@ -144,13 +144,13 @@ func (a *App) statusbar(c *mui.Context) {
 			// than one that explains why it is waiting.
 			left = "正在等执行器收尾，完成后自动退出…"
 		}
-		mui.Text(c, left).FontSize(12).TextColor(tk.TextFaint)
+		mui.Text(c, left).FontSize(fs(12)).TextColor(tk.TextFaint)
 		mui.Spacer(c)
 		// The glossary's discoverable entry: the shortcut opens it, and this says
 		// so in the platform's own words.
-		mui.Text(c, "帮助 "+helpKeyHint()).FontSize(12).SingleLine().TextColor(tk.TextMuted).
+		mui.Text(c, "帮助 "+helpKeyHint()).FontSize(fs(12)).SingleLine().TextColor(tk.TextMuted).
 			OnClick(func() { a.openHelp() })
-		mui.Text(c, "·").FontSize(12).TextColor(tk.TextFaint)
+		mui.Text(c, "·").FontSize(fs(12)).TextColor(tk.TextFaint)
 		mui.Text(c, fmt.Sprintf("v%s · rev %d · Go 1.27.3 · CGO=0 · SQLite %s", Version, rev, db)).
 			FontSize(10).SingleLine().TextColor(tk.TextFaint)
 	})
