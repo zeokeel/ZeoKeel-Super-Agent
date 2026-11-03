@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ZeoKeel Super Agent — launchd user agent.
+
+  STATUS (2026-11-03, after Wave 2): usable. The binary has a real headless
+  service mode (SIGINT/SIGTERM drain, exit 0/1/2/3), `zeokeel status`, and
+  writes <stateDir>/logs/zeokeel.log. See design/ops-runbook.md.
+
+  KeepAlive is deliberately false: KeepAlive=true restarts the process even
+  after exit 2 (component error) or 3 (waiting for setup), which are not fixed
+  by a restart - the exact "watchdog restart storm" 006 warns about. The hourly
+  check (scripts/watchdog-check.sh) decides whether to run
+  "launchctl kickstart -k".
+
+  Install:
+    cp packaging/launchd/com.zeokeel.agent.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.zeokeel.agent.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zeokeel.agent</string>
+
+  <!-- The binary does not read DSH_HOME; state is passed explicitly. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/zeokeel</string>
+    <string>-state-dir=/Users/CHANGEME/.zeokeel</string>
+    <string>--headless</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- false on purpose: exit 2/3 must not trigger a restart loop. -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/CHANGEME/.zeokeel/logs/zeokeel.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/CHANGEME/.zeokeel/logs/zeokeel.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

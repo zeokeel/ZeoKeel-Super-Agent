@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Product builds are zero-cgo everywhere. The single exception is the `-race`
+# step, which needs cgo (the race runtime is built with the C toolchain); that
+# step sets CGO_ENABLED=1 for itself only and is documented in
+# design/ops-runbook.md and scripts/verify-fixes.sh, which runs both modes
+# locally with the same commands.
+env:
+  CGO_ENABLED: "0"
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  # The gate every change passes: the same script a developer runs locally.
+  # scripts/verify-fixes.sh is the single source of truth for what "green"
+  # means; CI must not add checks the local gate does not run (see the script
+  # header for the contract).
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.3"
+      - name: install gcc for the -race step only
+        # -race is the one place cgo is allowed: the race runtime is C. Product
+        # builds stay CGO_ENABLED=0 (verify-fixes.sh + check-nocgo.sh prove it).
+        run: sudo apt-get update && sudo apt-get install -y gcc
+      - name: canonical gate (same as scripts/verify-fixes.sh)
+        run: sh scripts/verify-fixes.sh
+
+  # Compiling for every platform we ship is part of the definition of done:
+  # a cgo dependency would break here rather than at release time.
+  cross:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.3"
+      - run: go build ./...
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+
+  # Size is a product constraint, not a vanity metric: the app must stay a
+  # normal desktop binary. M0's budget is 40 MB.
+  size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.3"
+      - name: release build
+        run: |
+          go build -tags mygo_noinspector -ldflags "-s -w" -o /tmp/zeokeel ./cmd/zeokeel
+          ls -l /tmp/zeokeel
+          bytes=$(stat -c%s /tmp/zeokeel)
+          echo "release binary: $bytes bytes"
+          test "$bytes" -lt $((40 * 1024 * 1024)) || { echo "binary over the 40 MB budget"; exit 1; }
+
+  # The real window needs a display; this job runs apart from the gate so a
+  # flaky X server cannot block a merge (design §9.2). It is non-gating on
+  # purpose. Known limitation after Wave 1: `cmd/zeokeel` has no
+  # "start window and quit after N seconds" flag (Wave-2 item), so the real
+  # window is started under `timeout` and killed after 60s; exit 124 (killed
+  # by timeout) means the window stayed up, which is the assertion.
+  window:
+    runs-on: ubuntu-latest
+    needs: check
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.3"
+      - name: install the Linux window dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth dbus-x11 libgtk-3-0 libgl1-mesa-dri
+      # Smoke 1: the binary runs to completion under Xvfb. `-demo` is the
+      # domain walkthrough (no window, exits 0); it proves the box and the
+      # toolchain are usable for the window step below.
+      - name: smoke run under Xvfb (-demo, exits by design)
+        run: |
+          xvfb-run -a -s "-screen 0 1440x900x24" \
+            dbus-run-session -- go run ./cmd/zeokeel -demo
+      # Smoke 2: the real window. Without a self-quit flag the only way to
+      # assert "it started and did not crash" is to kill it after a while:
+      # timeout exits 124 when the process was still alive. `go run` compile
+      # time is included, hence 60s.
+      - name: real window starts and survives 60s
+        run: |
+          set +e
+          timeout 60 xvfb-run -a -s "-screen 0 1440x900x24" \
+            dbus-run-session -- go run ./cmd/zeokeel
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then
+            echo "window process failed with exit code $code"
+            exit "$code"
+          fi
+          echo "window survived the timeout (exit $code)"

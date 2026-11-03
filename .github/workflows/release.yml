@@ -1,0 +1,94 @@
+name: Release (pre-release)
+
+# Publishes the three desktop builds as a GitHub pre-release.
+# Triggered by pushing a v* tag (the tag name is the release name) or manually.
+#
+# Hard constraints:
+#   1. CGO_ENABLED=0 for every build (scripts/package.sh + the guard step prove it).
+#   2. Symbol tables stripped: -ldflags "-s -w" (package.sh) and verified with
+#      `go tool nm` on the Linux binary below.
+#   3. Exactly the three shipped platforms: Linux x86_64 (tar.gz),
+#      macOS arm64 (.app zip), Windows x86_64 (zip).
+#   4. Actions use their latest major releases (v7.0.1 / v7.0.0 / v7.0.2 /
+#      v3.0.3 as of 2026-11-03; keep this comment updated when bumping).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CGO_ENABLED: "0"
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  pre-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Go (from go.mod)
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prove zero cgo
+        run: |
+          test "$(go env CGO_ENABLED)" = "0" || { echo "CGO_ENABLED must be 0"; exit 1; }
+          sh scripts/check-nocgo.sh
+
+      - name: Build three platforms (-s -w, no cgo)
+        run: |
+          VERSION="$(cat VERSION)"
+          if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            test "v$VERSION" = "$GITHUB_REF_NAME" || {
+              echo "tag $GITHUB_REF_NAME does not match VERSION v$VERSION"; exit 1; }
+          fi
+          sh scripts/package.sh
+          # Checksums for the three published artifacts.
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Verify three artifacts and stripped symbol tables
+        run: |
+          set -eu
+          artifacts=$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | sort)
+          echo "$artifacts"
+          count=$(printf '%s\n' "$artifacts" | sed '/^$/d' | wc -l)
+          test "$count" -eq 3 || { echo "expected 3 platform artifacts, got $count"; exit 1; }
+          # The Linux binary is the one we can inspect with go tool nm on this runner.
+          nm_out=$(go tool nm dist/zeokeel-linux-amd64 2>&1 || true)
+          echo "$nm_out" | head -3
+          case "$nm_out" in
+            *"no symbols"*) echo "symbol table stripped" ;;
+            *) echo "binary still has symbols"; exit 1 ;;
+          esac
+          # The Windows/macOS artifacts must exist and be non-trivial.
+          test -s dist/zeokeel-*-macos-arm64.zip
+          test -s dist/zeokeel-*-windows-x86_64.zip
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: zeokeel-${{ github.ref_name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish pre-release
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          # rc/beta/alpha tags are pre-releases; a future stable tag publishes normally.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS

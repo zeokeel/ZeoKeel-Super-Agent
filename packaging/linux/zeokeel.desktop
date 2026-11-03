@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ZeoKeel
+GenericName=Super Agent
+Comment=你的 AI 同事：接任务、研判、执行、交付
+Exec=zeokeel
+Icon=zeokeel
+TryExec=zeokeel
+Terminal=false
+Categories=Development;Utility;
+Keywords=agent;ai;automation;

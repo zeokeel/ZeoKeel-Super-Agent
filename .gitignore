@@ -1,0 +1,29 @@
+# build output
+/zeokeel
+/seedstate
+/bin/
+*.test
+
+# local state and secrets
+/.zeokeel/
+*.db
+*.db-wal
+*.db-shm
+
+# the reference clone and research spikes are not part of the product build
+/_ref/
+/spike/
+/spike-nocgo/
+/spike-sdk/
+
+# prototype build output (visual reference; not part of the product build)
+/design/prototype/zeokeel-prototype
+
+# generated screenshots (regenerate with the commands in design/M0-tasks.md)
+/artifacts/
+/dist/
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/

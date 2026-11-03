@@ -1,0 +1,40 @@
+# ZeoKeel Super Agent — systemd user unit.
+#
+# STATUS (2026-11-03, after Wave 2): usable. `-headless` is a real service mode
+# (SIGINT/SIGTERM drain, exit code 0/1/2/3), `zeokeel status` exists, and the
+# app writes <stateDir>/logs/zeokeel.log. See design/ops-runbook.md.
+#
+# Why Restart=on-failure is not enough by itself: systemd restarts on any
+# non-zero exit, but per 006:113-124 exit 2 (component error) and exit 3
+# (waiting for setup) are NOT fixed by a restart. This unit only keeps a crashed
+# process up; the restart DECISION belongs to scripts/watchdog-check.sh
+# (006:133-141 semantics).
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/systemd/zeokeel.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now zeokeel.service
+
+[Unit]
+Description=ZeoKeel Super Agent (local AI teammate)
+# Documentation: REPO/design/ops-runbook.md (no man page yet)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# The binary does not read DSH_HOME; state lives under -state-dir.
+ExecStart=%h/.local/bin/zeokeel -state-dir=%h/.zeokeel --headless
+# Give a running executor time to finish (the app drains up to 10s on quit).
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+# Keep the supervisor simple: no auto-restart storms. The hourly check decides
+# whether a restart is appropriate at all (exit 2/3 must not be restarted);
+# scripts/watchdog-check.sh implements that decision once status exists.
+
+[Install]
+WantedBy=default.target
