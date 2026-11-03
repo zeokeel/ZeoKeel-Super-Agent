@@ -190,3 +190,217 @@ $ CGO_ENABLED=0 go test ./... -count=1 -skip Live
   2. 评估页定位行不再整行底色（Table 的单元格模型限制），"定位" chip 保留。
 - 未跑 `-race`（契约：该 step 需 `CGO_ENABLED=1`，且不是我的闸门）；未跑三平台交叉编译。
 - 全仓 `go test ./...` 仅 `internal/runtime` 一个用例因状态目录锁失败（并发进程占用），非本 scope、非本次改动引起。
+
+---
+
+# Round 2（2026-11-03，UI 第二轮：Super-Agent 侧边栏 / 工作区 / 字体 / 系统信息）
+
+依据：`audit/fixes/ui2-spec.md` §2–§3、§6。范围仍是 `internal/ui/**` + `internal/view/**`；未触碰 runtime/agent/cmd/design，未改 `go.mod`。
+
+## 完成的条目
+
+### 1. view 契约（spec §2，照抄签名）
+
+`internal/view/workspace.go`（新增）、`internal/view/vm.go`：
+
+- `const SecWorkspace Section = "workspace"`；`SectionLabel(sec)` 覆盖它（`工作区`），`Nav` 的 `SecOverview` 标签改为 `超级Agent`（顺序/其余标签不变）。
+- `WorkspacePanelVM{Workspaces []WorkspaceEntryVM, Selected, UpdatedAt}`、`WorkspaceEntryVM{ID,Name,Root,Purpose,Kind,Conversations,LastAt}`、
+  `ConversationVM{ID,Number,Title,Workspace,CreatedBy,Source,Stage,StageID,Attention,LastAt}`，`CreatedBy` 常量 `me`/`agent`。
+- 纯函数助手（view 内可测）：`Find`、`SelectedWorkspace()`（Selected 失效时退回第一个）、`Groups()`（我创建的→超级Agent 创建的，空组不出现）、
+  `Mine()`/`AgentMade()`、`ConversationVM.CreatedLabel()`/`IDLabel()`。
+- `Snapshot` 新分片：`PublishWorkspaces(vm)` / `Workspaces()`（nil=未发布，与其它分片一致，bump 一次帧）。
+- `SystemInfo{OS,Arch,Timezone,UTCOffset}` + `Known()`/`Label()`（"linux/amd64 · Asia/Shanghai (UTC+08:00)"，零值返回 ""）；`OverviewVM.System SystemInfo`。
+- 兼容性：只新增字段/方法，未改任何既有签名；旧分片/旧 Section 全部保留。
+
+### 2. 侧边栏重设计（spec §3）
+
+`internal/ui/chrome.go` 重写 `sidebar`，宽 232（spec ~220，多出 12px 让系统行不截断）：
+
+```
+超级Agent（icOverview，计数=PersonCount）
+────────
+工作区 标题 + ＋
+  ▸/▾ workspace 行（icFolder，右=会话数；箭头展开/收起；行其余部分打开 工作区 页）
+      我创建的 / 超级Agent 创建的 分组
+        会话行（icUser / icSpark，#N + 标题；Attention → 琥珀点）
+      ＋ 新建会话（预填该工作区）
+  ＋ 新建工作区
+────────
+监控（标签）+ 消息/来源/触发/评估/执行（执行=running 计数）
+设置（独立一行，底部）
+────────
+系统行：OS/arch · 时区 (UTC±h)（来自 OverviewVM.System，未投影写"系统信息未投影"）
+```
+
+- 展开状态 `a.wsExpanded[id]`、选中工作区 `a.workspaceSel` 都在 app state（主线程），没有跨帧元素。
+- 可访问性/可测性：箭头 `Label("展开工作区 <name>")`、行 `Label("工作区 <name>")`、会话行 `Label("会话 <title>")`（Tester 可按 label 点击）。
+
+### 3. 工作区页 + 两个弹窗（spec §3 item 3）
+
+`internal/ui/workspace.go`（新增）：
+
+- **Optional interfaces**（ui 包定义，不 import runtime）：`WorkspaceCreator{CreateWorkspace(name,root,purpose,kind)}`、
+  `ConversationCreator{NewConversation(workspaceID,text)}`；缺失时表单照常打开、创建按钮禁用并具名原因
+  （同 `动作未接线：运行时未实现 WorkspaceCreator` 模式），点击禁用按钮无副作用。
+- **新建工作区弹窗**：名称/根目录/用途 + 类型 `Segmented`（仓库/数据/文档/混合 → repo/data/docs/mixed）；名称与根目录为空不可创建；
+  失败保留弹窗并显示运行时错误。输入框 `Label("输入"+label)` 以便测试/读屏区分标签与输入。
+- **新建会话弹窗**：工作区名 + 会话内容；空文本不可创建；成功才关闭。
+- **工作区页（SecWorkspace）**：标题+用途+`根目录` mono chip+kind+会话数+最近活动；会话卡片按「我创建的 / 超级Agent 创建的」分组，
+  行内含 `#N`、标题、created badge、source、stage chip、`待你处理`、相对时间；点行打开该 Ticket。
+- **导航**：点会话 → `openTicket`（执行页选中并滚动到该行、展开详情）；点工作区行 → `SecWorkspace`。
+  工单不在当前执行投影时留在原页并给出原因（执行页/总览显示 `a.actionErr`）。
+- 空态：无工作区投影 → "等待运行时发布工作区…"（侧栏）/ "等待运行时发布工作区投影…"（工作区页）；有投影但为空 → 新建引导。
+
+### 4. 全局字体 +2（spec §3）
+
+- `internal/ui/tokens.go`：`baseFontSize = 13 → 15`（theme.FontSize，控件默认字号随之 +2）。
+- 全 `internal/ui` 显式 **文本** `.FontSize(N)` 共 295 处 +2（10→12、11→13、12→14、13→15、17→19、18→20、24→26、26→28…）；
+  **图标尺寸保持不变**（按 spec "图标尺寸不强制"），避免与文本抢视觉。
+- 手动调整两处布局：侧栏系统行固定 10px 并 232 宽（否则截断）；状态栏右侧「帮助 · 版本」包进 `Gap(6)` Row 且 11px（否则粘连/换行）。
+- 逐页截图核对（总览/执行/评估/触发/设置/名词表/两个弹窗/消息答复）：无裁字、无行高溢出；未改列表行高常量。
+
+### 5. 系统信息展示（spec §3）
+
+- 侧栏底部：`SystemInfo.Label()`；未投影 = `系统信息未投影`（不猜 UTC）。
+- 设置 › 部署新增「运行环境」：`操作系统` = OS/arch、`时区` = Timezone (UTCOffset)，全部读投影；未投影 = `等待运行时投影操作系统与时区（Runtime.System）`。
+
+### 6. 超级Agent 答复行（spec §4 的 UI 侧）
+
+`internal/ui/stream.go`：
+
+- `LineReply` / `LineNotice` 中文本以 `超级Agent` 开头的行 → 渲染成独立**答复面板**（`agentAnswer`：icSpark + "超级Agent" 标签 + 时间 + 正文，
+  按 Tone 取强调/琥珀/红色底），与普通 notice 明显不同；前缀 `超级Agent：` 不重复显示。
+- `threadSteps(th)`：同一 Thread 已有超级Agent 答复时，丢弃裸 `未受理` 的 Decision 行——答复即结论，不再并排显示"未受理"；
+  无答复时 `未受理` 照旧显示（两种情况都有测试）。别人的回执 `LineReply`（不含"超级Agent"）不算答复，不吞 Decision。
+
+### 7. 测试
+
+新增/修改：`internal/ui/workspace_test.go`（11 个：侧栏结构、树展开/收起、工作区页、会话跳转、两个弹窗（成功/失败/未接线）、系统事实（有/无投影）、
+字体 token、答复行替换未受理、无答复保留未受理、他人回执不算答复）、`internal/view/workspace_test.go`（7 个：Find/Selected 回退、Groups、标签、
+SystemInfo.Label、Section 标签、Snapshot 分片）。
+既有 `verify_wave2_test.go` 的 3 处 `click("总览")` 改为 `click("超级Agent")`（侧栏标签按 spec 改名，语义未变）；`pages_test.go` 的缺投影用例加入 `SecWorkspace`。
+夹具：`viewtest.DemoWorkspaces`、`DemoSystem`，`DemoOverview.System` 填充。
+
+## 结果（本轮实测）
+
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/... -count=1
+ok  internal/ui      (108 PASS)
+ok  internal/view    (26 PASS，含 verifier 文件)
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...   → 干净
+$ gofmt -l internal/ui internal/view                           → 空
+$ CGO_ENABLED=0 go build ./...                                 → OK（全仓）
+$ sh scripts/check-nocgo.sh                                    → PASS (zero cgo)
+```
+
+人工截图核对（临时渲染测试已删除）：`/tmp/r2-{overview-tree,workspace-page,workspace-modal,conversation-modal,agent-answer,settings-deploy,execution,eval,trigger,help}.png`。
+
+## 偏差 / 说明
+
+1. 侧栏宽度 232（spec "约 220"）：220 时系统行 `linux/amd64 · Asia/Shanghai (UTC+08:00)` 在 10px 下仍被截断；232 后完整一行。
+   若时区名很长（如 America/Argentina/Buenos_Aires）允许换行，不截断。
+2. 工作区页采用"会话列表 + 点击打开执行"，未做独立的"消息列表"页（spec 二选一允许）。
+3. 字体只 +2 文本；图标尺寸未动（spec 不强制）。若视觉验收希望图标随字号 +1，可一次性在 `mui.Icon(...).FontSize` 上做。
+
+## 跨 scope 待办（runtime，UI 已就绪）
+
+1. **发布工作区投影**：`PublishWorkspaces(&view.WorkspacePanelVM{...})`——按 spec §2：每个 workspace 的 Ticket（含 ended，最多最近 50，LastAt desc），
+   `ConversationVM.CreatedBy` = origin Trigger.Source=="local" ? "me" : "agent"，`Source/Stage/StageID` 复用派生阶段，`Attention = t.Attention != nil`。
+2. **OverviewVM.System**：`SystemInfo{OS: runtime.GOOS, Arch: runtime.GOARCH, Timezone: time.Local.String(), UTCOffset: <±hh:mm>}`（或 zone offset 格式化）。
+3. **命令**：实现 `CreateWorkspace(name,root,purpose,kind) error` 与 `NewConversation(workspaceID,text) error`（spec §4：
+   Register+scan / engine.Dispatch+EvaluateDue+Publish）。cmd 已把 Runtime 作为 `Cmd` 传入，方法存在即被 UI 探测到；建议加编译期断言。
+4. **答复行**：本地消息未派发时追加 `LineReply`/`LineNotice`（文本以 `超级Agent：` 开头），并把裸「未受理」改为「已答复/未派发 + 原因」；
+   UI 已按此渲染（含"有答复就不显示裸未受理"）。
+5. 沿用上一轮未关的两项：`TicketRow.StageID/Attention/CanRetry` 投影（否则总览只有“停止”）；`View.Thread.ID`（否则消息流不按 ID 定位）。
+
+---
+
+# Round 2 · Addendum（原生目录选择器 + 设置›来源的 IM 通道卡）
+
+同一轮、同一 scope，补两个附加项。
+
+## A1. 新建工作区的原生目录选择器
+
+`internal/ui/workspace.go`：
+
+- **原生对话框**：`mygo.Dialog.Open(mygo.OpenDialogOptions{Parent, Title:"选择工作区目录", Directory:true,
+  CreateDirectories:true, ButtonLabel:"选择此目录"})`（mygo v0.7.4 `dialog.go`；跨平台由 mygo 自带的
+  GTK/portal、Windows、macOS 后端处理，**没有** zenity/osascript 等 shell out）。选项集中在
+  `folderDialogOptions(parent,title)`，测试可无显示器直接钉住契约。
+- **不阻塞主线程**：`Dialog.Open` 会阻塞到人关闭对话框（其文档允许任意 goroutine 调用），所以
+  `startFolderPicker` 在独立 goroutine 里打开它，选完用 `a.win.Update(...)` 把路径写回 app state；
+  `win == nil`（纯 headless）则直接应用。帧从不等待对话框。
+- **单实例**：`a.pickingFolder` 为 true 时按钮显示「选择中…」且禁用，第二次点击不会再开一个对话框；
+  取消（无路径）不改表单、不报错；错误显示在弹窗里。
+- **Seam（测试可替换）**：`openFolderDialog`（真正的 mygo 调用）与 `startFolderPicker`（线程/回投）两个 var；
+  纯 headless 测试替换 `startFolderPicker` 同步作答。另加 `folderDialogOptions` 契约测试
+  （Directory/CreateDirectories/ButtonLabel/Title/Multiple=false）。
+- UI：根目录一行改为「输入框 + 浏览…」，选择中显示说明行；其余（名称/用途/类型）不变。
+
+新增测试（`internal/ui/workspace_test.go` 追加 5 个）：
+`TestWorkspaceFolderPickerFillsRoot`、`…Cancel`、`…Error`、`…IsSingle`、`TestWorkspaceFolderDialogOptions`。
+
+## A2. 设置 › 来源的 IM 通道卡（飞书 / 钉钉）
+
+`internal/view/channels.go`（新增，纯数据）+ `internal/ui/channels.go`（新增）：
+
+- **契约（view）**：`ChannelOption{ID,Label,Implemented,Note}`、`ChannelSpec{Name,Label,EnabledKey,
+  TransportKey,CredentialKeys,Options}`、`ChannelSpecs()`、`ChannelSpecOf()`、`ChannelKey(key)`
+  （告诉设置页哪些 来源 组字段由通道卡拥有，避免重复渲染）。
+  - 飞书：`feishu_enabled` / `feishu_transport`（longpoll=长轮询，已实现）/ `feishu_app_id`、`feishu_app_secret`、`feishu_chats`。
+  - 钉钉：`dingtalk_enabled` / `dingtalk_transport`（dws=DWS 长连接；stream=官方 Stream——runtime/im.go 已构建该驱动，
+    runtime 设置 Help 也宣传它，因此 **两者都可选**；「未实现」标记机制保留给将来未接入的传输）/ `dingtalk_app_key`、`dingtalk_app_secret`、`dingtalk_robot`。
+  - 共同 `im_self`（机器人自身账号，@ 判定）留在通道卡下方的通用字段里渲染**一次**（同一 settings key 不能渲染两次）。
+- **Optional interface（ui 定义，runtime 实现）**：
+  `ChannelAuthorizer interface { CheckChannel(name string) (state, detail, authURL string, err error) }`。
+- **检查/授权**：`startChannelCheck` 在 goroutine 里调 `CheckChannel`，用 `a.win.Update` 回主线程写结果；检查中按钮禁用显示「检查中…」；
+  state 映射 chip：`ok→检查通过`、`warn→注意`、`unauthorized→需要授权`、`error/err→检查失败`、空→未检查；
+  detail 原样显示。**authURL 非空**时显示「打开授权页」+ URL；打开走 `mygo.Shell.OpenExternal`
+  （纯 Go、跨平台；它内部等主线程，所以同样在 goroutine 里调，`startOpenAuthorization` seam 可替换），
+  且只接受 `http(s)` URL（`validAuthURL`），否则报错不打开。
+- **设置保存协议不变**：启用开关（`mui.Switch`）、传输方式（chip 选择器）、凭据字段全部走
+  `a.settingsPtr(g.ID, field)` → `settingsDirty` → 现有保存条 → `SettingsSaver`；无乐观更新（投影不变，值就还是投影的值）。
+  传输方式没有 `SettingSelect` 的旧渲染问题：现在按字段 `Options` 渲染 chip；运行时发了 `Options` 就视为全部已实现（运行时为准），
+  没发时用 build 内目录并把未实现项标灰、不可点，同时提示「等待运行时投影：<transport_key>」。
+- **诚实状态**：未投影启用字段/凭据 → 「等待运行时投影：<key>」；未启用 → chip「未启用」+「未启用 · 不监听：保存并启用后才会连接」，
+  页面不会出现「监听中/已连接/在线」这类它无法证明的说法（测试钉死）；无 `ChannelAuthorizer` → 检查按钮禁用 +
+  「动作未接线：运行时未提供 CheckChannel」，点击无副作用。
+- 通道卡只在 来源 组渲染（执行组不重复）；`ChannelKey` 命中的字段不再出现在下方通用列表。
+
+新增测试（`internal/ui/channels_test.go` 10 个 + `internal/view/channels_test.go` 2 个）：
+卡片渲染（飞书/钉钉/传输/凭据/检查按钮）、未启用不声称监听、检查成功显示 state/detail、需要授权显示 URL 且点击才打开、
+非 http(s) URL 拒绝、未接线禁用+原因、启用开关走保存协议（dirty→保存值）、传输选择保存、未投影字段诚实提示、
+传输未实现不可选、通道卡只在来源组；view 侧 pin 两个通道的键/传输/未实现标记与 `ChannelKey`。
+
+## 结果（含 addenda）
+
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/... -count=1
+ok  internal/ui      (123 PASS)
+ok  internal/view    (28 PASS)
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...   → 干净
+$ gofmt -l internal/ui internal/view                           → 空
+$ CGO_ENABLED=0 go build ./...                                 → OK
+$ sh scripts/check-nocgo.sh                                    → 步骤 4 (go vet ./...) 红：
+    cmd/zeokeel/extras_test.go:48:8: undefined: triggerForIM
+    ← 别人 scope 的 in-flight 改动（cmd 测试文件），与 UI/view 无关；我的三个包 vet 干净。
+```
+人工截图核对（临时测试已删）：`/tmp/r3-{source-channels,source-channels-auth,workspace-modal,workspace-modal-picked}.png`。
+
+## 跨 scope 待办（addenda）
+
+6. **runtime 实现 `ChannelAuthorizer`**：
+   ```go
+   func (r *Runtime) CheckChannel(name string) (state, detail, authURL string, err error)
+   // name: "feishu" | "dingtalk"; state: "ok" | "warn" | "error" | "unauthorized"（空=未检查）
+   // authURL 只允许 http(s)（面板会二次校验），无授权需求时返回 ""
+   ```
+   UI 侧接口签名已按此定义；缺省时面板禁用并说明。
+7. **runtime 在 来源 设置组发布通道字段**：`feishu_enabled`(SettingSwitch) / `feishu_transport`(SettingSelect,
+   Options ["longpoll"]) / `dingtalk_enabled` / `dingtalk_transport`(SettingSelect, Options ["dws","stream"]——
+   运行时已构建官方 Stream 驱动，两个都可用)；凭据键沿用现有 `feishu_app_id`/`feishu_app_secret`/`feishu_chats`、`dingtalk_app_key`/`dingtalk_app_secret`/`dingtalk_robot`。
+   发布后 UI 会自动把传输选项视为全部已实现（运行时是唯一事实源）。
+8. **runtime 启用语义**：`enabled=false` 时不要启动监听（与面板「未启用 · 不监听」一致）；启用并保存后由 runtime 重启/启动对应 driver。
+9. **cmd**：无需新增接线——`Cmd` 传入的 Runtime 实现上述方法后被 UI 类型断言探测到；建议在 cmd/runtime 加编译期断言
+   `var _ ui.ChannelAuthorizer = (*runtime.Runtime)(nil)` 等（含 A1 的 WorkspaceCreator/ConversationCreator）。
+10. `check-nocgo.sh` 目前红在 `cmd/zeokeel/extras_test.go`（`triggerForIM` 未定义），属 fix-runtime 的 in-flight 工作，需其收尾后才能全绿。

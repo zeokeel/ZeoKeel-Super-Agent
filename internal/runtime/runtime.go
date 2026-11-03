@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,7 +66,12 @@ type Runtime struct {
 	logger *slog.Logger
 	// runners are kept per Ticket so a background job survives the turn that
 	// started it (fix-agent handoff §5.1). jobsMu guards runners/jobWatch.
-	runners  map[domain.ID]*agent.Runner
+	runners map[domain.ID]*agent.Runner
+	// workerRoots are the directories Workers write to; tests wait for them to
+	// stop changing before TempDir cleanup (release-run flake guard).
+	workerRoots []string
+	// im is the IM channel manager attached at boot (nil when no IM is wired).
+	im       *IMManager
 	jobWatch map[string]bool
 	// bgKilled marks jobs the timeout rule killed, so their late Wait result can
 	// never wake the session. bgLimit overrides the 30m setting (tests).
@@ -163,6 +169,10 @@ func (r *Runtime) Publish() {
 		Storage:   r.storageInfo(now),
 		Usage:     r.usageSnapshot(),
 		Health:    r.healthItems(ws, running, maxJobs, now),
+		System: view.SystemInfo{
+			OS: goruntime.GOOS, Arch: goruntime.GOARCH,
+			Timezone: time.Local.String(), UTCOffset: utcOffset(),
+		},
 		Runtime: view.Runtime{
 			Running: running, MaxJobs: maxJobs, Queued: queued,
 			Today: runsToday(all, now), NextPoll: r.pollInterval(),
@@ -238,6 +248,7 @@ func (r *Runtime) Publish() {
 	r.snap.PublishThreads(r.threadsVM(now))
 	r.snap.PublishDecisions(r.decisionsVM(now))
 	r.snap.PublishTickets(r.ticketsVM(now))
+	r.snap.PublishWorkspaces(r.workspacesVM(now, all))
 	r.snap.PublishSettings(r.settingsVM(now))
 	r.snap.PublishPrompts(r.promptsVM())
 	r.snap.PublishOnboarding(r.onboardingVM())
@@ -443,8 +454,25 @@ func (r *Runtime) stream() *view.StreamVM {
 				Kind: view.LineDecision, Text: "需要你批准", At: t.At,
 				Badges: []string{shortWorkspace(string(item.Decision.Workspace))}, Tone: view.ToneWarn,
 			})
+		} else if t.Source == "local" {
+			// The operator's own message is never left at "未受理": the Super-Agent
+			// answers it in the stream (list workspaces, or say why nothing was
+			// dispatched and how to dispatch).
+			code := ""
+			if len(item.Disp.Reason) > 0 {
+				code = reasonText(item.Disp.Reason[0].Code)
+			}
+			decision := view.Line{Kind: view.LineDecision, Text: "已答复", At: t.At, Tone: view.ToneNeutral}
+			if code != "" {
+				decision.Badges = []string{code}
+			}
+			th.Steps = append(th.Steps, decision)
+			th.Steps = append(th.Steps, view.Line{
+				Kind: view.LineReply, Text: "超级Agent：" + r.localAnswer(t.Text), At: t.At,
+				Tone: view.ToneNeutral,
+			})
 		} else {
-			reason := "未受理"
+			reason := "未派发"
 			if len(item.Disp.Reason) > 0 {
 				reason = reasonText(item.Disp.Reason[0].Code)
 			}
@@ -737,11 +765,17 @@ func (r *Runtime) Dispatch(text string) error {
 	// Receive only queues the Eval now; evaluating immediately is what makes the
 	// panel's input feel like a command instead of a 2s-later batch. The periodic
 	// pass still exists for Triggers that arrive from Sources.
-	if outs, evalErr := r.EvaluateDue(r.clock()); evalErr != nil {
+	outs, evalErr := r.EvaluateDue(r.clock())
+	if evalErr != nil {
 		return evalErr
-	} else if q := questionFrom(outs); q != "" {
+	}
+	// The Ticket is created by EvaluateDue in the two-phase Eval, not by the
+	// Receive that Dispatch returned; read the fresh outcome.
+	out = mergeEvalOutcome(out, outs)
+	if q := questionFrom(outs); q != "" {
 		err = fmt.Errorf("%s", q)
 		r.setErr(err.Error())
+		r.Publish()
 		return err
 	}
 	if out.NeedsPerson {
@@ -750,18 +784,47 @@ func (r *Runtime) Dispatch(text string) error {
 		r.Publish()
 		return err
 	}
-	r.setErr("")
-	// The Ticket exists; the Worker picks it up in the background. Starting it
-	// here keeps the panel responsive: Dispatch returns as soon as the domain
-	// committed.
-	r.mu.Lock()
-	durable := r.persist != nil
-	r.mu.Unlock()
-	if out.Ticket != "" && !durable {
-		r.startLocalRun(out.Ticket)
+	if out.Ticket == "" {
+		if out.Proposal {
+			// A proposal is a real outcome: it waits in the panel for approval.
+			r.setErr("")
+			r.Publish()
+			return nil
+		}
+		// No Ticket and no proposal: the composer must say what happened and what
+		// to do, not leave the person staring at "未受理" (ui2-spec §4).
+		msg := r.noDispatchMessage(text)
+		r.setErr(msg)
+		r.Publish()
+		return fmt.Errorf("%s", msg)
 	}
+	r.setErr("")
+	// The Ticket exists; EvaluateDue already started it in memory mode (and queued
+	// a launch effect in durable mode), so Dispatch only publishes.
 	r.Publish()
 	return nil
+}
+
+// mergeEvalOutcome folds the EvaluateDue outcomes (where two-phase work actually
+// happens) into the Receive outcome the caller already has.
+func mergeEvalOutcome(base engine.Outcome, outs []engine.Outcome) engine.Outcome {
+	for _, o := range outs {
+		if o.Ticket != "" {
+			base.Ticket = o.Ticket
+			base.Workspace = o.Workspace
+			base.Kind = o.Kind
+			base.NeedsPerson = false
+			base.Question = ""
+		}
+		if o.Proposal {
+			base.Proposal = true
+		}
+		if o.NeedsPerson {
+			base.NeedsPerson = true
+			base.Question = o.Question
+		}
+	}
+	return base
 }
 
 // Approve accepts a proposal: the Ticket is created now, with the approval on

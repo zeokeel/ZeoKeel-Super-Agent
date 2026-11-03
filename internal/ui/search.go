@@ -119,10 +119,10 @@ func (a *App) searchPalette(c *mui.Context) {
 			}
 
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "↑↓ 选择 · ↵ 跳转 · Esc 关闭").FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, "↑↓ 选择 · ↵ 跳转 · Esc 关闭").FontSize(12).TextColor(tk.TextFaint)
 				mui.Spacer(c)
 				if q := strings.TrimSpace(a.searchQuery); q != "" {
-					mui.Text(c, q).FontSize(10).SingleLine().TextColor(tk.TextMuted)
+					mui.Text(c, q).FontSize(12).SingleLine().TextColor(tk.TextMuted)
 				}
 			})
 
@@ -137,7 +137,7 @@ func (a *App) searchPalette(c *mui.Context) {
 				mui.Row(c).Padding(14, 16).Gap(8).AlignItems(mui.Start).Children(func() {
 					mui.Icon(c, icSearch).FontSize(13).TextColor(tk.TextFaint)
 					mui.Text(c, fmt.Sprintf("没有匹配「%s」的结果。试试更短的关键词，或工单号、工作区名。",
-						strings.TrimSpace(a.searchQuery))).FontSize(12).TextColor(tk.TextMuted)
+						strings.TrimSpace(a.searchQuery))).FontSize(14).TextColor(tk.TextMuted)
 				})
 				return
 			}
@@ -148,9 +148,9 @@ func (a *App) searchPalette(c *mui.Context) {
 				note = fmt.Sprintf("共 %d 条结果 · 每组只显示前 %d 条", vm.Total, view.SearchGroupLimit)
 			}
 			mui.Row(c).Height(20).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, note).FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, note).FontSize(12).TextColor(tk.TextFaint)
 				mui.Spacer(c)
-				mui.Text(c, "回车跳到那一页并定位").FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, "回车跳到那一页并定位").FontSize(12).TextColor(tk.TextFaint)
 			})
 		})
 	})
@@ -184,8 +184,8 @@ func (a *App) searchGroupHeader(c *mui.Context, r paletteRow) {
 	tk := a.tk
 	mui.Row(c).Height(24).Padding(0, 6).Gap(6).AlignItems(mui.Center).
 		Background(tk.Surface).Children(func() {
-		mui.Text(c, r.label).FontSize(10).TextColor(tk.TextFaint)
-		mui.Text(c, fmt.Sprint(r.count)).FontSize(10).TextColor(tk.TextFaint)
+		mui.Text(c, r.label).FontSize(12).TextColor(tk.TextFaint)
+		mui.Text(c, fmt.Sprint(r.count)).FontSize(12).TextColor(tk.TextFaint)
 		mui.Box(c).Height(1).Grow(1).Background(tk.BorderSoft)
 	})
 }
@@ -202,15 +202,15 @@ func (a *App) searchRow(c *mui.Context, h view.SearchHit, on bool) {
 		mui.Icon(c, searchIcon(h.Kind)).FontSize(13).
 			TextColor(ifColor(on, tk.Accent, tk.TextMuted))
 		mui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-			mui.Text(c, h.Title).FontSize(12).SingleLine().
+			mui.Text(c, h.Title).FontSize(14).SingleLine().
 				TextColor(ifColor(on, tk.Accent, tk.Text))
 			if h.Detail != "" {
-				mui.Text(c, h.Detail).FontSize(10).SingleLine().
+				mui.Text(c, h.Detail).FontSize(12).SingleLine().
 					TextColor(ifColor(on, tk.Accent, tk.TextFaint))
 			}
 		})
 		if on {
-			mui.Text(c, "↵").FontSize(10).TextColor(tk.Accent)
+			mui.Text(c, "↵").FontSize(12).TextColor(tk.Accent)
 		}
 	})
 }

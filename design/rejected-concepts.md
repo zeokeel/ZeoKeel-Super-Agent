@@ -53,10 +53,22 @@
 | 进程内 supervisor + health 表 | **部分接受** | 替代原型的"外部 watchdog"（006 §6）只实现了一半：能检查/记录/标 error，但**不能像外部控制 Session 那样在线改规则/提示词**；006 的完整形态仍缺（`internal/runtime/supervisor.go`） |
 | eino 官方 `filesystem`/`backgroundtask`/`patchtoolcalls`/`reduction`/`summarization`/`subagent` | 接受，删除自研 | 自研 `engine_react.go` 与 `bufferToolCallChecker` 已删除（Wave 2 清理）；以后禁止再写"第二套工具循环" |
 | `Runner.Resume` | **已删除（Wave 2 清理）** | 恢复改走 `RecoverAssignments` + `patchtoolcalls`；不再保留"存在但生产没人调用"的死代码（测试注释已注明已删除） |
-| `ReplyPlan` 只进面板、`deliverReply` 不读它 | **未支付的语义债** | 设计 §4.10 的"默认 notify 不代你说话"没有机制保证；要么让 `deliverReply` 消费 `ReplyPlan`，要么把该承诺降级并写进文档 |
+| `ReplyPlan` 由 `deliverReply` 消费 | **已支付（Wave 2）** | 设计 §4.10 的"默认 notify 不代你说话"有机制保证：notify/both/none → `Held` 只进面板，不直发（`internal/runtime/reply.go:213-264`） |
 | Glossary（名词表） | 接受（EXTRA） | 原型 001 的术语表在面板中的等价物；`internal/view/glossary.go`，⌘/ 打开 |
 | 演示数据（`view/demo*.go`） | **只允许测试/演示** | 生产投影必须来自 runtime；demo 设置里不得再出现"钥匙串""每日备份"等不存在的能力（Wave 1 已清理过一次） |
 | 开机自启 / 休眠唤醒 / 自动更新 | **拒绝内置实现** | 单机桌面交给 systemd/launchd 与系统设置；文档写明，不假装"内置 watchdog"（RELEASE F-10） |
 | 系统钥匙串（ADR-12） | **仍为拒绝现状** | 未实现前，API Key 明文存 SQLite（0600）是已登记的安全债，不是"设计如此"（ADR-12 目标态） |
 | IM 专用启动接线（`imwiring.go` + 专用 settings 键） | 接受，登记为过渡形态 | 不用通用 Source 实例表，而是 flag/设置键 + 驱动直启；代价是新增 IM 类 Source 仍需改 `cmd/zeokeel`，已在如何新增 Source §8 登记 |
-| 提示词 6 层 + base-hash（`internal/runtime/prompts.go`） | 接受 | 对 004 的版本化能力部分兑现；`recordPromptMeta` 尚无调用者，历史/Default updated 属未接线，不是已拒绝 |
+| 提示词 6 层 + base-hash + 历史（`internal/runtime/prompts.go`） | 接受（已接线） | 保存路径调用 `recordPromptMeta`（`internal/runtime/pages.go:557`）；历史每层最近 20 版 + `prompt.base.<layer>`；面板暂无历史列表页（RELEASE F） |
+
+## D. Round 2/3 新增概念登记（2026-11-03 晚）
+
+| 概念 / 实现 | 判定 | 说明与证据 |
+| --- | --- | --- |
+| DWS 外部 CLI 作为钉钉默认 transport | **接受，登记为集成偏离** | 官方 Stream SDK 需要公网订阅；本项目默认 `dws` 网关 CLI，串行 worker + cursor 整批成功才推进 + 隐藏幂等 marker。代价：依赖外部命令、能力受契约限制（无成员/历史）。官方 Stream 保留为 `stream` 选项（`internal/im/dingtalk/dws.go`、`design/im-channels.md`） |
+| IM 渠道独立开关 + 检查/授权按钮 | 接受（EXTRA） | 原型没有"渠道管理"概念；桌面单机需要明确"未启用≠在线"，且设置变更只重启变化渠道（`internal/runtime/im.go:189-328`、`internal/ui/channels.go`） |
+| eino `plantask`（TaskCreate/Get/Update/List）与 `agentsmd` | 接受，不自研 | 直接采用框架中间件；任务 JSON 存工单目录、AGENTS.md 工作区根注入（`internal/agent/builtin.go:44,96`）。禁止再手写一套 todo/instructions 注入 |
+| `web_fetch` / `web_search` 内置工具 | 接受（EXTRA） | DSH 能力对齐；web_fetch 拒绝私网（SSRF）、10s/2MiB；web_search 前 5 条、端点可配（`internal/agent/webtools.go`） |
+| 面板工作区树 / 会话=工单（我创建 vs 超级Agent 创建） | 接受（EXTRA） | 原型以 chat 为中心；桌面版把工作区作为一等容器，会话是 Ticket 的视图（`internal/view/workspace.go`、`internal/runtime/workspaces.go`） |
+| 原生目录选择器（mygo `Dialog.Open`） | 接受 | 不在面板里手写目录浏览器；三平台由 mygo 处理，后台 goroutine 回填，测试 seam（`internal/ui/workspace.go:19-52`） |
+| 面板消息必然得到答复（"未受理"修复） | 接受 | 本地消息无 Ticket 时输出「已答复」+ 超级Agent 文本（列工作区/说明下一步），确定性不耗模型；真活仍建 Ticket（`internal/runtime/runtime.go:456-482`、`workspaces.go:159-214`）。它替代"沉默=未受理"的旧行为 |

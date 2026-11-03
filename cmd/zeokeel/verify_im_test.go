@@ -43,7 +43,24 @@ func verifyIMInbound(t *testing.T, drv im.Provider, tr *im.Transport, actor, con
 	rt, eng := verifyIMRuntime(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go startIMLoop(ctx, rt, drv, drv.Name(), "bot-self", nil)
+	cfg := runtime.IMConfig{SelfID: "bot-self", FeishuTransport: "longpoll", DingTransport: "stream"}
+	opts := runtime.IMManagerOptions{
+		PollInterval: 10 * time.Millisecond,
+		BuildFeishu:  func(runtime.IMConfig) (im.Provider, error) { return drv, nil },
+		BuildDingtalk: func(runtime.IMConfig) (im.Provider, error) {
+			return drv, nil
+		},
+	}
+	if drv.Name() == "feishu" {
+		cfg.FeishuEnabled = true
+		cfg.FeishuAppID, cfg.FeishuAppSecret = "cli_x", "sec"
+	} else {
+		cfg.DingEnabled = true
+		cfg.DingAppKey, cfg.DingAppSecret, cfg.DingRobot = "key", "sec", "robot"
+	}
+	m := runtime.NewIMManager(rt, opts)
+	m.Start(ctx, cfg)
+	defer m.Stop()
 
 	ev := im.RawEvent{
 		ID:       "m1",

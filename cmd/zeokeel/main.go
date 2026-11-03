@@ -164,7 +164,7 @@ func realMain() int {
 		FeishuAppID: *feishuAppID, FeishuAppSecret: *feishuSecret, FeishuChats: *feishuChats,
 		DingAppKey: *dingAppKey, DingAppSecret: *dingSecret, DingRobot: *dingRobot,
 		SelfID: *imSelf,
-	}.saved(saved)
+	}
 
 	// One engine, one runtime, one snapshot. Everything the window shows is
 	// projected from engine state through the same Dispatch path a person uses, so

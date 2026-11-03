@@ -35,9 +35,9 @@ func (a *App) triggerPage(c *mui.Context) {
 		})
 		switch {
 		case vm == nil:
-			mui.Text(c, "等待运行时发布触发快照…").FontSize(13).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布触发快照…").FontSize(15).TextColor(tk.TextMuted)
 		case len(vm.Threads) == 0:
-			mui.Text(c, "还没有线程。来源收到消息后，线程会出现在这里。").FontSize(13).
+			mui.Text(c, "还没有线程。来源收到消息后，线程会出现在这里。").FontSize(15).
 				TextColor(tk.TextMuted)
 		default:
 			mui.Row(c).Grow(1).MinHeight(0).AlignItems(mui.Stretch).Gap(16).Children(func() {
@@ -69,10 +69,10 @@ func (a *App) threadColumn(c *mui.Context, vm *view.ThreadVM) {
 	mui.Column(c).Width(430).Background(tk.Surface).Radius(tk.Radius).Border(1, tk.Border).
 		Children(func() {
 			mui.Row(c).Height(36).Padding(0, 14).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "线程").FontSize(13).Bold().TextColor(tk.Text)
+				mui.Text(c, "线程").FontSize(15).Bold().TextColor(tk.Text)
 				chip(c, tk, fmt.Sprint(len(rows)), tk.TextMuted, tk.SurfaceAlt)
 				mui.Spacer(c)
-				mui.Text(c, "按最近活动排序").FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, "按最近活动排序").FontSize(12).TextColor(tk.TextFaint)
 			})
 			mui.Box(c).Height(1).Background(tk.BorderSoft)
 			// The chosen row lives in app state: the list keeps its place across
@@ -100,27 +100,27 @@ func (a *App) threadRow(c *mui.Context, r view.ThreadRow, on bool) {
 		sourceGlyph(c, tk, r.SourceIcon, 28)
 		mui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, r.Title).FontSize(12).SingleLine().Grow(1).
+				mui.Text(c, r.Title).FontSize(14).SingleLine().Grow(1).
 					TextColor(ifColor(on, tk.Surface, tk.Text))
 				chipOn(c, tk, r.Stage, on, toneFg(tk, r.Tone), toneBg(tk, r.Tone))
 			})
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, r.Source).FontSize(10).
+				mui.Text(c, r.Source).FontSize(12).
 					TextColor(ifColor(on, tk.AccentSoft, tk.TextFaint))
 				if r.Who != "" {
-					mui.Text(c, "· "+r.Who).FontSize(10).
+					mui.Text(c, "· "+r.Who).FontSize(12).
 						TextColor(ifColor(on, tk.AccentSoft, tk.TextFaint))
 				}
 				mui.Spacer(c)
 				if r.Subscribed {
-					mui.Text(c, "已订阅").FontSize(10).
+					mui.Text(c, "已订阅").FontSize(12).
 						TextColor(ifColor(on, tk.Surface, tk.Accent))
 				}
 				if r.TicketID != "" {
-					mui.Text(c, "#"+r.TicketID).FontSize(10).
+					mui.Text(c, "#"+r.TicketID).FontSize(12).
 						TextColor(ifColor(on, tk.AccentSoft, tk.TextMuted))
 				}
-				mui.Text(c, humanfmt.Ago(a.age(r.ActivityAt))).FontSize(10).
+				mui.Text(c, humanfmt.Ago(a.age(r.ActivityAt))).FontSize(12).
 					TextColor(ifColor(on, tk.AccentSoft, tk.TextFaint))
 			})
 		})
@@ -146,7 +146,7 @@ func (a *App) threadTimeline(c *mui.Context, vm *view.ThreadVM) {
 		if len(vm.Threads) > 0 {
 			msg = "这个线程的时间线还没有投影。"
 		}
-		mui.Text(c, msg).FontSize(13).TextColor(tk.TextMuted)
+		mui.Text(c, msg).FontSize(15).TextColor(tk.TextMuted)
 		return
 	}
 
@@ -154,7 +154,7 @@ func (a *App) threadTimeline(c *mui.Context, vm *view.ThreadVM) {
 		Border(1, tk.Border).Children(func() {
 		mui.Column(c).Padding(14, 16).Gap(4).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, detail.Title).FontSize(14).Bold().SingleLine().Grow(1).
+				mui.Text(c, detail.Title).FontSize(16).Bold().SingleLine().Grow(1).
 					TextColor(tk.Text)
 				if detail.Subscribed {
 					chip(c, tk, "已订阅", tk.Accent, tk.AccentSoft)
@@ -168,7 +168,7 @@ func (a *App) threadTimeline(c *mui.Context, vm *view.ThreadVM) {
 					textChip(c, tk, detail.Workspace)
 				}
 			})
-			mui.Text(c, detail.Meta).FontSize(11).TextColor(tk.TextMuted)
+			mui.Text(c, detail.Meta).FontSize(13).TextColor(tk.TextMuted)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		mui.Scroll(c).Grow(1).Children(func() {
@@ -183,12 +183,12 @@ func (a *App) threadTimeline(c *mui.Context, vm *view.ThreadVM) {
 			mui.Row(c).Padding(9, 14).Gap(14).AlignItems(mui.Center).Children(func() {
 				if detail.PolicyNote != "" {
 					mui.Icon(c, icShield).FontSize(12).TextColor(tk.Green)
-					mui.Text(c, detail.PolicyNote).FontSize(10).Grow(1).TextColor(tk.TextMuted)
+					mui.Text(c, detail.PolicyNote).FontSize(12).Grow(1).TextColor(tk.TextMuted)
 				} else {
 					mui.Spacer(c)
 				}
 				if detail.CursorNote != "" {
-					mui.Text(c, detail.CursorNote).FontSize(10).TextColor(tk.TextFaint)
+					mui.Text(c, detail.CursorNote).FontSize(12).TextColor(tk.TextFaint)
 				}
 			})
 		}
@@ -215,7 +215,7 @@ func (a *App) threadEvent(c *mui.Context, e view.ThreadEvent) {
 		})
 		mui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, e.Title).FontSize(12).SingleLine().Grow(1).TextColor(tk.Text)
+				mui.Text(c, e.Title).FontSize(14).SingleLine().Grow(1).TextColor(tk.Text)
 				chip(c, tk, label, fg, bg)
 			})
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
@@ -223,12 +223,12 @@ func (a *App) threadEvent(c *mui.Context, e view.ThreadEvent) {
 					mono(c, tk, e.Code)
 				}
 				if e.Text != "" {
-					mui.Text(c, e.Text).FontSize(10).SingleLine().Grow(1).TextColor(tk.TextMuted)
+					mui.Text(c, e.Text).FontSize(12).SingleLine().Grow(1).TextColor(tk.TextMuted)
 				}
 				if e.Decision != "" {
-					mui.Text(c, e.Decision).FontSize(10).TextColor(tk.TextFaint)
+					mui.Text(c, e.Decision).FontSize(12).TextColor(tk.TextFaint)
 				}
-				mui.Text(c, e.At.Format("15:04")).FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, e.At.Format("15:04")).FontSize(12).TextColor(tk.TextFaint)
 			})
 		})
 	})
@@ -239,6 +239,6 @@ func (a *App) threadEvent(c *mui.Context, e view.ThreadEvent) {
 func mono(c *mui.Context, tk Tokens, s string) {
 	mui.Row(c).Height(18).Padding(0, 6).Radius(5).Background(tk.SurfaceAlt).
 		Border(1, tk.BorderSoft).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, s).FontSize(10).Font("monospace").TextColor(tk.TextMuted)
+		mui.Text(c, s).FontSize(12).Font("monospace").TextColor(tk.TextMuted)
 	})
 }

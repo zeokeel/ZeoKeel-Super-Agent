@@ -15,3 +15,13 @@ var (
 	_ ui.TicketRetrier     = (*runtime.Runtime)(nil)
 	_ ui.ExecutionPauser   = (*runtime.Runtime)(nil)
 )
+
+// The workspace sidebar needs both creators: without these the "新建工作区/会话"
+// buttons silently do nothing (ui2-spec §2).
+var (
+	_ ui.WorkspaceCreator    = (*runtime.Runtime)(nil)
+	_ ui.ConversationCreator = (*runtime.Runtime)(nil)
+)
+
+// The panel's 检查/授权 button type-asserts ChannelAuthorizer (im-channel-spec §4).
+var _ ui.ChannelAuthorizer = (*runtime.Runtime)(nil)

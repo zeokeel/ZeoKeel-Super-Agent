@@ -25,7 +25,7 @@ func (a *App) goalsStrip(c *mui.Context) {
 	card(c, tk, 0, func() {
 		mui.Row(c).Padding(12, 16).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Icon(c, icSpark).FontSize(14).TextColor(tk.Accent)
-			mui.Text(c, "目标").FontSize(15).Bold().TextColor(tk.Text)
+			mui.Text(c, "目标").FontSize(17).Bold().TextColor(tk.Text)
 			// The chip counts the rows the strip draws, so a badge never
 			// contradicts its list; the hint carries the total.
 			chip(c, tk, fmt.Sprint(len(active)), tk.Accent, tk.AccentSoft)
@@ -34,7 +34,7 @@ func (a *App) goalsStrip(c *mui.Context) {
 			if total := a.snap.Goals().ActiveCount(); total > len(active) {
 				hint = fmt.Sprintf("共 %d 个目标进行中 · 点一条看它在做什么", total)
 			}
-			mui.Text(c, hint).FontSize(10).TextColor(tk.TextFaint)
+			mui.Text(c, hint).FontSize(12).TextColor(tk.TextFaint)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		for i, g := range active {
@@ -56,9 +56,9 @@ func (a *App) goalStripRow(c *mui.Context, g view.GoalRow) {
 	}
 	row.Children(func() {
 		mui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-			mui.Text(c, g.Objective).FontSize(13).SingleLine().TextColor(tk.Text)
+			mui.Text(c, g.Objective).FontSize(15).SingleLine().TextColor(tk.Text)
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, g.ProgressLabel()).FontSize(11).TextColor(tk.TextMuted)
+				mui.Text(c, g.ProgressLabel()).FontSize(13).TextColor(tk.TextMuted)
 				if g.Workspace != "" {
 					textChip(c, tk, g.Workspace)
 				}
@@ -87,12 +87,12 @@ func (a *App) goalSection(c *mui.Context) {
 		Border(1, tk.Border).Children(func() {
 		mui.Row(c).Height(34).Padding(0, 14).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Icon(c, icSpark).FontSize(13).TextColor(tk.Accent)
-			mui.Text(c, "目标").FontSize(13).Bold().TextColor(tk.Text)
+			mui.Text(c, "目标").FontSize(15).Bold().TextColor(tk.Text)
 			if n := vm.ActiveCount(); n > 0 {
 				chip(c, tk, fmt.Sprintf("%d 个进行中", n), tk.Accent, tk.AccentSoft)
 			}
 			mui.Spacer(c)
-			mui.Text(c, "只读 · 由 agent 设定").FontSize(10).TextColor(tk.TextFaint)
+			mui.Text(c, "只读 · 由 agent 设定").FontSize(12).TextColor(tk.TextFaint)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		switch {
@@ -125,19 +125,19 @@ func (a *App) goalRow(c *mui.Context, g view.GoalRow, focused bool) {
 	}
 	row.Children(func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, g.Objective).FontSize(12).SingleLine().Grow(1).TextColor(tk.Text)
+			mui.Text(c, g.Objective).FontSize(14).SingleLine().Grow(1).TextColor(tk.Text)
 			if focused {
 				chip(c, tk, "定位", tk.Accent, tk.Surface)
 			}
 			goalBadge(c, tk, g.State)
 		})
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, g.ProgressLabel()).FontSize(10).TextColor(tk.TextMuted)
+			mui.Text(c, g.ProgressLabel()).FontSize(12).TextColor(tk.TextMuted)
 			if g.Workspace != "" {
 				textChip(c, tk, g.Workspace)
 			}
 			if g.State == view.GoalBlocked && g.BlockedReason != "" {
-				mui.Text(c, "· "+g.BlockedReason).FontSize(10).SingleLine().TextColor(tk.Red)
+				mui.Text(c, "· "+g.BlockedReason).FontSize(12).SingleLine().TextColor(tk.Red)
 			}
 		})
 	})

@@ -332,7 +332,7 @@ func TestPagesSayWhenSnapshotIsMissing(t *testing.T) {
 	snap := view.NewSnapshot()
 	a := newApp(snap, &fakeCmd{})
 	a.now = time.Now()
-	for _, sec := range []view.Section{view.SecSource, view.SecTrigger, view.SecEval, view.SecExecution, view.SecSettings} {
+	for _, sec := range []view.Section{view.SecWorkspace, view.SecSource, view.SecTrigger, view.SecEval, view.SecExecution, view.SecSettings} {
 		a.sec = sec
 		tt := mui.NewTester(a.view, 1440, 900)
 		if !tt.HasText("等待运行时发布") {

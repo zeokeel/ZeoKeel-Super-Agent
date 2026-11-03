@@ -1602,7 +1602,10 @@ type Artifact struct {
 - ❌ 不检查 `gh auth`、不校验 repo、不区分"专用 agent 账号"。
 - ✅ `prepare` 命令已实现（设置›执行 `execution.prepare`；`runtime/prepare.go`）；❌ 向导里没有接受模式选择（engine 默认 observe 生效，但向导里看不到）。
 - ❌ API Key **明文进 SQLite kv**，没有钥匙串（ADR-12 现状见 §2）。
-- 🟡 来源配置：IM 已可从设置›来源编辑 8 个凭据字段；GitHub Source 仍需 `-repo/-gh-login`，没有 Source 实例表/"添加来源"表单（RELEASE F-4）。
+- ✅ 面板可直接**新建工作区**（名称/根目录/用途/类型 + mygo 原生目录选择器）并立刻建会话（Round 2，
+  `internal/runtime/workspaces.go:20,101`）；向导只是空库首启的一条路径，不是唯一入口。
+- 🟡 来源配置：IM 可按渠道开关/选 transport/编辑凭据并检查授权（`design/im-channels.md`）；GitHub Source 仍需
+  `-repo/-gh-login`，没有 Source 实例表/「添加来源」表单（RELEASE F-1）。
 
 ### 8.3 打包分发（**目标 vs 现状**，Wave 2 后）
 
@@ -1657,7 +1660,7 @@ Linux 桌面需 GTK3 + X11/Wayland。
 | 进程内 supervisor | 每 60s：DB 可写、launch 队列连续失败、运行 >6h 的 Assignment；连续 3 次问题把 runtime health 标 error；写 `health` 表 | `internal/runtime/supervisor.go:105-151` |
 | 外部巡检 | `scripts/watchdog-check.sh`（006:133-141 语义） | `scripts/watchdog-check.sh` |
 | systemd/launchd | 样例已与真实 CLI 对齐 | `packaging/systemd/zeokeel.service`、`packaging/launchd/com.zeokeel.agent.plist` |
-| 面板部署组 | 日志路径、备份目录、schema、status 退出码（只读事实） | `internal/runtime/pages.go:708`（`deployFacts`） |
+| 面板部署组 | 日志路径、备份目录、schema、status 退出码、OS/arch、时区（只读事实） | `internal/runtime/pages.go:749`（`deployFacts`） |
 
 退出码唯一语义（006:113-124）：0 正常；1 没在跑/不响应/runtime 报错（可重启修复）；
 2 组件错误（Source/sync/launch 队列/schema 新于 build，不重启）；3 等待 setup（不重启）。
@@ -1665,7 +1668,7 @@ Linux 桌面需 GTK3 + X11/Wayland。
 **手动停**：`zeokeel stop` 写 `<stateDir>/STOPPED`（`internal/runtime/status.go:111-128`、`cmd/zeokeel/cli.go:354-383`）；
 `status` 在“手动停且未运行”时返回 **0**（不触发重启），手动启动清除标记（`cmd/zeokeel/main.go:82`）。
 **仍缺（RELEASE F 组）**：无开机自启/休眠唤醒/自动更新（委托 systemd/launchd）；无 `--respect-stop` 独立 flag（由 STOPPED 标记承担）。
-面板部署组只读事实见 `internal/runtime/pages.go:708`（`deployFacts`）。
+面板部署组只读事实见 `internal/runtime/pages.go:749`（`deployFacts`）。
 
 详细操作手册：`design/ops-runbook.md`。
 
@@ -1907,7 +1910,7 @@ echo "check-nocgo: PASS (zero cgo)"
 | §4.3 gate + admission + accept mode | 确定性 gate（Strength/Basis）、admission 三格、bot list、Rules、AcceptMode、RequireApproval | ✅ | `internal/engine/gate.go:184`（`gate`）、`:27-56`（Policy）、`:166-180`（gateResult）；`internal/domain/ticket.go:118-200`（Strength/Basis/Cell/AdmissionRow/Rule）；Eval 消费：`internal/engine/evaluate.go:294`（`applyEvalLocked`）、`internal/engine/receive.go:360`（`enqueueEvalLocked`） |
 | §4.4 不变量（12 条） | 内容 ID/workspace 隔离/幂等/提议≠接受/回写等由生产代码保证 | 🟡 | 生产证据：`internal/domain/ids.go:39`（内容派生 ID）、`internal/engine/receive.go:17`（同 ID 去重）、`internal/engine/evaluate.go:294`（模型判定→Decision 校验后才生效）、`internal/runtime/reply.go:213`（回写原会话）。没有"每条一个测试文件"：测试覆盖分散在多个包（未作为本表证据引用），编号与 §4.4 的 12 条未一一对应 |
 | §4.6 工作区简报 | `internal/brief` + `internal/scan`（≤200 字近况、阈值召回） | ✅ | `internal/brief/brief.go:66`（`RenderAll`）；`internal/scan/scan.go:31`（`Scan`） |
-| §4.8 IM 抽象 | 接口完整（Kind/Poller/Channel/MemberLister/HealthReporter）；GitHub Source 为样板；IM 已接线 | ✅（Feishu WS/媒体下载除外） | 接口 `internal/sources/source.go:55-198`；注册表 `internal/sources/registry.go:69-88`；IM 接线 `cmd/zeokeel/imwiring.go:14-15,61-120`、`cmd/zeokeel/main.go:301`、`cmd/zeokeel/extras.go:163`、`cmd/zeokeel/sender.go:34-70`。**传输**：钉钉走官方 Stream SDK（`internal/im/dingtalk/stream.go:28-29,60,98`；依赖 `open-dingtalk/dingtalk-stream-sdk-go v0.9.1`）；飞书走 HTTP 历史接口长轮询（`internal/im/feishu/transport.go:1-31`），**无 Feishu WS 长连接、无媒体下载**（`mapping.go` 只保留 image_key/file_key 引用） |
+| §4.8 IM 抽象 | 接口完整（Kind/Poller/Channel/MemberLister/HealthReporter）；GitHub Source 为样板；IM 两个渠道可单独启用/停用 | ✅（Feishu WS/媒体下载除外） | 接口 `internal/sources/source.go:55-198`；注册表 `internal/sources/registry.go:69-88`；IM 管理器 `internal/runtime/im.go:51`（配置）、`:173`（启动）、`:189`（设置变更重启）、`:239`（每渠道生命周期）、`:328`（启用/半配置判定）；接线 `cmd/zeokeel/imwiring.go:39-49`、`cmd/zeokeel/main.go:301`。**传输**：钉钉默认 DWS 外部 CLI（`internal/runtime/dws.go:25-100`；契约 `internal/im/dingtalk/dws.go:1-20`），官方 Stream SDK 为可选 transport（`internal/runtime/im.go:394-398`；`internal/im/dingtalk/stream.go:28-29,60,98`）；飞书 HTTP 历史接口长轮询（`internal/im/feishu/transport.go:1-31`）。**无 Feishu WS/webhook、无媒体下载**（`mapping.go` 只保留 image_key/file_key 引用）。详见 `design/im-channels.md` |
 | §4.9 会话类型与意图 | `im.AddressedFor` 三规则 | ✅ | `internal/im/addressing.go:14` |
 | §4.10 应答策略 | `replyPlanLocked` + 按频道的 `composeReply` + `deliverReply` 的 Held/direct | ✅ | `internal/engine/evaluate.go:574`（`replyPlanLocked`）；`internal/runtime/reply.go:25-28`（IM ≤100 runes / GitHub 结构化 / local 简短）、`:50-82`（按 source 分派）、`:213-264`（读 ReplyPlan，notify/both/none 不直发，草稿留面板） |
 | 003 PR/Issue 生命周期（follows：merged/closed 结束） | GitHub 关闭事件 → `CloseThread` → `Persistence.ThreadClosed`；Worker `follow` 工具 → `BindFollow`；ready 等 PR 关闭 | ✅ | `internal/runtime/github_lifecycle.go:39`（`CloseThread`）、`:88`（`BindThread`）；`cmd/zeokeel/github.go:76`（轮询调用）；`internal/runtime/artifacts.go:102`（`follow` 工具）；`internal/engine/lifecycle.go:48-53,368`（ready 等待 + `ThreadClosed`）；`internal/domain/ticket.go:720,758,771`（`FollowsDone`/`CloseFollow`/`Unfinished`） |
@@ -1920,14 +1923,21 @@ echo "check-nocgo: PASS (zero cgo)"
 | §5.6 子智能体 | 官方 `subagent` 中间件 + explorer/verifier | ✅ | `internal/agent/subagent.go`；`internal/runtime/worker.go`（`DefaultSubagents`） |
 | §5.7 可观测性 | 消息页时间线 + 用量/压缩事件 + slog 文件日志 + health 表 | ✅ | `internal/runtime/runtime.go:416`（`stream`）；`cmd/zeokeel/logging.go:27`（`setupLogging`）；`internal/runtime/supervisor.go:151`（`SuperviseOnce`） |
 | §5.8 崩溃恢复 | 启动时恢复中断 Assignment + patchtoolcalls 补悬空 tool_call | ✅（路径与原文不同） | `internal/runtime/recovery.go:21`（`RecoverAssignments`）；`cmd/zeokeel/main.go:265`（启动调用）；`internal/agent/engine_adk.go:118`（`patchtoolcalls`） |
-| §5.10 能力矩阵 | MCP / skill / 定时 / 目标 / ⌘K 搜索 / present / ask / 子智能体 / 后台作业 | 🟡 | 缺 web 工具、plan mode、agent 可调用的 workflow 编排（`internal/workflow` 只有 `-pipeline` 用） |
-| §6.3 消息流主界面（单条流 + 巡检入口） | **未按此实现**：保留七页侧栏巡检台，默认总览；消息页只读 | 🟡 | `internal/ui/app.go`（默认 `SecOverview`）；`internal/view/vm.go:15-23`。这是有意的实现选择（更贴近原型 005），需在设计里补一句决定 |
-| §6.5 主题 tokens / 深浅色 | 品牌 token 从当前 frame theme 派生，跟随系统深浅色 | ✅ | `internal/ui/app.go:301-302`（`brandFor(c.Theme().Dark)`）；`internal/ui/tokens.go:170`（`tokensFrom`） |
+| §5.10 能力矩阵 | MCP / skill / 定时 / 目标 / ⌘K 搜索 / present / ask / 子智能体 / 后台作业 / **plantask 任务清单 / AGENTS.md / web_fetch / web_search** | 🟡（仅 plan mode 与 agent workflow） | 工具：`internal/agent/builtin.go:44`（plantask）、`:96`（agentsmd）、`internal/agent/webtools.go:52-90`（web tools）；运行时默认打开 `internal/runtime/worker.go:480-482`；提示词 `worker.go:573-575`；搜索端点 `internal/runtime/pages.go:496`。仍缺：plan mode（显式计划审批）与 agent 可调用的 workflow 编排（`internal/workflow` 只有 `-pipeline` 用） |
+| §6.3 界面结构（DSH 式侧栏 + 巡检页） | 侧栏：超级Agent / 工作区（树）/ 监控（消息·来源·触发·评估·执行）/ 设置；默认超级Agent 总览，消息页仍只读 | 🟡 | `internal/ui/chrome.go:54-99`（侧栏结构与 footer）；`internal/ui/app.go:415-419`（页面分派）；`internal/view/vm.go:435-457`（`Nav`/`SectionLabel`）。与原设计「单条流」不同：保留巡检台+新增工作区树，属有意实现选择（更贴近原型 005/DSH） |
+| UI 结构：工作区与会话 | 侧栏工作区树；工作区页；会话按「我创建的/超级Agent 创建的」分组（每工作区最近 50 条）；「＋ 新建工作区」「＋ 新建会话」 | ✅ | 侧栏/页面 `internal/ui/workspace.go:147-320`（`workspaceSection`/`workspacePage`）、`:453`（新建工作区弹窗）、`:581`（新建会话弹窗）；投影 `internal/runtime/pages.go:953-995`（`workspacesVM`/`conversationVM`，50 上限、CreatedBy 映射）；VM 分组 `internal/view/workspace.go:18-105`（`Groups`）；创建命令 `internal/runtime/workspaces.go:20,101` |
+| UI 结构：原生目录选择器 | mygo `Dialog.Open(Directory:true)` 三平台原生；后台 goroutine 选完回填；测试 seam | ✅ | `internal/ui/workspace.go:19-52`（`openFolderDialog`/`startFolderPicker`/`folderDialogOptions`）、`:55-83`（`browseFolder`/`pickFolderDone`）、`:534-570`（`workspaceRootField`） |
+| UI 结构：系统信息（OS/arch/时区） | 侧栏 footer 一行与设置›部署组都显示 OS/arch、时区（UTC±h） | ✅ | 投影 `internal/runtime/runtime.go:172-175`（`view.SystemInfo`）；字段 `internal/view/vm.go:159-195`（`Label`）；footer `internal/ui/chrome.go:92-99`；部署组 `internal/runtime/pages.go:763-764` |
+| 面板消息不再停在「未受理」 | 本地消息无 Ticket/Proposal 时：决策行「已答复」+ 超级Agent 回复行（列工作区或说明原因和下一步）；「新建会话」显式工作区直接派发 | ✅ | `internal/runtime/runtime.go:456-482`（stream 分支）；`internal/runtime/workspaces.go:101`（NewConversation 直接 `Dispatch`）、`:159-214`（`noDispatchMessage`/`workspaceAnswer`/`localAnswer`）；UI 不再画裸「未受理」`internal/ui/stream.go:129-141` |
+| IM 渠道管理（开关/transport/检查/授权） | 每渠道 enable/transport/凭据；禁用=未监听；设置变更只重启变化渠道；「检查通道」+ 打开授权页 | ✅ | 配置/生命周期 `internal/runtime/im.go:31,51,173,189,239,328,408`；检查 `:588` 与 `internal/runtime/dws.go:101-140`（飞书 401/403→`open.feishu.cn/app`）；设置字段 `internal/runtime/pages.go:458-484`；面板 `internal/ui/channels.go:14-25,134-230,244`；文档 `design/im-channels.md` |
+| 钉钉 DWS 传输（外部 CLI 契约） | 默认 transport：`dws auth status/poll/send/health --json`；每渠道串行 worker；cursor 整批接受后才推进；隐藏幂等 marker；1s→30s 退避；缺 dws 明确报错；Stream 可选 | ✅ | 契约/实现 `internal/im/dingtalk/dws.go:1-20,87-95,168,398,434,458,561-700`；适配 `internal/runtime/dws.go:25-100`；轮询/游标/退避 `internal/runtime/im.go:408-458`；缺命令错误 `:617`；文档 `design/im-channels.md` |
+| 内置 Worker 工具：plantask / AGENTS.md / web | TaskCreate/Get/Update/List（JSON 存工单目录）；AGENTS.md 注入（≤256KB）；web_fetch（公网 http(s)、10s、2MiB、拒私网）；web_search（前 5，端点可配） | ✅ | `internal/agent/builtin.go:44`（planTask）、`:96`（agentsmd，`:28` 上限）；`internal/agent/webtools.go:26-30,52-90,169-200`；中间件挂载 `internal/agent/engine_adk.go:116-130`；运行时默认 `internal/runtime/worker.go:480-482`；提示词 `worker.go:573-575`；设置 `execution.web_search_url` `internal/runtime/pages.go:496` |
+| §6.5 主题 tokens / 深浅色 / 字号 | 品牌 token 从当前 frame theme 派生，跟随系统深浅色；全局基础字号 15 | ✅ | `internal/ui/app.go:301-302`（`brandFor(c.Theme().Dark)`）；`internal/ui/tokens.go:170`（`tokensFrom`）、`:49`（`baseFontSize=15`） |
 | §6.7 生命周期（常驻/恢复） | 单实例锁 + 托盘/关窗隐藏 + `-headless` 服务 + 进程内 supervisor + 外部巡检 + systemd/launchd 样例 | ✅（自启/唤醒除外） | 锁 `internal/store/lock.go`；`-headless` `cmd/zeokeel/service.go:20`；supervisor `internal/runtime/supervisor.go:105`；样例 `packaging/systemd`、`packaging/launchd` |
 | §7 持久化与 Effects/Outbox | schema v3（有序迁移）、Effects、Outbox、会话事件、归档命令 | ✅ | `internal/store/schema.go:17`（`SchemaVersion=3`）；`internal/effects`；`internal/outbox`；`cmd/zeokeel/ops.go:83`（archive） |
 | §7.3 归档 | `zeokeel archive --before 180d [--dry-run]` → archive.db；outbox 保留 | ✅ | `cmd/zeokeel/ops.go:83`（`cmdArchive`） |
 | §8.1 模式与 CLI | 桌面 / `-headless` 服务 / 演示 / pipeline / 七个子命令（含 `stop`） | ✅ | `cmd/zeokeel/cli.go:47`（`cliCommands`）；`cmd/zeokeel/service.go:20`（`serveHeadless`） |
-| §8.2 首次配置 | 向导四步且落库；`zeokeel setup` 非交互 | ✅（gh 校验/钥匙串除外） | `internal/runtime/onboarding.go:114`（`SaveOnboarding` 走 `persistSettings`）；`cmd/zeokeel/cli.go:216`（`cmdSetup`） |
+| §8.2 首次配置 | 向导四步且落库；`zeokeel setup` 非交互；**工作区也可从面板新建**（原生目录选择器） | ✅（gh 校验/钥匙串除外） | `internal/runtime/onboarding.go:114`（`SaveOnboarding`）；`cmd/zeokeel/cli.go:216`（`cmdSetup`）；面板新建 `internal/runtime/workspaces.go:20`（`CreateWorkspace`）、`internal/ui/workspace.go:23,46`（原生 `mygo.Dialog.Open(Directory:true)`） |
 | §8.3 打包分发 | tar.gz / 未签名 .app zip / Windows zip + install.ps1 | 🟡 | `scripts/package.sh`；缺 `.dmg`/NSIS/deb/PKGBUILD/updater；CI 不出包 |
 | §8.5 可观测性与运维 CLI | status/check/setup/login/backup/archive/stop、文件日志、supervisor、退出码 0/1/2/3 | ✅（自启/唤醒除外） | `cmd/zeokeel/cli.go:76`（status）、`:143`（check）、`:216`（setup）、`stop` 在 `cli.go:354-383`；`cmd/zeokeel/ops.go:46,83`；`cmd/zeokeel/logging.go:27`；`internal/runtime/status.go:21-26`（退出码）、`:137`（`InspectStatus`）、`:111-128`（手动停标记 `STOPPED`）；`internal/runtime/supervisor.go:105` |
 | §9 零 cgo | `scripts/check-nocgo.sh` 四步 PASS + CI gate | ✅ | `scripts/check-nocgo.sh`；`scripts/verify-fixes.sh`；CI `check` job |
@@ -1942,6 +1952,9 @@ echo "check-nocgo: PASS (zero cgo)"
 - 飞书 WebSocket 长连接（当前 HTTP 长轮询）与 IM 媒体下载（只保留 image_key/file_key 引用）。
 - Source 实例表/面板“添加来源”：GitHub Source 仍需 `-repo/-gh-login`；设置页评估组只是只读事实，规则/admission/accept mode 不可编辑。
 - 开机自启、休眠唤醒（委托 systemd/launchd）。
+- 工作区/会话只能新建：无重命名、删除、改根目录；会话列表每工作区只投影最近 50 条。
+- 飞书 WS/webhook、IM 媒体下载；钉钉 Stream 目前面板把选项标成未实现（runtime 已支持，owner fix-ui2，见 `design/im-channels.md` §5）。
+- IM 真实凭据端到端未验证（CI 无凭据）；「检查通道」只验证凭据/订阅，不代替收到真实消息。
 - **测试/闸门状态（2026-11-03 20:53–20:55 最终冻结树）**：非 race 全量 2× 绿、全量 `-race` 1× 绿、
   build/vet/check-nocgo PASS、`release-check` 16/0/6；此前 20:47 的 3 个 runtime 红与 cmd 偶发 flake 未再复现。
   §9 闸门以后仍是唯一判据，代码再动必须重跑。

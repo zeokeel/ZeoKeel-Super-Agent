@@ -55,7 +55,7 @@ func ticketDetailEmpty(c *mui.Context, tk Tokens, what ...string) {
 
 // detailTitle is one section's heading inside the expanded row.
 func detailTitle(c *mui.Context, tk Tokens, title string) {
-	mui.Text(c, title).FontSize(11).Bold().TextColor(tk.TextMuted)
+	mui.Text(c, title).FontSize(13).Bold().TextColor(tk.TextMuted)
 }
 
 // ticketDetailRich draws everything the detail projection carries.
@@ -71,10 +71,10 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 				stage = r.Stage
 			}
 			chip(c, tk, stage, toneFg(tk, d.Tone), toneBg(tk, d.Tone))
-			mui.Text(c, humanfmt.Clip(d.Detail, 100)).FontSize(11).Grow(1).SingleLine().
+			mui.Text(c, humanfmt.Clip(d.Detail, 100)).FontSize(13).Grow(1).SingleLine().
 				TextColor(tk.Text)
 			if d.LastActivity != "" {
-				mui.Text(c, "最近活动 "+d.LastActivity).FontSize(10).SingleLine().
+				mui.Text(c, "最近活动 "+d.LastActivity).FontSize(12).SingleLine().
 					TextColor(tk.TextFaint)
 			}
 		})
@@ -83,7 +83,7 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 				AlignItems(mui.Start).Children(func() {
 				mui.Icon(c, icBell).FontSize(12).TextColor(tk.Amber)
 				mui.Column(c).Grow(1).Gap(2).Children(func() {
-					mui.Text(c, "待回答："+d.Attention.Question).FontSize(11).TextColor(tk.Text)
+					mui.Text(c, "待回答："+d.Attention.Question).FontSize(13).TextColor(tk.Text)
 					if len(d.Attention.Options) > 0 {
 						mui.Text(c, "可选："+strings.Join(d.Attention.Options, " · ")).
 							FontSize(10).TextColor(tk.TextMuted)
@@ -115,10 +115,10 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 			if m.Actor != "" {
 				line += " · 由 " + m.Actor + " 的请求授权"
 			}
-			mui.Text(c, line).FontSize(11).TextColor(tk.Text)
+			mui.Text(c, line).FontSize(13).TextColor(tk.Text)
 			if len(m.Rules) > 0 {
 				mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, "命中规则").FontSize(10).TextColor(tk.TextFaint)
+					mui.Text(c, "命中规则").FontSize(12).TextColor(tk.TextFaint)
 					for _, rule := range m.Rules {
 						mono(c, tk, rule)
 					}
@@ -147,15 +147,15 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 				if !as.StartedAt.IsZero() {
 					line += " · 开始 " + as.StartedAt.Format("01-02 15:04")
 				}
-				mui.Text(c, line).FontSize(10).TextColor(tk.TextMuted)
+				mui.Text(c, line).FontSize(12).TextColor(tk.TextMuted)
 				if as.Report != nil {
 					report := as.Report.State
 					if as.Report.Summary != "" {
 						report += " · " + as.Report.Summary
 					}
-					mui.Text(c, "报告："+report).FontSize(10).TextColor(tk.Text)
+					mui.Text(c, "报告："+report).FontSize(12).TextColor(tk.Text)
 					if as.Report.Detail != "" {
-						mui.Text(c, as.Report.Detail).FontSize(10).SingleLine().TextColor(tk.TextFaint)
+						mui.Text(c, as.Report.Detail).FontSize(12).SingleLine().TextColor(tk.TextFaint)
 					}
 					if len(as.Report.Artifacts) > 0 {
 						mui.Row(c).Gap(6).Children(func() {
@@ -176,7 +176,7 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 		for _, in := range d.Inputs {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 				mono(c, tk, in.Kind)
-				mui.Text(c, humanfmt.Clip(in.Text, 80)).FontSize(10).Grow(1).
+				mui.Text(c, humanfmt.Clip(in.Text, 80)).FontSize(12).Grow(1).
 					SingleLine().TextColor(tk.Text)
 				state := "未投递"
 				switch {
@@ -185,9 +185,9 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 				case in.Delivered:
 					state = "已投递"
 				}
-				mui.Text(c, state).FontSize(9).TextColor(tk.TextFaint)
+				mui.Text(c, state).FontSize(11).TextColor(tk.TextFaint)
 				if !in.At.IsZero() {
-					mui.Text(c, humanfmt.Ago(a.age(in.At))).FontSize(9).TextColor(tk.TextFaint)
+					mui.Text(c, humanfmt.Ago(a.age(in.At))).FontSize(11).TextColor(tk.TextFaint)
 				}
 			})
 		}
@@ -208,7 +208,7 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 			if f.ClosedAt != nil {
 				line += " · 已关闭 " + f.ClosedAt.Format("01-02 15:04")
 			}
-			mui.Text(c, line).FontSize(10).TextColor(tk.TextMuted)
+			mui.Text(c, line).FontSize(12).TextColor(tk.TextMuted)
 		}
 
 		// Artifacts: what the work produced.

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	mui "github.com/egoist/mygo/ui"
 
@@ -65,7 +66,7 @@ func (a *App) emptyStream(c *mui.Context) {
 	tk := a.tk
 	mui.Column(c).Padding(0, 120).Gap(8).AlignItems(mui.Center).Children(func() {
 		mui.Icon(c, icSpark).FontSize(26).TextColor(tk.Accent)
-		mui.Text(c, "把事交给它，然后看着它做").FontSize(18).Bold().TextColor(tk.Text)
+		mui.Text(c, "把事交给它，然后看着它做").FontSize(20).Bold().TextColor(tk.Text)
 		mui.Text(c, "所有来源的消息都会落到这条流里：GitHub、钉钉、飞书，以及你在这里打的字。").
 			FontSize(12).TextColor(tk.TextMuted)
 	})
@@ -84,7 +85,7 @@ func (a *App) thread(c *mui.Context, th view.Thread) {
 			mui.Box(c).Width(1).Grow(1).Background(tk.BorderSoft)
 		})
 		mui.Column(c).Grow(1).Gap(8).Padding(0, 0, 0, 0).Children(func() {
-			for _, s := range th.Steps {
+			for _, s := range threadSteps(th) {
 				a.stepLine(c, s)
 			}
 		})
@@ -108,19 +109,91 @@ func (a *App) headLine(c *mui.Context, l view.Line) {
 		a.avatar(c, avatarLetter(l), ifColor(mine, tk.Accent, tk.TextMuted))
 		mui.Column(c).Grow(1).Gap(3).Children(func() {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, l.Source).FontSize(11).TextColor(tk.TextMuted)
+				mui.Text(c, l.Source).FontSize(13).TextColor(tk.TextMuted)
 				if l.Who != "" {
-					mui.Text(c, "· "+l.Who).FontSize(11).TextColor(tk.TextFaint)
+					mui.Text(c, "· "+l.Who).FontSize(13).TextColor(tk.TextFaint)
 				}
 				mui.Spacer(c)
-				mui.Text(c, l.At.Format("15:04")).FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, l.At.Format("15:04")).FontSize(12).TextColor(tk.TextFaint)
 			})
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, l.Text).FontSize(13).Grow(1).TextColor(tk.Text)
+				mui.Text(c, l.Text).FontSize(15).Grow(1).TextColor(tk.Text)
 				if located {
 					chip(c, tk, "定位", tk.Accent, tk.Surface)
 				}
 			})
+		})
+	})
+}
+
+// threadSteps returns the steps a Thread draws. A bare "未受理" decision is an
+// outcome only when the agent said nothing: once it answered in the same Thread
+// (the runtime adds a LineReply/LineNotice that starts with 超级Agent), the answer
+// is the outcome, and showing "未受理" beside it reads as "ignored, then
+// answered" — two truths for one message.
+func threadSteps(th view.Thread) []view.Line {
+	if !hasAgentAnswer(th.Steps) {
+		return th.Steps
+	}
+	out := make([]view.Line, 0, len(th.Steps))
+	for _, l := range th.Steps {
+		if l.Kind == view.LineDecision && strings.TrimSpace(l.Text) == "未受理" {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// hasAgentAnswer reports whether the agent answered the Thread's message inside
+// the panel: a reply line, or a notice that says 超级Agent in its text.
+func hasAgentAnswer(steps []view.Line) bool {
+	for _, l := range steps {
+		if isAgentAnswer(l) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAgentAnswer tells the agent's own answer apart from a delivery reply and a
+// system notice: the runtime writes its answer as "超级Agent：…", and only that
+// line is the answer to what the person said.
+func isAgentAnswer(l view.Line) bool {
+	if l.Kind != view.LineReply && l.Kind != view.LineNotice {
+		return false
+	}
+	t := strings.TrimSpace(l.Text)
+	return strings.HasPrefix(t, "超级Agent") || strings.Contains(t, "超级Agent：")
+}
+
+// agentAnswer draws the 超级Agent's answer to the operator: a panel of its own, so
+// it is not read as one more status line (the "只显示未受理" fix).
+func (a *App) agentAnswer(c *mui.Context, l view.Line) {
+	tk := a.tk
+	fg, bg := tk.Accent, tk.AccentSoft
+	switch l.Tone {
+	case view.ToneWarn:
+		fg, bg = tk.Amber, tk.AmberSoft
+	case view.ToneDanger:
+		fg, bg = tk.Red, tk.RedSoft
+	}
+	text := strings.TrimSpace(l.Text)
+	text = strings.TrimPrefix(text, "超级Agent：")
+	text = strings.TrimPrefix(text, "超级Agent:")
+	mui.Row(c).Padding(10, 12).Radius(8).Background(bg).Gap(9).AlignItems(mui.Start).Children(func() {
+		mui.Icon(c, icSpark).FontSize(13).TextColor(fg)
+		mui.Column(c).Grow(1).Gap(3).Children(func() {
+			mui.Row(c).Gap(7).AlignItems(mui.Center).Children(func() {
+				mui.Text(c, "超级Agent").FontSize(12).Bold().TextColor(fg)
+				if !l.At.IsZero() {
+					mui.Text(c, l.At.Format("15:04")).FontSize(10).TextColor(tk.TextFaint)
+				}
+				for _, b := range l.Badges {
+					textChip(c, tk, b)
+				}
+			})
+			mui.Text(c, text).FontSize(14).TextColor(tk.Text)
 		})
 	})
 }
@@ -134,17 +207,17 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		// A record that the agent asked something, not a place to answer it: the
 		// answer belongs to 总览, where the to-dos are (design §6.3).
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "问").FontSize(10).TextColor(tk.TextFaint)
-			mui.Text(c, "问你："+l.Text).FontSize(12).SingleLine().TextColor(tk.Text)
+			mui.Text(c, "问").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, "问你："+l.Text).FontSize(14).SingleLine().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, "待你回答").FontSize(10).TextColor(tk.TextFaint)
+			mui.Text(c, "待你回答").FontSize(12).TextColor(tk.TextFaint)
 		})
 		return
 
 	case view.LineDecision:
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "→").FontSize(11).TextColor(tk.TextFaint)
-			mui.Text(c, l.Text).FontSize(12).TextColor(tk.TextMuted)
+			mui.Text(c, "→").FontSize(13).TextColor(tk.TextFaint)
+			mui.Text(c, l.Text).FontSize(14).TextColor(tk.TextMuted)
 			for _, b := range l.Badges {
 				textChip(c, tk, b)
 			}
@@ -152,9 +225,15 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		return
 
 	case view.LineReply:
+		// The agent's answer to the operator is the outcome of the message above;
+		// a reply addressed to someone else stays one quiet line.
+		if isAgentAnswer(l) {
+			a.agentAnswer(c, l)
+			return
+		}
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "✉").FontSize(11).TextColor(toneFg(tk, l.Tone))
-			mui.Text(c, l.Text).FontSize(11).TextColor(tk.TextMuted)
+			mui.Text(c, "✉").FontSize(13).TextColor(toneFg(tk, l.Tone))
+			mui.Text(c, l.Text).FontSize(13).TextColor(tk.TextMuted)
 			for _, b := range l.Badges {
 				textChip(c, tk, b)
 			}
@@ -163,8 +242,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 
 	case view.LineProgress:
 		mui.Row(c).Gap(8).AlignItems(mui.Start).Children(func() {
-			mui.Text(c, "ZeoKeel").FontSize(11).Bold().TextColor(tk.TextMuted)
-			mui.Text(c, l.Text).FontSize(12).Grow(1).TextColor(tk.Text)
+			mui.Text(c, "ZeoKeel").FontSize(13).Bold().TextColor(tk.TextMuted)
+			mui.Text(c, l.Text).FontSize(14).Grow(1).TextColor(tk.Text)
 		})
 		return
 
@@ -172,8 +251,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		// A deliverable is not a command: draw it as the thing it produced, with
 		// the kind as a chip (design §6.10).
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "交付").FontSize(10).TextColor(tk.TextFaint)
-			mui.Text(c, l.Text).FontSize(12).TextColor(tk.Text)
+			mui.Text(c, "交付").FontSize(12).TextColor(tk.TextFaint)
+			mui.Text(c, l.Text).FontSize(14).TextColor(tk.Text)
 			for _, b := range l.Badges {
 				textChip(c, tk, b)
 			}
@@ -181,9 +260,15 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 		return
 
 	case view.LineNotice:
+		// A notice carrying the agent's answer uses the answer panel; other
+		// notices stay the quiet line they were.
+		if isAgentAnswer(l) {
+			a.agentAnswer(c, l)
+			return
+		}
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			dot(c, tk.TextFaint, 4)
-			mui.Text(c, l.Text).FontSize(11).TextColor(tk.TextFaint)
+			mui.Text(c, l.Text).FontSize(13).TextColor(tk.TextFaint)
 		})
 		return
 	}
@@ -191,8 +276,8 @@ func (a *App) stepLine(c *mui.Context, l view.Line) {
 	// A tool or verification row: monospace, with the result on the right.
 	mui.Row(c).Padding(8, 10).Radius(6).Background(tk.SurfaceAlt).Gap(8).
 		AlignItems(mui.Center).Children(func() {
-		mui.Text(c, "▸ "+l.Tool).FontSize(11).Bold().TextColor(tk.TextMuted)
-		mui.Text(c, l.Command).FontSize(11).SingleLine().Grow(1).TextColor(tk.Text)
+		mui.Text(c, "▸ "+l.Tool).FontSize(13).Bold().TextColor(tk.TextMuted)
+		mui.Text(c, l.Command).FontSize(13).SingleLine().Grow(1).TextColor(tk.Text)
 		if l.DiffAdd > 0 || l.DiffDel > 0 {
 			chip(c, tk, fmt.Sprintf("+%d", l.DiffAdd), tk.Green, tk.GreenSoft)
 			chip(c, tk, fmt.Sprintf("−%d", l.DiffDel), tk.Red, tk.RedSoft)
@@ -218,6 +303,6 @@ func avatarLetter(l view.Line) string {
 
 func (a *App) avatar(c *mui.Context, label string, bg mui.Color) {
 	mui.Row(c).Size(24, 24).Radius(12).Background(bg).Center().Children(func() {
-		mui.Text(c, label).FontSize(11).TextColor(mui.Hex("#FFFFFF"))
+		mui.Text(c, label).FontSize(13).TextColor(mui.Hex("#FFFFFF"))
 	})
 }

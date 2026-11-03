@@ -174,6 +174,29 @@ type App struct {
 	// helpOpen shows the glossary (the (?) entry and ⌘/).
 	helpOpen bool
 
+	// 工作区 sidebar and page state (main thread only). wsExpanded keeps which
+	// workspace rows are open; workspaceSel is the workspace 工作区 shows.
+	wsExpanded   map[string]bool
+	workspaceSel string
+	// The 新建工作区 dialog and its draft. pickingFolder is true while the native
+	// directory picker is open, so a second click cannot open a second dialog.
+	wsModal       bool
+	wsDraft       workspaceDraft
+	wsKind        int
+	wsErr         string
+	pickingFolder bool
+	// The 新建会话 dialog: its workspace, draft and error.
+	convModal bool
+	convWS    string
+	convDraft string
+	convErr   string
+
+	// 设置 › 来源's channel cards. channelChecks holds the last check of each
+	// channel (by name) and whether one is running; the runtime's projection
+	// supplies the configuration, so editing keeps the settings save protocol.
+	channelChecks map[string]channelCheck
+	channelErr    string
+
 	// goalFocus is the goal the overview strip jumped to: the 触发 page's goal
 	// list highlights it. Empty when no jump is in effect.
 	goalFocus string
@@ -359,6 +382,8 @@ func (a *App) view(c *mui.Context) {
 	// only draw when their state says they are open.
 	a.searchPalette(c)
 	a.artifactsPanel(c)
+	a.workspaceDialog(c)
+	a.conversationDialog(c)
 	a.answerDialog(c)
 	a.stopDialog(c)
 	a.helpDialog(c)
@@ -375,6 +400,8 @@ func newApp(snap *view.Snapshot, cmd Commander) *App {
 		settingsGroup: view.SettingsSource,
 		settingsEdits: map[string]*string{},
 		promptEdits:   map[string]*string{},
+		wsExpanded:    map[string]bool{},
+		channelChecks: map[string]channelCheck{},
 	}
 	a.threadList.Selected = &a.threadSel
 	a.ticketList.Selected = &a.ticketSel
@@ -388,6 +415,8 @@ func (a *App) page(c *mui.Context, ov *view.OverviewVM) {
 	case view.SecOverview:
 		// The overview is one long column; it scrolls as a whole.
 		mui.Scroll(c).Grow(1).Children(func() { a.overview(c, ov) })
+	case view.SecWorkspace:
+		a.workspacePage(c)
 	case view.SecSource:
 		a.sourcePage(c)
 	case view.SecTrigger:
@@ -407,16 +436,9 @@ func (a *App) page(c *mui.Context, ov *view.OverviewVM) {
 func (a *App) placeholder(c *mui.Context, sec view.Section) {
 	tk := a.tk
 	mui.Column(c).Fill().Padding(32).Gap(8).Children(func() {
-		mui.Text(c, labelOf(sec)).FontSize(24).Bold().TextColor(tk.Text)
-		mui.Text(c, "这一页不在侧边栏里。").FontSize(13).TextColor(tk.TextMuted)
+		mui.Text(c, labelOf(sec)).FontSize(26).Bold().TextColor(tk.Text)
+		mui.Text(c, "这一页不在侧边栏里。").FontSize(15).TextColor(tk.TextMuted)
 	})
 }
 
-func labelOf(sec view.Section) string {
-	for _, it := range view.Nav(nil) {
-		if it.Section == sec {
-			return it.Label
-		}
-	}
-	return string(sec)
-}
+func labelOf(sec view.Section) string { return view.SectionLabel(sec) }

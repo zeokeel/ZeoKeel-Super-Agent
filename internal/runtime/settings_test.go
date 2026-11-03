@@ -155,6 +155,12 @@ func TestSettingsPageListsOnlyWiredFields(t *testing.T) {
 	vm := rt.settingsVM(rt.clock())
 	allowed := map[string]bool{
 		"source.poll_interval":         true,
+		"source.feishu_enabled":        true,
+		"source.feishu_transport":      true,
+		"source.dingtalk_enabled":      true,
+		"source.dingtalk_transport":    true,
+		"source.dingtalk_dws_cmd":      true,
+		"source.dingtalk_bot_id":       true,
 		"source.feishu_app_id":         true,
 		"source.feishu_app_secret":     true,
 		"source.feishu_chats":          true,
@@ -168,6 +174,7 @@ func TestSettingsPageListsOnlyWiredFields(t *testing.T) {
 		"execution.command_timeout":    true,
 		"execution.prepare":            true,
 		"execution.background_timeout": true,
+		"execution.web_search_url":     true,
 		"execution.model_timeout":      true,
 		"people.allowlist":             true,
 	}

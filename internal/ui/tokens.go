@@ -46,7 +46,7 @@ const (
 	// reports.
 	controlRadius = 8
 	// baseFontSize and baseSpacing are the panel's scale, on mygo's units.
-	baseFontSize = 13
+	baseFontSize = 15
 	baseSpacing  = 4
 )
 

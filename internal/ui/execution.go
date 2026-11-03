@@ -25,8 +25,13 @@ func (a *App) executionPage(c *mui.Context) {
 			}
 		})
 		if vm == nil {
-			mui.Text(c, "等待运行时发布执行快照…").FontSize(13).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布执行快照…").FontSize(15).TextColor(tk.TextMuted)
 			return
+		}
+		if a.actionErr != "" {
+			mui.Row(c).Padding(0, 2).Children(func() {
+				mui.Text(c, a.actionErr).FontSize(12).TextColor(tk.Red)
+			})
 		}
 
 		a.ticketFilters(c, vm)
@@ -50,7 +55,7 @@ func (a *App) ticketFilters(c *mui.Context, vm *view.TicketListVM) {
 			}
 		}
 		mui.Spacer(c)
-		mui.Text(c, "点一行就地展开 · 动作在总览").FontSize(10).TextColor(tk.TextFaint)
+		mui.Text(c, "点一行就地展开 · 动作在总览").FontSize(12).TextColor(tk.TextFaint)
 	})
 }
 
@@ -67,17 +72,17 @@ func (a *App) ticketListPage(c *mui.Context, vm *view.TicketListVM) {
 		Border(1, tk.Border).Children(func() {
 		mui.Row(c).Height(32).Padding(0, 16).Gap(10).AlignItems(mui.Center).
 			Background(tk.SurfaceAlt).Children(func() {
-			mui.Text(c, "来源").FontSize(10).TextColor(tk.TextFaint).Width(26)
-			mui.Text(c, "任务").FontSize(10).TextColor(tk.TextFaint).Grow(1)
-			mui.Text(c, "工作区").FontSize(10).TextColor(tk.TextFaint).Width(120)
-			mui.Text(c, "阶段").FontSize(10).TextColor(tk.TextFaint).Width(96)
-			mui.Text(c, "最近活动").FontSize(10).TextColor(tk.TextFaint).Width(170)
+			mui.Text(c, "来源").FontSize(12).TextColor(tk.TextFaint).Width(26)
+			mui.Text(c, "任务").FontSize(12).TextColor(tk.TextFaint).Grow(1)
+			mui.Text(c, "工作区").FontSize(12).TextColor(tk.TextFaint).Width(120)
+			mui.Text(c, "阶段").FontSize(12).TextColor(tk.TextFaint).Width(96)
+			mui.Text(c, "最近活动").FontSize(12).TextColor(tk.TextFaint).Width(170)
 			mui.Box(c).Width(12)
 		})
 		mui.Box(c).Height(1).Background(tk.Border)
 		if len(rows) == 0 {
 			mui.Row(c).Padding(16, 14).Children(func() {
-				mui.Text(c, "这个阶段没有任务。").FontSize(12).TextColor(tk.TextMuted)
+				mui.Text(c, "这个阶段没有任务。").FontSize(14).TextColor(tk.TextMuted)
 			})
 			return
 		}
@@ -94,7 +99,7 @@ func (a *App) ticketListPage(c *mui.Context, vm *view.TicketListVM) {
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		mui.Row(c).Height(28).Padding(0, 16).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Text(c, fmt.Sprintf("共 %d 个任务 · 当前筛选 %d 个 · 按最近活动排序",
-				vm.Total, len(rows))).FontSize(10).TextColor(tk.TextFaint)
+				vm.Total, len(rows))).FontSize(12).TextColor(tk.TextFaint)
 		})
 	})
 }
@@ -111,9 +116,9 @@ func (a *App) ticketRow(c *mui.Context, vm *view.TicketListVM, r view.TicketRow,
 		mui.Row(c).Height(46).Padding(0, 16).Gap(10).AlignItems(mui.Center).Children(func() {
 			sourceGlyph(c, tk, r.SourceIcon, 26)
 			mui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "#"+r.ID).FontSize(10).Font("monospace").
+				mui.Text(c, "#"+r.ID).FontSize(12).Font("monospace").
 					TextColor(ifColor(opened, tk.AccentSoft, tk.TextFaint))
-				mui.Text(c, r.Title).FontSize(12).SingleLine().
+				mui.Text(c, r.Title).FontSize(14).SingleLine().
 					TextColor(ifColor(opened, tk.Surface, tk.Text))
 				if located {
 					chipOn(c, tk, "定位", opened, tk.Accent, tk.AccentSoft)
@@ -124,7 +129,7 @@ func (a *App) ticketRow(c *mui.Context, vm *view.TicketListVM, r view.TicketRow,
 				chipOn(c, tk, r.Stage, opened, toneFg(tk, r.Tone), toneBg(tk, r.Tone))
 			})
 			mui.Row(c).Width(170).Children(func() {
-				mui.Text(c, r.Activity).FontSize(10).SingleLine().
+				mui.Text(c, r.Activity).FontSize(12).SingleLine().
 					TextColor(ifColor(opened, tk.AccentSoft, tk.TextFaint))
 			})
 			mui.Icon(c, ifIcon(opened, icChevD, icChevR)).FontSize(12).
@@ -167,7 +172,7 @@ func (a *App) ticketDetailShort(c *mui.Context, vm *view.TicketListVM, r view.Ti
 		BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSoft).Children(func() {
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			chip(c, tk, r.Stage, toneFg(tk, r.Tone), toneBg(tk, r.Tone))
-			mui.Text(c, detail).FontSize(11).Grow(1).TextColor(tk.Text)
+			mui.Text(c, detail).FontSize(13).Grow(1).TextColor(tk.Text)
 		})
 		mui.Row(c).Gap(18).AlignItems(mui.Center).Children(func() {
 			detailFact(c, tk, "来源", d.Source)
@@ -176,11 +181,11 @@ func (a *App) ticketDetailShort(c *mui.Context, vm *view.TicketListVM, r view.Ti
 			}
 			detailFact(c, tk, "授权", d.Mandate)
 			mui.Spacer(c)
-			mui.Text(c, "最近活动 "+last).FontSize(10).TextColor(tk.TextFaint)
+			mui.Text(c, "最近活动 "+last).FontSize(12).TextColor(tk.TextFaint)
 		})
 		if len(d.Artifacts) > 0 {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "产物").FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, "产物").FontSize(12).TextColor(tk.TextFaint)
 				for _, art := range d.Artifacts {
 					textChip(c, tk, art.Title+" · "+art.Detail)
 				}
@@ -199,8 +204,8 @@ func detailFact(c *mui.Context, tk Tokens, label, value string) {
 		return
 	}
 	mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, label).FontSize(10).TextColor(tk.TextFaint)
-		mui.Text(c, value).FontSize(10).SingleLine().TextColor(tk.TextMuted)
+		mui.Text(c, label).FontSize(12).TextColor(tk.TextFaint)
+		mui.Text(c, value).FontSize(12).SingleLine().TextColor(tk.TextMuted)
 	})
 }
 

@@ -86,5 +86,11 @@ func settleRuntime(t *testing.T, rt *Runtime) {
 		if !rt.WaitIdle(20 * time.Second) {
 			t.Errorf("runtime workers did not drain before temp-dir cleanup")
 		}
+		// The Worker goroutine can be done while an agent-internal session writer
+		// still flushes; wait for the roots to go quiet so TempDir cleanup does not
+		// race the last write.
+		if !rt.WaitRootsQuiet(300*time.Millisecond, 10*time.Second) {
+			t.Errorf("worker roots kept changing during cleanup")
+		}
 	})
 }

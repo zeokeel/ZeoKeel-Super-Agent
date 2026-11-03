@@ -36,10 +36,10 @@ func (d *Driver) translate(e Event, selfID string) (im.RawEvent, error) {
 		Conv: domain.Conversation{Kind: kind, ID: e.ConversationID, Name: e.ConversationTitle},
 		Actor: domain.Actor{
 			ID: actorID,
-			// 钉钉企业内的人的 senderStaffId 一定有值；机器人/外部身份没有
-			// staffId。这是启发式而不是权威字段，所以注释写清楚，便于接入时
-			// 用真实回调校正（与飞书的 sender_type 不同，钉钉没有 bot 标志）。
-			Bot: e.SenderStaffID == "",
+			// 来源标记优先用传输层给的事实（DWS 的 sender.bot；Stream 回调
+			// 没有 bot 标志）。没有事实时退回启发式：钉钉企业内的人的
+			// senderStaffId 一定有值，机器人/外部身份没有 staffId。
+			Bot: e.SenderIsBot || e.SenderStaffID == "",
 		},
 		// Stream 回调只告诉"这是一条回复"（isReplyMsg），不给父消息 id；
 		// 因此 ReplyTo 留空，只把"回复了机器人"这个事实交给 Addressed。

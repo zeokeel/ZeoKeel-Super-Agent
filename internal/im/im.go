@@ -106,6 +106,24 @@ type Poller interface {
 	Poll(ctx context.Context, cursor string) (events []RawEvent, next string, err error)
 }
 
+// TextSender is an optional transport capability for gateways whose send API is
+// "plain text + a business idempotency key" (e.g. the DingTalk DWS CLI). The
+// transport owns the hidden de-dup marker; the driver passes the business key
+// and plain text. Drivers should prefer this over SendRobot when available.
+type TextSender interface {
+	SendText(ctx context.Context, conversationID, text, idempotencyKey string) (messageID string, err error)
+}
+
+// CursorReceiver is an optional Receiver capability for transports whose read
+// position lives outside the process (DWS gateways, feishu long polling after a
+// restart). The caller supplies the persisted cursor and a save callback that
+// runs only after a batch was fully delivered; on save error the loop stops
+// without advancing (the batch is re-read, duplicates are absorbed by
+// content-derived ids).
+type CursorReceiver interface {
+	SubscribeFrom(ctx context.Context, cursor string, save func(next string) error, out chan<- RawEvent) error
+}
+
 // Sender writes to the tool and reads context back.
 type Sender interface {
 	Send(ctx context.Context, msg Outbound) (Receipt, error)

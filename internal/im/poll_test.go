@@ -2,6 +2,7 @@ package im
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -249,5 +250,95 @@ func TestTruncateKeepsValidUTF8(t *testing.T) {
 	}
 	if Truncate("short", 10) != "short" {
 		t.Fatal("text under the limit must be unchanged")
+	}
+}
+
+// SaveCursor 只在"这一批全部交付成功且游标确实推进"之后调用。
+func TestSubscribeSavesCursorAfterDelivery(t *testing.T) {
+	p := &scriptPoller{steps: []step{
+		{events: []RawEvent{{ID: "e1"}}, next: "c1"},
+		{next: "c1"},
+	}}
+	var mu sync.Mutex
+	var saved []string
+	save := func(next string) error {
+		mu.Lock()
+		saved = append(saved, next)
+		mu.Unlock()
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan RawEvent, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- SubscribeLongPoll(ctx, p, SubscribeOptions{
+			Cursor: "c0", Backoff: time.Millisecond, IdleDelay: time.Millisecond, SaveCursor: save,
+		}, out)
+	}()
+	select {
+	case ev := <-out:
+		if ev.ID != "e1" {
+			t.Fatalf("event = %+v", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event delivered")
+	}
+	waitFor(t, "cursor saved", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(saved) == 1
+	})
+	mu.Lock()
+	if saved[0] != "c1" {
+		t.Fatalf("saved = %v, want [c1]", saved)
+	}
+	mu.Unlock()
+	cancel()
+	if err := <-done; err != context.Canceled {
+		t.Fatalf("Subscribe err = %v, want context.Canceled", err)
+	}
+}
+
+// 游标持久化失败：停止且不推进（下一轮会重读这一批，重复由内容 ID 吸收）。
+func TestSubscribeStopsWhenCursorSaveFails(t *testing.T) {
+	p := &scriptPoller{steps: []step{{events: []RawEvent{{ID: "e1"}}, next: "c1"}}}
+	ctx := context.Background()
+	out := make(chan RawEvent, 1)
+	err := SubscribeLongPoll(ctx, p, SubscribeOptions{
+		Backoff: time.Millisecond, IdleDelay: time.Millisecond,
+		SaveCursor: func(string) error { return errors.New("disk full") },
+	}, out)
+	if err == nil || !strings.Contains(err.Error(), "persist cursor") {
+		t.Fatalf("err = %v, want a persist-cursor error", err)
+	}
+	if ev := <-out; ev.ID != "e1" {
+		t.Fatalf("delivered event = %+v", ev)
+	}
+	// 一轮内可能翻页：第一页交付后 SaveCursor 失败，轮询立即停止，不再取下一页。
+	if calls := p.callList(); len(calls) > 2 {
+		t.Fatalf("poller calls = %v, want at most the failed round", calls)
+	}
+}
+
+// 游标没推进时不需要写 KV（空轮询不该每 2s 写一次磁盘）。
+func TestSubscribeSkipsSaveWhenCursorDoesNotAdvance(t *testing.T) {
+	p := &scriptPoller{steps: []step{{events: []RawEvent{{ID: "e1"}}, next: ""}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	saved := 0
+	out := make(chan RawEvent, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- SubscribeLongPoll(ctx, p, SubscribeOptions{
+			Backoff: time.Millisecond, IdleDelay: time.Millisecond,
+			SaveCursor: func(string) error { saved++; return nil },
+		}, out)
+	}()
+	<-out
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+	if saved != 0 {
+		t.Fatalf("SaveCursor called %d times for an unchanged cursor", saved)
 	}
 }

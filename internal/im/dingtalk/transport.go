@@ -108,7 +108,10 @@ type Event struct {
 	CreateAt          int64
 	IsInAtList        bool
 	IsReplyMsg        bool
-	AtUsers           []AtUser
+	// SenderIsBot 是传输层给出的权威 bot 标记（DWS 的 sender.bot）；
+	// Stream 回调没有这个字段，保留 false 让 mapping 用 staffId 启发式。
+	SenderIsBot bool
+	AtUsers     []AtUser
 }
 
 // EventsPage 是一批 Stream 事件。

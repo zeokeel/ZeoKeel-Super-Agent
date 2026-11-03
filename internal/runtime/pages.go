@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -449,17 +450,34 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 			{ID: view.SettingsSource, Label: "来源",
 				// Only knobs that actually change behaviour are shown: a setting that
 				// saves and does nothing teaches people not to trust the page.
-				Note: "只列真正生效的项。GitHub 走 gh CLI 登录；IM 的 app secret 存在本机 SQLite。" +
-					"留空的 IM 不会监听（不会假装在线）。",
+				Note: "IM 按渠道开关：禁用=未监听、不会假装在线；保存后会重启有变化的渠道。" +
+					"GitHub 走 gh CLI 登录；IM 的 secret 存在本机 SQLite。",
 				Fields: []view.SettingField{
 					{Key: "poll_interval", Label: labelOfKey("poll_interval"), Value: values["source.poll_interval"], Kind: view.SettingText},
+
+					{Key: "feishu_enabled", Label: "启用飞书", Value: values["source.feishu_enabled"], Kind: view.SettingSwitch,
+						Help: "关闭时取消订阅、停止轮询，配置保留。默认关闭（未启用）。"},
+					{Key: "feishu_transport", Label: "飞书传输方式", Value: orDefault(values["source.feishu_transport"], "longpoll"), Kind: view.SettingSelect,
+						Options: []string{"longpoll", "ws", "webhook"},
+						Help:    "当前只实现 longpoll；ws/webhook 仅占位，选中后来源报错而不是静默降级。"},
 					{Key: "feishu_app_id", Label: "飞书 App ID", Value: values["source.feishu_app_id"], Kind: view.SettingText},
 					{Key: "feishu_app_secret", Label: "飞书 App Secret", Value: values["source.feishu_app_secret"], Kind: view.SettingSecret},
 					{Key: "feishu_chats", Label: "飞书会话 ID（逗号分隔）", Value: values["source.feishu_chats"], Kind: view.SettingText},
-					{Key: "dingtalk_app_key", Label: "钉钉 AppKey", Value: values["source.dingtalk_app_key"], Kind: view.SettingText},
-					{Key: "dingtalk_app_secret", Label: "钉钉 AppSecret", Value: values["source.dingtalk_app_secret"], Kind: view.SettingSecret},
-					{Key: "dingtalk_robot", Label: "钉钉机器人 RobotCode", Value: values["source.dingtalk_robot"], Kind: view.SettingText},
+
+					{Key: "dingtalk_enabled", Label: "启用钉钉", Value: values["source.dingtalk_enabled"], Kind: view.SettingSwitch,
+						Help: "关闭时停止该渠道，配置保留。默认关闭（未启用）。"},
+					{Key: "dingtalk_transport", Label: "钉钉传输方式", Value: orDefault(values["source.dingtalk_transport"], "dws"), Kind: view.SettingSelect,
+						Options: []string{"dws", "stream"},
+						Help:    "dws：本机 DWS CLI（默认，需安装并 `dws auth login`）；stream：官方 Stream SDK（需 app key/secret/robot code）。"},
+					{Key: "dingtalk_dws_cmd", Label: "DWS 可执行文件", Value: orDefault(values["source.dingtalk_dws_cmd"], "dws"), Kind: view.SettingText,
+						Help: "可填绝对路径或包装脚本；命令缺失/未登录时来源报错并给出可操作的修复提示。"},
+					{Key: "dingtalk_bot_id", Label: "钉钉机器人自身 ID（@ 判定）", Value: values["source.dingtalk_bot_id"], Kind: view.SettingText},
+					{Key: "dingtalk_app_key", Label: "钉钉 AppKey（stream/共用）", Value: values["source.dingtalk_app_key"], Kind: view.SettingText},
+					{Key: "dingtalk_app_secret", Label: "钉钉 AppSecret（stream/共用）", Value: values["source.dingtalk_app_secret"], Kind: view.SettingSecret},
+					{Key: "dingtalk_robot", Label: "钉钉机器人 RobotCode（stream）", Value: values["source.dingtalk_robot"], Kind: view.SettingText},
+
 					{Key: "im_self", Label: "机器人自己的账号（@ 判定）", Value: values["source.im_self"], Kind: view.SettingText},
+
 					{Key: "github_repo", Label: "GitHub 仓库 owner/name", Value: values["source.github_repo"], Kind: view.SettingText},
 					{Key: "github_login", Label: "GitHub 机器人登录名", Value: values["source.github_login"], Kind: view.SettingText},
 					// Observe/CI filters are enforced by the GitHub Source (not this
@@ -475,6 +493,8 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 					{Key: "model_timeout", Label: labelOfKey("model_timeout"), Value: values["execution.model_timeout"], Kind: view.SettingText},
 					{Key: "prepare", Label: "工单准备命令（首次执行前）", Value: values["execution.prepare"], Kind: view.SettingText,
 						Help: "sh -c 在 execution root（工单目录的父目录）执行；成功必须创建工单目录；失败则工单失败（不自动重试）"},
+					{Key: "web_search_url", Label: "web_search 端点", Value: values["execution.web_search_url"], Kind: view.SettingText,
+						Help: "带 %s 占位的 HTML 搜索地址；留空用 DuckDuckGo HTML 端点。"},
 					{Key: "background_timeout", Label: "后台作业上限（秒）", Value: values["execution.background_timeout"], Kind: view.SettingText,
 						Help: "默认 1800（30 分钟）：到点仍在运行的后台作业会被终止，工单转为等待并记录最后输出"},
 				}},
@@ -511,6 +531,14 @@ func (r *Runtime) SaveSettings(group string, values map[string]string) (uint64, 
 	r.mu.Lock()
 	if r.settings == nil {
 		r.settings = map[string]string{}
+	}
+	// Snapshot the source group before the write: IM channels restart only when
+	// their configuration actually changed.
+	beforeSource := map[string]string{}
+	for k, v := range r.settings {
+		if strings.HasPrefix(k, "source.") {
+			beforeSource[k] = v
+		}
 	}
 	// The caller's revision is compared against the store inside the save
 	// transaction. The in-memory check below only catches the same-process case
@@ -555,6 +583,11 @@ func (r *Runtime) SaveSettings(group string, values map[string]string) (uint64, 
 	if group == string(view.SettingsPrompt) {
 		// Version history + the default hash that powers "Default updated".
 		r.recordPromptMeta(values, rev)
+	}
+	if group == string(view.SettingsSource) {
+		// Apply the IM diff after the commit: changed channels stop and restart,
+		// unchanged ones are untouched (im-channel-spec §1).
+		r.imAfterSettingsSave(group, beforeSource)
 	}
 	if group == string(view.SettingsPeople) {
 		// Access control is not a display setting: apply it now, or the page would
@@ -727,6 +760,8 @@ func (r *Runtime) deployFacts() []view.SettingField {
 		schema = fmt.Sprintf("SQLite v%d", store.SchemaVersion)
 	}
 	return []view.SettingField{
+		{Key: "os", Label: "操作系统", Value: goruntime.GOOS + "/" + goruntime.GOARCH, Kind: view.SettingFact},
+		{Key: "timezone", Label: "时区", Value: localTimezone(), Kind: view.SettingFact},
 		{Key: "log", Label: "日志", Value: logs, Kind: view.SettingFact},
 		{Key: "backup", Label: "备份目录", Value: backups, Kind: view.SettingFact},
 		{Key: "schema", Label: "数据库", Value: schema, Kind: view.SettingFact},
@@ -887,4 +922,78 @@ func humanDuration(d time.Duration) string {
 		return fmt.Sprintf("%d 小时", hours)
 	}
 	return fmt.Sprintf("%d 小时 %d 分", hours, minutes)
+}
+
+// localTimezone is "Asia/Shanghai (UTC+8)" for the settings/deploy facts.
+func localTimezone() string {
+	name := time.Local.String()
+	_, offset := time.Now().Zone()
+	sign := "+"
+	if offset < 0 {
+		sign = "-"
+		offset = -offset
+	}
+	return fmt.Sprintf("%s (UTC%s%02d:%02d)", name, sign, offset/3600, (offset%3600)/60)
+}
+
+// utcOffset renders the local offset as "+08:00" for the overview's system line.
+func utcOffset() string {
+	_, offset := time.Now().Zone()
+	sign := "+"
+	if offset < 0 {
+		sign = "-"
+		offset = -offset
+	}
+	return fmt.Sprintf("%s%02d:%02d", sign, offset/3600, (offset%3600)/60)
+}
+
+// workspacesVM is the 工作区 panel: each workspace with its newest 50 Tickets as
+// conversations. CreatedBy is "me" only when the Ticket's origin was the local
+// panel; everything a Source brought in says "agent" (ui2-spec §2).
+func (r *Runtime) workspacesVM(now time.Time, tickets []domain.Ticket) *view.WorkspacePanelVM {
+	vm := &view.WorkspacePanelVM{UpdatedAt: now}
+	byWS := map[domain.WorkspaceID][]view.ConversationVM{}
+	for _, t := range tickets {
+		byWS[t.Workspace] = append(byWS[t.Workspace], r.conversationVM(t, now))
+	}
+	for _, w := range r.eng.Workspaces() {
+		entry := view.WorkspaceEntryVM{
+			ID: string(w.ID), Name: w.Name, Root: w.Root,
+			Purpose: w.Brief.Purpose, Kind: string(w.Kind),
+		}
+		convos := byWS[w.ID]
+		sort.SliceStable(convos, func(i, j int) bool { return convos[i].LastAt.After(convos[j].LastAt) })
+		if len(convos) > 50 {
+			convos = convos[:50]
+		}
+		entry.Conversations = convos
+		for _, c := range convos {
+			if c.LastAt.After(entry.LastAt) {
+				entry.LastAt = c.LastAt
+			}
+		}
+		vm.Workspaces = append(vm.Workspaces, entry)
+	}
+	return vm
+}
+
+// conversationVM maps one Ticket to the panel's conversation row.
+func (r *Runtime) conversationVM(t domain.Ticket, now time.Time) view.ConversationVM {
+	source, createdBy := "local", view.CreatedByMe
+	if tr, ok := r.eng.Trigger(t.Origin); ok {
+		if tr.Source != "" {
+			source = tr.Source
+		}
+		if tr.Source != "local" {
+			createdBy = view.CreatedByAgent
+		}
+	}
+	last, _ := ticketActivity(t, now)
+	st := domain.StageOf(&t, now)
+	return view.ConversationVM{
+		ID: string(t.ID), Number: t.Number, Title: t.Title,
+		Workspace: string(t.Workspace), CreatedBy: createdBy, Source: source,
+		Stage: stageWord(st), StageID: string(st),
+		Attention: t.Attention != nil, LastAt: last,
+	}
 }

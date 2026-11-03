@@ -49,6 +49,20 @@ type Config struct {
 	// negative value disables backgrounding and makes bash block until the command
 	// finishes or its timeout expires.
 	BackgroundAfter time.Duration
+	// PlanTasks injects eino's adk/middlewares/plantask tools (TaskCreate, TaskGet,
+	// TaskUpdate, TaskList) over a Backend rooted at Workdir, so a Worker can keep a
+	// structured plan while it works. Off by default: the runtime enables it.
+	PlanTasks bool
+	// AgentsMD injects the workspace's AGENTS.md into the model input through
+	// eino's adk/middlewares/agentsmd. Off by default; a missing file is not an
+	// error (the middleware reports it through a warning callback).
+	AgentsMD bool
+	// WebTools adds the web_fetch and web_search tools. Off by default; the runtime
+	// enables it for deployments that may reach the network.
+	WebTools bool
+	// WebSearchURL is the HTML search endpoint web_search uses, with a %s slot for
+	// the URL-encoded query. Empty means the DuckDuckGo HTML endpoint.
+	WebSearchURL string
 	// Env is injected into the bash child's environment after the OS environment is
 	// scrubbed. The runtime uses it for non-secret per-Ticket variables
 	// (ZEOKEEL_*); values win over same-named OS/agent variables and are never
@@ -253,6 +267,13 @@ func New(cfg Config) (*Runner, error) {
 	tools, jobs, err := workspaceTools(cfg)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.WebTools {
+		web, err := newWebTools(cfg.WebSearchURL)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, web...)
 	}
 	tools = append(tools, cfg.ExtraTools...)
 

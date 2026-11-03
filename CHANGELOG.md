@@ -9,7 +9,8 @@
 （build/vet/zero-cgo/package/release-check 文档产物）在 2026-11-03 最终冻结树木实测通过：
 非 race 全量 `go test ./... -skip Live` 连续 2 次全绿，全量 `-race` 全绿。仍未完成的是产品面：
 **打包只有 tar/zip（无 .dmg/deb/安装器）**、**系统钥匙串未做（API Key 明文 SQLite 0600）**、
-**设置页规则/admission/Source 实例不可编辑**、**飞书只有 HTTP 长轮询（无 WS）且无媒体下载**、`steer/inject` 未做。
+**设置页规则/admission/Source 实例不可编辑**、**飞书只有 HTTP 长轮询（无 WS）且无媒体下载**、`steer/inject` 未做；
+Round 2/3 已补侧栏/工作区/IM 渠道管理/内置工具（见下），但打包与钥匙串仍未做。
 `VERSION` 是否升 1.0.0 由发布负责人按 RELEASE.md F 组决定。
 
 机械闸门只有一条命令，本地与 CI 完全相同：
@@ -52,6 +53,34 @@ sh scripts/release-check.sh   # 版本/产物/文档 + 上面的闸门
   进程内 supervisor（60s、health 表、卡住 Assignment）、state dir 单实例锁（早于恢复）、systemd/launchd 样例、
   `scripts/watchdog-check.sh`（006 小时巡检语义；`stop` 写 `STOPPED` 标记）、schema v3（v3 表折入有序迁移）。
 - 提示词热更新：研判提示每次 Eval 重读设置（`cmd/zeokeel/assess.go` 的 `hotAssessor`）；Worker 提示下一次运行生效。
+
+### Round 2/3（2026-11-03 晚，同一 rc.1，不新增 tag）
+
+- **界面结构**：侧边栏改为 DSH 式——顶部「超级Agent」、中部「工作区」树、底部「监控」（消息/来源/触发/评估/执行）+「设置」，
+  footer 显示 `OS/arch · 时区 (UTC±h)`；全局基础字号 15（`internal/ui/chrome.go:54-99`、`internal/ui/tokens.go:49`、
+  `internal/runtime/runtime.go:172-175`）。
+- **工作区与会话**：面板可新建工作区（名称/根目录/用途/类型，根目录用 mygo **原生目录选择器**，三平台）；
+  工作区展开显示会话（Ticket），按「我创建的 / 超级Agent 创建的」分组、每工作区最近 50 条；
+  「＋ 新建会话」显式指定工作区并**直接派发**，不过 Router（`internal/ui/workspace.go`、`internal/runtime/workspaces.go:20,101`、
+  `internal/runtime/pages.go:953-995`）。设置›部署组新增操作系统/时区事实（`internal/runtime/pages.go:763-764`）。
+- **修复「未受理」**：操作员面板消息若没有变成 Ticket，现在会在同一条消息下得到「已答复」+「超级Agent：…」：
+  问工作区相关就列出工作区（名称/用途/类型），否则说明没派发的原因与下一步；真活仍然建 Ticket。
+  文本是确定性生成，不调用模型（`internal/runtime/runtime.go:456-482`、`internal/runtime/workspaces.go:159-214`）。
+- **IM 渠道管理**：飞书/钉钉可**单独启用/停用**，各自有 transport/凭据/「检查通道」/「打开授权页」；禁用=未监听，
+  保存后只重启变化的渠道（`internal/runtime/im.go:51,173,189,239,328,588`、`internal/ui/channels.go:134-230`；
+  契约见 [design/im-channels.md](design/im-channels.md)）。
+  - 飞书：HTTP 长轮询；检查换 tenant token，401/403 给 `open.feishu.cn/app` 入口。
+  - 钉钉：默认 **`dws` CLI**（`auth status`/`poll`/`send`/`health --json`，30s 超时、每渠道串行 worker、
+    send 优先、1s→30s 退避、**整批接受后才推进 cursor**、发送带隐藏幂等 marker、缺 dws 明确报错）；
+    官方 Stream SDK 保留为 `dingtalk_transport=stream` 的可选 transport（`internal/im/dingtalk/dws.go`、`internal/runtime/dws.go`）。
+- **内置工具**：Worker 默认获得 eino `plantask`（TaskCreate/TaskGet/TaskUpdate/TaskList，JSON 存工单目录）、
+  `agentsmd`（工作区根 AGENTS.md 注入，≤256KB，缺失不报错）、`web_fetch`（仅公网 http(s)、拒私网、10s、2MiB）、
+  `web_search`（前 5 条、默认 DuckDuckGo HTML、端点为 `execution.web_search_url`）；清单写进 Worker 提示词
+  （`internal/agent/builtin.go:44,96`、`internal/agent/webtools.go`、`internal/runtime/worker.go:480-482,573-575`）。
+- 已知 UI 不一致：钉钉 Stream 在 runtime 已支持（`internal/runtime/im.go:394-398`），但
+  `internal/view/channels.go:44-66` 仍把它标成"未实现"、面板不可选（owner: fix-ui2）。
+- 验证（23:10）：build/vet 通过；ui/view/runtime/agent/cmd 目标测试通过；
+  全量 verify-fixes/release-check 未在本轮代码上重跑（发布前必须重跑，rc.1 tag 不变）。
 
 **仍未完成（RELEASE.md F 组）**：Source 实例/规则/admission/accept mode 的设置 UI；系统钥匙串；
 `.dmg`/deb/PKGBUILD/NSIS/自动更新；`domain.Source`/`domain.Thread`/`domain.UserError`；`steer/inject`；

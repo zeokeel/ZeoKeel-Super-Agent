@@ -59,7 +59,7 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 		// Header: what this is, and how far along the setup is.
 		mui.Row(c).Padding(28, 32, 12, 32).AlignItems(mui.Center).Children(func() {
 			mui.Column(c).Children(func() {
-				mui.Text(c, "初次设置").FontSize(24).Bold().TextColor(tk.Text)
+				mui.Text(c, "初次设置").FontSize(26).Bold().TextColor(tk.Text)
 				mui.Text(c, "回答几个问题就能开始派活。之后都能在设置页改。").
 					FontSize(12).TextColor(tk.TextMuted)
 			})
@@ -83,10 +83,10 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 						if s.Done {
 							mark = "●"
 						}
-						mui.Text(c, mark).FontSize(11).TextColor(ifColor(s.Done, tk.Green, tk.TextFaint))
-						mui.Text(c, s.Title).FontSize(12).TextColor(tk.Text)
+						mui.Text(c, mark).FontSize(13).TextColor(ifColor(s.Done, tk.Green, tk.TextFaint))
+						mui.Text(c, s.Title).FontSize(14).TextColor(tk.Text)
 						if s.Optional {
-							mui.Text(c, "可选").FontSize(9).TextColor(tk.TextFaint)
+							mui.Text(c, "可选").FontSize(11).TextColor(tk.TextFaint)
 						}
 					})
 				}
@@ -95,22 +95,22 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 			// The open step's card.
 			mui.Column(c).Grow(1).MinWidth(0).Padding(20, 24).Children(func() {
 				mui.Column(c).Width(560).Gap(14).Children(func() {
-					mui.Text(c, cur.Title).FontSize(16).Bold().TextColor(tk.Text)
-					mui.Text(c, cur.Note).FontSize(12).TextColor(tk.TextMuted)
+					mui.Text(c, cur.Title).FontSize(18).Bold().TextColor(tk.Text)
+					mui.Text(c, cur.Note).FontSize(14).TextColor(tk.TextMuted)
 					for _, f := range cur.Fields {
 						f := f
 						p := a.onboardingEdit(string(cur.ID)+"."+f.Key, f.Value)
 						a.formField(c, f.Label, f.Help, f.Kind, p, f.Options)
 					}
 					if a.onb.err != "" {
-						mui.Text(c, a.onb.err).FontSize(11).TextColor(tk.Red)
+						mui.Text(c, a.onb.err).FontSize(13).TextColor(tk.Red)
 					}
 					mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 						btn := func(label string, primary bool, fn func()) {
 							mui.Row(c).Padding(7, 14).Radius(7).
 								Background(ifColor(primary, tk.Accent, tk.SurfaceAlt)).
 								OnClick(fn).Children(func() {
-								mui.Text(c, label).FontSize(12).
+								mui.Text(c, label).FontSize(14).
 									TextColor(ifColor(primary, mui.Hex("#FFFFFF"), tk.Text))
 							})
 						}
@@ -149,7 +149,7 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 								}
 							})
 						} else {
-							mui.Text(c, "还有必填项没完成").FontSize(11).TextColor(tk.TextFaint)
+							mui.Text(c, "还有必填项没完成").FontSize(13).TextColor(tk.TextFaint)
 						}
 					})
 				})
@@ -175,9 +175,9 @@ func (a *App) formField(c *mui.Context, label, help string, kind view.SettingKin
 	tk := a.tk
 	mui.Column(c).Gap(4).Children(func() {
 		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, label).FontSize(11).TextColor(tk.TextMuted)
+			mui.Text(c, label).FontSize(13).TextColor(tk.TextMuted)
 			if help != "" {
-				mui.Text(c, "· "+help).FontSize(10).SingleLine().TextColor(tk.TextFaint)
+				mui.Text(c, "· "+help).FontSize(12).SingleLine().TextColor(tk.TextFaint)
 			}
 		})
 		if kind == view.SettingSelect && len(options) > 0 {
@@ -188,13 +188,13 @@ func (a *App) formField(c *mui.Context, label, help string, kind view.SettingKin
 					mui.Row(c).Padding(5, 10).Radius(6).
 						Background(ifColor(active, tk.SurfaceAlt, tk.Surface)).
 						OnClick(func() { *ptr = o }).Children(func() {
-						mui.Text(c, o).FontSize(11).TextColor(ifColor(active, tk.Text, tk.TextMuted))
+						mui.Text(c, o).FontSize(13).TextColor(ifColor(active, tk.Text, tk.TextMuted))
 					})
 				}
 			})
 			return
 		}
-		field := mui.TextInput(c.Key("onb:"+label), ptr).Height(30).FontSize(12)
+		field := mui.TextInput(c.Key("onb:"+label), ptr).Height(30).FontSize(14)
 		if kind == view.SettingSecret {
 			field.Password()
 		}

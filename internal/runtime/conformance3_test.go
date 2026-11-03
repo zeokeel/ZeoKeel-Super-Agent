@@ -295,3 +295,44 @@ func TestWorkerBashSeesTicketEnv(t *testing.T) {
 	got, _ := eng.TicketSnapshot(id)
 	t.Fatalf("the worker bash never saw the env vars: %+v", got.LastReport())
 }
+
+// The framework tools the panel promises are switched on for every Worker.
+func TestWorkerToolSwitches(t *testing.T) {
+	rt, _, ws := newWSRuntime(t)
+	cfg := &WorkerConfig{Root: t.TempDir()}
+	tk := domain.Ticket{ID: "t-1", Number: 1, Workspace: ws.ID}
+	run, err := rt.runnerFor(tk, cfg, ticketWorkdir(cfg, tk))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := run.Config()
+	if !got.PlanTasks || !got.AgentsMD || !got.WebTools {
+		t.Fatalf("tool switches not enabled: plan=%v agentsmd=%v web=%v",
+			got.PlanTasks, got.AgentsMD, got.WebTools)
+	}
+	prompt := rt.systemPromptFor(tk, cfg)
+	for _, want := range []string{"task_create", "web_fetch", "AGENTS.md"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("worker prompt does not mention %q", want)
+		}
+	}
+}
+
+// The web_search endpoint is configurable through settings (default: agent's DDG).
+func TestWebSearchURLComesFromSettings(t *testing.T) {
+	rt, _, ws := newWSRuntime(t)
+	if _, err := rt.SaveSettings("execution", map[string]string{
+		"web_search_url": "https://search.test/?q=%s",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &WorkerConfig{Root: t.TempDir()}
+	tk := domain.Ticket{ID: "t-1", Number: 1, Workspace: ws.ID}
+	run, err := rt.runnerFor(tk, cfg, ticketWorkdir(cfg, tk))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := run.Config().WebSearchURL; got != "https://search.test/?q=%s" {
+		t.Fatalf("WebSearchURL = %q", got)
+	}
+}

@@ -95,7 +95,7 @@ func TestOverviewGoalStripShowsAtMostTwoActiveGoalsAndJumps(t *testing.T) {
 		"已暂停", "已完成",
 	)
 	// A highlight belongs to the page that was jumped to.
-	click(t, tt, "总览")
+	click(t, tt, "超级Agent")
 	if a.goalFocus != "" {
 		t.Fatalf("navigation kept the goal focus %q", a.goalFocus)
 	}

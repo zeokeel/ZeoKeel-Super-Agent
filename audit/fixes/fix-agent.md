@@ -178,3 +178,50 @@ gofmt/vet clean。
   回合可见 Config.Env、不可见 GH_TOKEN、会话日志无凭据）。
 - 验证：agent 测试 ×2 ok（~15.6s）、`-race` ok（19.1s）、`go build ./...` ok、gofmt/vet clean；未改
   `Runner.Config()`；无 go.mod 变更。
+
+### 8.5 第五轮：框架内置工具注入（agent scope，ui2-spec §5）
+
+**新增 Config 字段（默认 false，runtime 显式打开）**：
+```go
+PlanTasks    bool   // eino adk/middlewares/plantask → TaskCreate/TaskGet/TaskUpdate/TaskList
+AgentsMD     bool   // eino adk/middlewares/agentsmd → 注入 workspace 的 AGENTS.md
+WebTools     bool   // web_fetch + web_search
+WebSearchURL string // 默认 https://duckduckgo.com/html/?q=%s（测试可换 httptest）
+```
+
+1. **plantask**（`internal/agent/builtin.go`）：`planTaskBackend` 适配 `plantask.Backend`（LsInfo/Read/Write 复用
+   `localBackend` 的 os.Root；Delete 走 `Root.Remove`，已删除视为成功）；`BaseDir = Workdir`（任务 JSON 落在
+   ticket 工作目录，重启后仍在，模型可用普通 read 打开）。工具名沿用 eino 的 `TaskCreate/TaskGet/TaskUpdate/
+   TaskList`（框架无改名配置；非 snake_case）。`newADKAgent` 在 reducer 之后注册。
+2. **agentsmd**（同文件）：`agentsMDBackend` 返回原始 `*fs.PathError`（保留 `errors.Is(os.ErrNotExist)`，缺失
+   AGENTS.md 走 warning 回调且回调为空 = 不刷日志），files = `["AGENTS.md"]`，`AllAgentsMDMaxBytes = 256KB`；
+   中间件顺序在 summarization 之后（eino 文档要求，避免被压缩）。
+3. **web_fetch**（`internal/agent/webtools.go`，纯 stdlib）：只允许 http(s)；拒绝 localhost/.local/环回/私网/
+   link-local/CGNAT/benchmark 网段，DNS 解析后逐 IP 校验，重定向目标同样校验（CheckRedirect 调 validateWebURL）；
+   10s 超时；响应体 2MB 上限；HTML→`标题\n\n正文`（去 script/style/noscript/注释/标签、反转义、压空白），
+   输出 ~30KB 截断；所有失败以 `web_fetch failed: …` observation 返回（不打断回合）。
+4. **web_search**：GET `WebSearchURL`（必须含 `%s` 查询槽），10s 超时/2MB 上限；解析 DDG HTML
+   `result__a`/`result__snippet`（也兼容同 markup 的 httptest fixture），解开 `/l/?uddg=` 重定向，返回前 5 条
+   `title — url\nsnippet`；非 200 报明确错误；空结果也是 observation。
+5. **注册/白名单**：`New` 在 WebTools 时把 web 工具追加到 `r.tools`（bash 之后、ExtraTools 之前，顺序稳定）；
+   子智能体白名单：web 工具按名字走普通 tool；task 工具走 plantask 中间件（请求其中任一即注入整套，显式请求但
+   `PlanTasks=false` 给出清晰配置错误；nil 白名单在 PlanTasks 关闭时静默不含 task 工具）。
+6. **错误形态**：task 工具的用户级错误经 `toolRefusalMiddleware` 转 `tool_error: …` observation，避免整轮失败。
+7. **中间件顺序**（`engine_adk.go` 的 `handlerSet`）：`summarizer → agentsmd? → reducer → patchtoolcalls →
+   filesystem → jobs → plantask? → refusal → subagents`。
+
+测试：`TestPlanTaskToolsRegisteredAndPersist`（工具在列表里 + TaskCreate 落盘 `1.json` + 另一次 Run 的 TaskList
+看到 #1）、`TestAgentsMDInjectedIntoModelInput`（内容出现在首个模型输入；无文件不失败、不串 workspace）、
+`TestWebFetchHTMLToText`/`TestWebFetchPolicyAndLimits`/`TestWebFetchToolIsAnObservation`（HTML→文本、
+2MB 上限、环回/私网/非 http(s) 拒绝、重定向目标校验、失败为 observation）、`TestWebSearchParsesResults`
+（前 5 条/去标签/解码/非 200）、`TestAllBuiltinFeaturesToolNames`（工具名齐全、跨轮顺序稳定、默认关闭）、
+`TestSubagentWhitelistAcceptsBuiltinTools`（web+task 白名单；PlanTasks 关闭时明确报错）。
+
+验证：`go test ./internal/agent/... -count=1` ok（17.1s ×2）；`CGO_ENABLED=1 go test -race ./internal/agent/`
+ok（21.2s）；`go build ./...` ok；gofmt/vet clean。**零新增依赖**（web 工具只用 stdlib）。
+
+**跨 scope 待办（本 agent 未改）**：
+- `internal/runtime/worker.go:459-475` 的 `agent.Config{...}` 需要加 `PlanTasks: true, AgentsMD: true,
+  WebTools: true`（或按部署设置开关），否则这些能力在生产 Runner 上不会启用。
+- `internal/prompts/defaults.go:16-19` 的 worker "tools" 段落需要补上 `TaskCreate/TaskGet/TaskUpdate/TaskList`
+  与 `web_search/web_fetch` 的说明，模型才知道何时用（prompt 不在本任务 scope）。

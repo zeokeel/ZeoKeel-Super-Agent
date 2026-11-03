@@ -235,3 +235,38 @@ ops-runbook：`cli.go:349→354`、`status.go:111-135→111-128`、`pages.go:549
 
 **一致性检查**：相对 markdown 链接 0 broken；全 docs `file:line` 范围检查 0 错误；§13 无任何 `*_test.go` 证据引用；
 未改代码/go.mod，`VERSION` 仍 `1.0.0-rc.1`。
+
+## 11. Round 2/3 最终文档 pass（2026-11-03 23:05–23:15，docs-only）
+
+按 Lead 指令读 `audit/fixes/ui2-spec.md`、`audit/fixes/im-channel-spec.md` 与当前代码后更新：
+
+**文件**
+- 新增 `design/im-channels.md`：IM 渠道模型、设置键、飞书长轮询+凭据检查、钉钉 DWS CLI 契约
+  （JSON 形状/30s/serial runner/send>auth>poll/1s→30s/cursor 整批后推进/隐藏幂等 marker/缺 dws 报错/stream 可选）、
+  面板检查与授权、运维步骤、未实现清单。
+- `README.md`：状态表新增工作区/内置工具行并更新面板/来源/运维行；新增「界面结构」「内置工具」「IM 渠道」三节；
+  FAQ（为什么是"已答复"、IM 未启用/检查失败、web 工具边界）；已知限制改为工作区/会话只能新建、
+  DingTalk Stream UI 偏差、IM 外部条件（dws/凭据）。
+- `CHANGELOG.md`：rc.1 下新增「Round 2/3」小节（UI/工作区/未受理修复/IM 渠道/DWS/工具 + 23:10 增量验证）。
+- `RELEASE.md`：F-3 更新；G 改为"闸门全绿但产品面未完成"；新增 H「Round 2/3 增量」（勾选 + 验证 + 剩余项）。
+- `design/zeokeel-go-mygo-design.md`：§13 更新 §4.8/§5.10/§6.3/§6.5/§8.2 行；新增 6 行（工作区/会话、原生选择器、
+  系统信息、未受理→答复、IM 渠道管理、DWS、内置工具）；§8.2 现状补面板新建工作区；§8.5 部署组补 OS/时区；
+  "明确未做"补工作区/会话不可改名删除、Stream UI 偏差、IM E2E 未验证。
+- `design/ops-runbook.md`：§1 IM 行；新增 §6.10 IM 渠道运维（启用/飞书检查/钉钉 dws 命令与排障）；
+  §8 IM 描述改为 DWS 默认。
+- `design/rejected-concepts.md`：更新 ReplyPlan（已支付）、提示词历史（已接线）；新增 §D Round 2/3 概念登记
+  （DWS 默认、渠道管理、plantask/agentsmd、web 工具、工作区树、原生选择器、未受理解释）。
+- `scripts/release-check.sh`：文档检查列表加入 `design/im-channels.md`。
+
+**代码偏差（docs pass 只记录，未改代码）**
+- `internal/view/channels.go:56` 把钉钉 `stream` 标为 `Implemented:false`（Note 写"本版本未接入官方 Stream SDK"），
+  面板显示「未实现」且不可选；但 `internal/runtime/im.go:394-398` 已用官方 SDK 构建 stream driver，
+  `internal/runtime/pages.go:470-471` 的设置 Help 也写"stream：官方 Stream SDK"。
+  需 owner **fix-ui2** 把该选项改为可用（或删掉 Help 里的 stream 说法），二选一，别让面板与 runtime 互相打脸。
+
+**验证（本次 docs pass 实测，2026-11-03 23:10）**
+- `CGO_ENABLED=0 go build ./...`、`go vet ./...`：PASS。
+- `go test ./internal/ui ./internal/view ./internal/runtime ./internal/agent ./cmd/zeokeel -skip Live`：PASS。
+- 文档一致性：相对 markdown 链接 0 broken；全 docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据引用。
+- 全量 `verify-fixes.sh`/`release-check.sh` 未在 Round 2/3 代码上重跑（已在 README/RELEASE/CHANGELOG 写明，
+  发布前必须重跑）。`VERSION` 仍 `1.0.0-rc.1`，无新 tag。

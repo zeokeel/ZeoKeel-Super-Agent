@@ -44,6 +44,7 @@ func DemoOverview(now time.Time) *OverviewVM {
 			{Kind: "image", Title: "login-timeout.png — 运行截图", Detail: "1440×900 · 3 分钟前"},
 		},
 		Storage:   Storage{DB: "12.4 MB", Events: 1284, LastBackup: "今日 02:00"},
+		System:    DemoSystem(),
 		UpdatedAt: now,
 	}
 }
@@ -71,4 +72,46 @@ func GroupOf(vm *view.SearchVM, kind view.SearchKind) *view.SearchGroup {
 		}
 	}
 	return nil
+}
+
+// DemoSystem is the machine the sample window runs on.
+func DemoSystem() SystemInfo {
+	return SystemInfo{OS: "linux", Arch: "amd64", Timezone: "Asia/Shanghai", UTCOffset: "UTC+08:00"}
+}
+
+// DemoWorkspaces is the sidebar's shape: two workspaces, each with conversations
+// by the operator and by the agent, so both groups are drawn.
+func DemoWorkspaces(now time.Time) *WorkspacePanelVM {
+	at := func(d time.Duration) time.Time { return now.Add(-d) }
+	return &WorkspacePanelVM{
+		Workspaces: []WorkspaceEntryVM{
+			{
+				ID: "ws_webapp", Name: "acme/webapp", Root: "/Users/me/code/acme-webapp",
+				Purpose: "面向客户的 Web 前端与登录流程", Kind: "repo",
+				LastAt: at(12 * time.Minute),
+				Conversations: []ConversationVM{
+					{ID: "42", Number: 42, Title: "修改登录超时配置", Workspace: "ws_webapp",
+						CreatedBy: CreatedByAgent, Source: "github", Stage: "执行中",
+						StageID: StageWorking, Attention: true, LastAt: at(12 * time.Minute)},
+					{ID: "48", Number: 48, Title: "把登录超时改成可配置", Workspace: "ws_webapp",
+						CreatedBy: CreatedByMe, Source: "local", Stage: "已结束",
+						StageID: StageEnded, LastAt: at(2 * time.Hour)},
+				},
+			},
+			{
+				ID: "ws_data", Name: "acme/data", Root: "/srv/acme-data",
+				Purpose: "用量数据与报表；只读源，不可在这里改代码", Kind: "data",
+				LastAt: at(5 * time.Minute),
+				Conversations: []ConversationVM{
+					{ID: "46", Number: 46, Title: "整理 acme 上月用量摘要", Workspace: "ws_data",
+						CreatedBy: CreatedByMe, Source: "local", Stage: "排队中",
+						StageID: StageWorkingQueued, LastAt: at(1 * time.Minute)},
+					{ID: "49", Number: 49, Title: "生成季度用量趋势图", Workspace: "ws_data",
+						CreatedBy: CreatedByAgent, Source: "dingtalk", Stage: "执行中",
+						StageID: StageWorking, LastAt: at(5 * time.Minute)},
+				},
+			},
+		},
+		UpdatedAt: now,
+	}
 }

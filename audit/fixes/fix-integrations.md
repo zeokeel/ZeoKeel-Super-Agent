@@ -14,6 +14,7 @@ Wave 1 修复：scope = `internal/im/**`、`internal/sources/**`、`tools/**`。
 | N-1 钉钉 Stream 诚实降级 | `StreamSupport` 可选接口：`HTTPTransport` 明确报不支持；`Subscribe` 立刻返回 `im.ErrUnsupported` 并把 health 置 error（不再永久退避空转）；真 Stream 传输走同一轮询循环 | `dingtalk/transport.go`、`dingtalk/driver.go` |
 | **Wave2：钉钉 Stream 真实接收（Lead 批准的依赖）** | 用官方 `github.com/open-dingtalk/dingtalk-stream-sdk-go@v0.9.1` 实现 `StreamTransport`：`NewStreamClient(WithAppCredential(...), WithAutoReconnect(true))` → `RegisterChatBotCallbackRouter` → `Start`；回调映射成 `dingtalk.Event`（MsgID/会话/群聊-单聊/发送者/@列表/时间/文本或任意 JSON content），有界队列 + 批交给 `StreamEvents`；`New()` 在 AppKey/AppSecret 存在时默认启用 Stream（`Config.NoStream` 可关），`Subscribe` 退出时关闭 SDK 连接；连接状态经 `SetStatus` 写入驱动 health | `dingtalk/stream.go`（新增）、`dingtalk/driver.go`（Config/New/Subscribe）、`dingtalk/stream_test.go`（新增） |
 | N-1 钉钉 JSON 参数 | 删除手写 `quote()`，`textParam`/`markdownParam` 改 `encoding/json`（含控制字符的正文不再产出非法 JSON） | `dingtalk/driver.go` |
+| **Wave3：钉钉 DWS 传输（IM-3，规格 audit/fixes/im-channel-spec.md）** | `internal/im/dingtalk/dws.go`：`DWSClient` 接口 + 命令行实现（`dws auth status/poll/send/health --json`，exec 无 shell、30s 超时、4xx 永久/5xx 可重试分类、stderr 截断进 detail）、每渠道一个优先级串行 runner（send > auth/health > poll，同一时刻最多一个子进程，ctx 取消杀子进程）、`DWSTransport`（StreamEvents 拉模式、TextSender 发送加 marker、消息 id 有界去重、2s tick/1s→30s 退避、health 状态 ok/auth/error）；`driver.Config` 增加 `Transport:"dws"`、`DWSCommand`、`DWSClient`、`NoDWS`、`SelfID` 及 DWS 超时/退避配置；`SubscribeFrom`（im.CursorReceiver）在整批交付后保存游标，`AuthStatus`/`DWSHealth` 供 runtime 检查/授权 | `dingtalk/dws.go`（新增）、`dws_command_test.go`/`dws_test.go`（新增）、`driver.go`、`transport.go`(Event.SenderIsBot)、`mapping.go`；`internal/im/{im,poll}.go`（TextSender/CursorReceiver/SaveCursor） |
 | N-1 钉钉收件去重 | 进程内按 `MsgID` 有界去重（512），Stream 重连重放不产生重复 `RawEvent` | `dingtalk/driver.go`（`seen`/`rememberSeen`） |
 | N-15 发送重试越权 | 传输层发送类请求统一 `im.NoRetry`（Attempts=1）：401 仍刷新 token 重试一次，5xx/429 直接上报 `*im.HTTPError`（含 `RetryAfter`），重试归 Outbox；读类请求仍按 `RetryPolicy` | `internal/im/httpclient.go`、`feishu/transport.go`、`dingtalk/transport.go` |
 | N-14 GitHub 分页静默丢失 | 通知/评论/Issue/PR/review-comment/协作者全部 Go 侧翻页（`per_page=100`，最多 20 页）；超过上限**报错并保持游标**（不静默截断） | `sources/github/poll.go`、`members.go` |
@@ -162,6 +163,147 @@ Lead 补上依赖后 repo 内复跑通过。）
 纯 Go 证据：`grep -rln 'import "C"' open-dingtalk/dingtalk-stream-sdk-go@v0.9.1
 gorilla/websocket@v1.5.0 google/uuid@v1.6.0` → 无；`scripts/check-nocgo.sh` 第 3 步
 （CGO_ENABLED=1 第三方 cgo 审计）PASS。
+
+## Wave 3 追加：DingTalk DWS 传输（IM-3）
+
+规格：`audit/fixes/im-channel-spec.md` §2（DWS CLI 契约）与 §4（代码归属）。
+实现只在 `internal/im/**`；未改 runtime/cmd/ui/go.mod。
+
+### 文件
+
+- `internal/im/dingtalk/dws.go`（新增）：
+  - `DWSClient` 接口（`AuthStatus`/`Poll`/`Send`/`Health`）；
+  - `commandDWSClient`：全部调用 `exec.CommandContext(cmd, args...)`，不过 shell；
+    单次超时 `DWSConfig.Timeout`（默认 30s，`cmd.WaitDelay=1s` 防止被杀的 shell
+    子进程握住管道导致挂起）；stderr/stdout 截断后进 detail；
+  - `DWSError`（`Temporary()`/`IsPermanent(err)`）：4xx = 永久，5xx/未知 =
+    可重试，命令缺失 = 永久，超时 = 可重试，ctx 取消 = 不可重试；
+  - `dwsRunner`：每渠道一条优先级队列（send=0 > auth/health=1 > poll=2），
+    同一时刻最多一个子进程；`Stop` 取消在跑的子进程并让排队调用失败；
+  - `DWSTransport`：实现 `Transport`（StreamEvents 拉取）、`StreamSupport`、
+    `StreamCloser`、`im.TextSender`；2s poll tick、失败退避 1s→30s、消息 id
+    有界去重（512）、坏 item 计数（Dropped）、duplicates 计数；
+  - `AuthStatus`/`DWSHealth`：渠道级授权/健康（state `ok`/`auth`/`error`/`starting`，
+    auth 带 `AuthURL` 与人话 detail）。
+- `internal/im/dingtalk/driver.go`：`Config` 新字段（见下表）；`New()` 按
+  `Transport` 分派 `newStreamDriver`/`newDWSDriver`（未知值报错，绝不静默回退）；
+  `Subscribe` → `SubscribeFrom`（实现 `im.CursorReceiver`）；`Send` 优先走
+  `im.TextSender`（DWS：纯文本 + 业务幂等键）；`Self` 支持 `SelfID`（DWS bot id）；
+  `AuthStatus`/`DWSHealth` 转发给 DWS 传输。
+- `internal/im/im.go`：新增可选能力 `TextSender`、`CursorReceiver`；
+  `internal/im/poll.go`：`SubscribeOptions.SaveCursor`（游标真正推进时、整批交付后调用，
+  保存失败即停止且不推进）。
+- `internal/im/dingtalk/mapping.go`/`transport.go`：`Event.SenderIsBot` 权威 bot 标记
+  （DWS `sender.bot`）；`Actor.Bot` 优先用它，Stream 仍用 staffId 启发式。
+
+### runtime 必须使用的接线契约（settings → `dingtalk.Config`）
+
+| settings key（group `source`） | Config 字段 | 行为 |
+| --- | --- | --- |
+| `dingtalk_enabled` | —（runtime 决定是否启动） | false：取消订阅、来源 disabled，不构造 driver |
+| `dingtalk_transport` (`dws`\|`stream`，默认 `dws`) | `Transport` | 必填传递；`dws`=DWS CLI，`stream`=官方 Stream SDK；未知值 `New` 返回错误 |
+| `dingtalk_dws_cmd`（默认 `dws`） | `DWSCommand` | DWS 可执行文件/包装脚本（可以是绝对路径） |
+| `dingtalk_app_key`/`dingtalk_app_secret` | `AppKey`/`AppSecret` | **stream 模式必填；dws 模式可空**（DWS 自己管理登录）；DWS 下若提供仅用于可选 HTTP 发送回退（本实现发送走 DWS） |
+| `dingtalk_robot` | `RobotCode` | stream 模式必填；dws 模式可空 |
+| `dingtalk_bot_id` | `SelfID` | **dws 模式强烈建议填**：@ 判定用（mapping 的 selfID）；缺省回退 `RobotCode` |
+| —（测试/显式不监听） | `NoDWS` | true：不构造 DWS 传输；`Subscribe` 返回 `im.ErrUnsupported`（health error），不会 fallback 到 Stream |
+
+构造（runtime 现有 `dingtalk.New` 调用点替换为）：
+
+```go
+drv, err := dingtalk.New(dingtalk.Config{
+    Transport:  transport,          // "dws" | "stream"
+    DWSCommand: dwsCmd,             // source.dingtalk_dws_cmd
+    AppKey:     appKey, AppSecret: appSecret, RobotCode: robot,
+    SelfID:     botID,              // source.dingtalk_bot_id
+})
+```
+
+收件/游标（`im.CursorReceiver`）：
+
+```go
+recv, ok := drv.(im.CursorReceiver) // *dingtalk.Driver 恒为 true
+err := recv.SubscribeFrom(ctx, kvCursor, func(next string) error {
+    return kv.Put("im.cursor.dingtalk", next) // 建议键：im.cursor.<channel>
+}, events)
+```
+
+- 初始 `kvCursor` 从 KV 读，空 = 首次；`save` **只在整批事件交付成功且游标推进后**
+  调用；save 失败 → Subscribe 返回错误且不推进（下一轮重读，重复由内容派生 ID 吸收）。
+- 禁用渠道：cancel ctx（`SubscribeFrom` 会 Close 传输/杀子进程）后清空该 KV 游标。
+- `stream` 模式同样可用 `SubscribeFrom`：游标是 Stream 传输自己的（通常不变），
+  runtime 可统一按渠道持久化。
+
+检查/授权（runtime 的 `CheckChannel`）：
+
+```go
+if a, ok := drv.(interface{ AuthStatus(context.Context) (dingtalk.AuthStatus, error) }); ok {
+    st, err := a.AuthStatus(ctx)   // LoggedIn/Account/AuthURL
+}
+if h, ok := drv.(interface{ DWSHealth(context.Context) (dingtalk.DWSHealth, error) }); ok {
+    hh, err := h.DWSHealth(ctx)    // State: ok|auth|error|starting, Detail, AuthURL
+}
+```
+
+- 未登录：`AuthStatus.LoggedIn=false`，`DWSHealth.State="auth"`、`Detail` 含
+  `dws auth login` 与 authUrl；UI 用系统浏览器打开 authUrl 或显示该命令。
+- 命令缺失/超时/坏 JSON：`DWSHealth.State="error"`，detail 可直接显示
+  （"dws command is not executable: ..." / "dws poll: unreadable JSON..."）。
+- **不要**在 runtime 里另起 `dws` 子进程（会绕开串行 runner 导致登录态竞争）；
+  检查/授权/发送分别用 `AuthStatus`/`DWSHealth`/`Driver.Send`。
+
+错误与 Outbox（fix-core 配合）：
+
+- `Driver.Send` 失败返回 `*dingtalk.DWSError`：`IsPermanent(err)==true` 表示 4xx/
+  参数/命令缺失（Outbox 不应重试）；`Temporary()==true` 表示 5xx/超时（可重试，
+  由 Outbox 退避）。`im.IsTransient(err)` 对 `DWSError` 生效。
+- DWS 没有服务端幂等键：driver 仍在进程内按业务 key 去重；command client 在文本尾部
+  追加 `<!-- zeokeel:<key> -->` 供审计/重复检查。Markdown 标志在 DWS 路径退化为
+  纯文本（规格 §2 无 markdown 命令）。
+
+### 测试与验证
+
+新增 `dws_command_test.go`（POSIX 临时脚本冒充 dws）：
+auth ok/not-logged-in+URL、poll 解析群聊/单聊/mentions/坏 item 计数/cursor 参数、
+send marker+幂等键+**无 shell 插值**（`$(...)`/反引号不执行）、4xx 永久 vs 5xx
+可重试、命令缺失、坏 JSON、超时、ctx 取消杀进程（脚本不再写 finished）、health
+可选降级、marker 清洗。
+新增 `dws_test.go`（注入 fake DWSClient）：消息映射/去重、401→health auth+authURL、
+失败退避与恢复、**串行不重叠**（并发 poll/send/auth、maxConcurrent==1）、runner
+send 优先于排队 poll、SendText 透传 key、health fallback、Close 语义、driver
+`New(Transport:"dws")`+`SubscribeFrom` 游标持久化、DWS Send 文本路径、bot/replyToBot
+事实、NoDWS/未知 transport、缺命令→health error、AuthStatus/DWSHealth 暴露。
+
+```text
+$ gofmt -l internal/im                                            # 空
+$ CGO_ENABLED=0 go vet ./internal/im/...                          # 空
+$ CGO_ENABLED=0 go test ./internal/im/... ./internal/sources/... -count=1
+ok  internal/im / im/dingtalk / im/feishu / sources / sources/github
+$ CGO_ENABLED=1 go test -race ./internal/im/... -count=1           # ok
+$ CGO_ENABLED=0 go build ./...                                    # ok（全仓）
+$ sh scripts/check-nocgo.sh                                       # PASS
+```
+
+### Hardening（runtime 复现的三个失败点）
+
+- 命令缺失：`*exec.Error`、`*fs.PathError`、裸 `exec.ErrNotFound`/`fs.ErrNotExist`
+  统一归类为**永久错误**（`Temporary()==false`），detail 为可操作的中英双语
+  "dws 未安装或不可执行（not executable）: ..."。
+- 取消/超时：`exec.CommandContext` + 显式 `cmd.Cancel` + `cmd.WaitDelay=500ms`
+  （Shell 包装脚本的子进程可能握住管道；不设 WaitDelay 会让 cmd.Run 卡住）。
+  runner 的排队调用在 ctx 取消后立即返回，且**已取消的 job 不会被执行**（新测试
+  `TestDWSRunnerCancelledJobReturnsImmediatelyAndNeverRuns`）；runner 执行 fn 时不持锁。
+- marker：HTML 注释内部不能出现 `--`/控制字符/行分隔符。普通 key 原样保留；
+  含 `--`/`<>`/控制字符时整键 hex 编码（可反查），测试覆盖 `-->`、控制字符、
+  U+2028/2029、`<script>` 等。
+
+未实现（deferred，均有理由）：
+- DWS 成员列表/媒体下载（规格没有对应命令；`Members`/`AccessToken` 诚实返回
+  `im.ErrUnsupported`）；
+- 卡片/事件回调（只适配机器人消息 poll/send/auth/health 四条命令）；
+- runtime 的渠道生命周期/设置页/飞书授权检查（规格 §4 归 nih-runtime/nih-ui）；
+- DWS `auth login` 启动（UI/CLI 用 authURL 或让用户执行命令；不在串行 runner 里
+  跑交互式登录）。
 
 ## 行为变化与兼容性风险
 

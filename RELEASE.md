@@ -87,7 +87,9 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 
 1. **fix-ui2**：设置页评估组可编辑（规则、admission 三格、accept mode）；GitHub Source 实例/仓库/CLI 的表单与持久化。
 2. **fix-engine/fix-runtime**：领域类型收尾（`domain.Source`/`domain.Thread`/`domain.UserError` 未落地，错误仍是自由文本）。
-3. **fix-runtime/fix-agent**：`Runner.Resume` 已删除，恢复走 `RecoverAssignments` + `patchtoolcalls`；无 `steer/inject`；无 Feishu WS 长连接、无 IM 媒体下载。
+3. **fix-runtime/fix-agent**：无 `steer/inject`；无 Feishu WS/webhook、无 IM 媒体下载；钉钉 Stream 在面板仍标未实现
+   （runtime 已支持，`internal/view/channels.go:44-66` vs `internal/runtime/im.go:394-398`，owner fix-ui2）。
+   `Runner.Resume` 已删除，恢复走 `RecoverAssignments` + `patchtoolcalls`。
 4. **安全**：系统钥匙串（ADR-12）；worker 环境在三处均已剥离凭证变量——prepare（`runtime/prepare.go:103`）、
    bash 子进程（`internal/agent/tools.go` 的 `buildShellEnv/scrubEnv`，变量来自 `runtime/worker.go:429`）。
 5. **分发**：`.dmg`/deb/PKGBUILD/NSIS/自动更新；CI 出包与签名公证。
@@ -95,5 +97,31 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 
 ## G. rc.1 的签发语义（不要误读）
 
-`VERSION=1.0.0-rc.1` 只表示：**机械闸门中除 -race 外的部分通过、候选版可构建**。
-F 组全部完成、E 组最后一项通过、且 `verify-fixes.sh`（含 -race）全绿后，才把 `VERSION` 改为 `1.0.0`。
+`VERSION=1.0.0-rc.1` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
+但 F 组的产品面缺口未完成。F 组全部完成、E 组最后一项通过后，才由发布负责人把 `VERSION` 改为 `1.0.0`。
+
+## H. Round 2/3 增量（2026-11-03 晚，不新增 release tag）
+
+> 同一 rc.1 内的用户可见增量；代码证据见设计 §13 与 `design/im-channels.md`。不改变"rc.1 仍是候选"的结论。
+
+- [x] 侧栏重构：超级Agent / 工作区树 / 监控（消息·来源·触发·评估·执行）/ 设置；footer OS/arch + 时区
+  （`internal/ui/chrome.go:54-99`、`internal/runtime/runtime.go:172-175`）
+- [x] 工作区页 + 「＋ 新建工作区」（mygo 原生目录选择器，三平台）+ 「＋ 新建会话」（工作区显式、总是派发）
+  （`internal/ui/workspace.go`、`internal/runtime/workspaces.go:20,101`）
+- [x] 会话按「我创建的 / 超级Agent 创建的」分组，每工作区最近 50 条（`internal/view/workspace.go`、`internal/runtime/pages.go:953-995`）
+- [x] 全局字号 15；设置›部署组显示 OS/arch 与时区（`internal/ui/tokens.go:49`、`internal/runtime/pages.go:763-764`）
+- [x] 修复「未受理」：面板本地消息必有答复（列工作区或说明原因/下一步），真活仍建 Ticket
+  （`internal/runtime/runtime.go:456-482`、`internal/runtime/workspaces.go:159-214`）
+- [x] IM 渠道独立启用/停用 + transport + 检查/授权；禁用=未监听；设置变更只重启变化渠道
+  （`internal/runtime/im.go:51,173,189,239,328,588`、`internal/ui/channels.go:134-230`）
+- [x] 飞书长轮询 + tenant token 检查（401/403 → `open.feishu.cn/app`）（`internal/runtime/dws.go:101-140`）
+- [x] 钉钉默认 DWS CLI：串行 worker、send 优先、1s→30s 退避、cursor 整批接受才推进、隐藏幂等 marker、缺 dws 明确报错；
+  官方 Stream 作为可选 transport（`internal/im/dingtalk/dws.go`、`internal/runtime/dws.go`、`design/im-channels.md`）
+- [x] 内置工具：plantask（TaskCreate/Get/Update/List）、agentsmd（AGENTS.md）、web_fetch（公网/10s/2MiB/拒私网）、
+  web_search（前 5/端点 `execution.web_search_url`）（`internal/agent/builtin.go`、`internal/agent/webtools.go`、
+  `internal/runtime/worker.go:480-482`）
+- [x] 增量验证（2026-11-03 23:10）：`CGO_ENABLED=0 go build ./...` / `go vet ./...` 通过；
+      `go test ./internal/ui ./internal/view ./internal/runtime ./internal/agent ./cmd/zeokeel -skip Live` 通过。
+      **全量 verify-fixes/release-check 未在 Round 2/3 代码上重跑**；发布前必须重跑（本组不改变 rc.1 tag）。
+- [ ] 已知 UI 不一致：钉钉 Stream 选项在面板仍标"未实现"（runtime 已支持）—— owner fix-ui2
+- [ ] 会话/工作区重命名、删除；真实凭据下的 IM E2E（需要凭据/环境）

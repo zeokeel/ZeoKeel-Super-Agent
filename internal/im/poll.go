@@ -2,6 +2,7 @@ package im
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -29,6 +30,12 @@ type SubscribeOptions struct {
 	// Health：可选，用来把"连接是否活着"报给面板；连续 3 次失败才置 error，
 	// 一次抖动只更新 detail（与原型 §3.5 的 health 阈值一致）。
 	Health *HealthTracker
+	// SaveCursor：可选。当一轮事件**全部交付成功且游标确实推进时**调用，让
+	// 调用方（runtime）把"下一轮起点"持久化到 KV。返回 error 表示持久化失败：
+	// 本轮不推进游标并返回该错误（下一轮重读，重复由内容派生 ID 吸收）。
+	// 这正是 DWS/飞书这类"游标在调用方"的传输需要的 hooks：im 负责时机，
+	// 持久化归 runtime。
+	SaveCursor func(next string) error
 	// Now 便于测试注入时钟；空用 time.Now。
 	Now func() time.Time
 }
@@ -108,6 +115,11 @@ func SubscribeLongPoll(ctx context.Context, p Poller, opts SubscribeOptions, out
 			case <-ctx.Done():
 				// 游标没推进到 next：恢复后会重读，重复由 ID 吸收。
 				return ctx.Err()
+			}
+		}
+		if opts.SaveCursor != nil && next != cursor {
+			if err := opts.SaveCursor(next); err != nil {
+				return fmt.Errorf("im: persist cursor: %w", err)
 			}
 		}
 		cursor = next

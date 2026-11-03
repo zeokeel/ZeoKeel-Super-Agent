@@ -96,6 +96,35 @@ func (r *Runner) toolsFor(names []string) ([]tool.BaseTool, []adk.ChatModelAgent
 		}
 		handlers = append(handlers, mw)
 	}
+	// The plan/task tools come from eino's plantask middleware as well, so a
+	// whitelist that names them has to construct that middleware. The middleware
+	// registers the whole task tool set (the framework has no per-tool switch).
+	planWanted, planExplicit := false, false
+	for _, name := range planTaskToolNames {
+		if want[name] {
+			planExplicit = true
+			planWanted = true
+			delete(want, name)
+		} else if wantAll {
+			// "no list" means the parent's tools; a disabled middleware is simply
+			// not part of them, unlike an explicit request (see below).
+			planWanted = true
+		}
+	}
+	if planWanted && !r.cfg.PlanTasks {
+		if !planExplicit {
+			planWanted = false
+		} else {
+			return nil, nil, fmt.Errorf("agent: subagent asks for plan task tools, but PlanTasks is disabled")
+		}
+	}
+	if planWanted {
+		mw, err := newPlanTaskMiddleware(context.Background(), r.cfg.Workdir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("agent: subagent plantask middleware: %w", err)
+		}
+		handlers = append(handlers, mw)
+	}
 	if len(want) > 0 {
 		missing := make([]string, 0, len(want))
 		for n := range want {
@@ -104,7 +133,7 @@ func (r *Runner) toolsFor(names []string) ([]tool.BaseTool, []adk.ChatModelAgent
 		sort.Strings(missing)
 		return nil, nil, fmt.Errorf("agent: subagent asks for unknown tools: %s", strings.Join(missing, ", "))
 	}
-	if len(out) == 0 && len(fileEnabled) == 0 {
+	if len(out) == 0 && len(fileEnabled) == 0 && !planWanted {
 		return nil, nil, fmt.Errorf("agent: a subagent must keep at least one tool")
 	}
 	return out, handlers, nil

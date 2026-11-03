@@ -16,7 +16,7 @@ func (a *App) inputBar(c *mui.Context) {
 		mui.Icon(c, icSpark).FontSize(15).TextColor(tk.Accent)
 		field := mui.TextInput(c.Key("input"), &a.draft).
 			Placeholder("说点什么，或派一件事…")
-		field.Grow(1).FontSize(13)
+		field.Grow(1).FontSize(15)
 		if field.Submitted() {
 			a.submit()
 		}
@@ -27,7 +27,7 @@ func (a *App) inputBar(c *mui.Context) {
 
 	if a.composerErr != "" {
 		mui.Row(c).Padding(4, 0).Children(func() {
-			mui.Text(c, a.composerErr).FontSize(11).TextColor(tk.Red)
+			mui.Text(c, a.composerErr).FontSize(13).TextColor(tk.Red)
 		})
 	}
 }

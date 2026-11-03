@@ -128,6 +128,29 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 - 异步清理 flake：`TestEditedWorkerPromptReachesTheModel` 等 12 个含 `EnableWorker` 的测试现在注册 `settleRuntime(t, rt)`（t.Cleanup 中 `rt.WaitIdle(20s)`），保证 worker 停止后才做 TempDir 清理；`-count=10` 该测试通过，runtime `-race` 全绿。
 - 发布门 -race（全仓）：`CGO_ENABLED=1 go test -race ./... -skip Live -count=1` → exit 0，27 ok，无 DATA RACE；`CGO_ENABLED=0 go test ./... -skip Live -count=1` ×2 → 均 exit 0。修掉的最后竞态：`cmd/zeokeel/recovery_test.go`/`e2e_test.go` 用 `eng.Ticket` 指针读（改为 `TicketSnapshot`），并顺手把两处生产调用（`runtime/deliverables.go` 投影、`main.go -demo` 的 attention 演示）改为快照/`RaiseAttention`，无行为变化。`Engine.Ticket` 仍是指针 API，对引擎外部调用者仍是竞态隐患（引擎冻结，建议后续改为返回值或加 `TicketSnapshot` 强制注释）。
 
+## 4quater. Runtime round 3（ui2-spec §2/§4）
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| 工作区/会话投影 | fixed | `runtime/pages.go` 新增 `workspacesVM(now, all)` + `conversationVM`：每个 `eng.Workspaces()` 一个 `view.WorkspaceEntryVM`（ID/Name/Root/Purpose/Kind），只含该工作区 Ticket（ended 也含，按 LastAt desc，最多 50）；`CreatedBy` = origin Trigger.Source=="local" ? "me" : "agent"，`Source/Stage/StageID/Attention/LastAt` 齐；`Publish()` 每次调用 `snap.PublishWorkspaces(...)`（启动/变更/2s pass 都经由它）。 |
+| `CreateWorkspace` | fixed | `runtime/workspaces.go`：校验非空 name/root、root 必须是已存在目录、kind=repo/data/docs/mixed；`scan.Scan(root)` 填 Facts + Purpose/Keywords；ID=`ws_`+slug；重名/重 ID 拒绝；持久化走 `Persistence.Register`（默认 policy Allowed local:operator），内存走 `Engine.Register`；Publish。 |
+| `NewConversation` | fixed | 校验 workspace 存在/文本非空；durable→`Persistence.Dispatch`、内存→`Engine.Dispatch`，`DispatchInput.Workspace` 指定工作区；立即 `EvaluateDue` 并合并两阶段结果；`wakeTicket`（local 触发 Self→human 优先）；Publish；返回可操作 error。测试含 durable 重启存活。 |
+| System 事实 | fixed | `Publish()` 填 `view.OverviewVM.System`：OS/Arch 用 `runtime.GOOS/GOARCH`，Timezone=`time.Local.String()`，UTCOffset=`±HH:MM`；`deployFacts` 增加「操作系统」「时区」。 |
+| 未受理修复 | fixed | `stream()`：local 且无 Ticket/Proposal 时 Decision 文案改为「已答复」（非 local 为「未派发」），追加 `LineReply`「超级Agent：…」；问工作区（工作区/workspace/哪些/有什么/几个）列出全部名称+用途+类型，普通闲聊说明未派发原因并给两种下一步；`Dispatch` 在无单无 proposal 时返回可操作 error（不再静默 nil）。有真实请求仍建单。 |
+| 工具开关 | fixed | `runnerFor` 的 `agent.Config` 设 `PlanTasks/AgentsMD/WebTools=true`；`systemPromptFor` 增加计划工具（task_create/get/update/list）、网络工具（web_fetch/web_search）、AGENTS.md 注入说明；测试断言 `Runner.Config()` 与 prompt。 |
+| 测试 | — | 新增 `runtime/round3_test.go`（建工作区/面板/会话/系统/本地答复）、`cmd/zeokeel/round3_test.go`（durable 重启存活）、`TestWorkerToolSwitches`；`cmd/wiring_assert.go` 增加 `ui.WorkspaceCreator`/`ui.ConversationCreator` 编译期断言。回归：`TestPrepareFailureFailsTicketOnce`/`TestBackgroundJobThirtyMinuteRule` 因 Dispatch 合并两阶段结果后双重启动，已在 Dispatch/NewConversation 去掉多余 `startLocalRun`（EvaluateDue 已启动），并加 `settleRuntime` root 静默等待消除 TempDir cleanup flake。 |
+| 验证 | — | `go build ./...` ok；`go test ./internal/runtime/ ./cmd/zeokeel/ -count=1` ok（18.9s/1.4s）；`go test ./... -skip Live` → 27 ok / 0 FAIL；`-race` runtime/cmd ok（33.0s/5.7s）；gofmt/vet 干净；未改 go.mod、未动 engine/agent/store/ui/view。 |
+
+## 4quinquies. IM-1/2/4/5（im-channel-spec）
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| Settings 模型 | fixed | Sources 组发布 `feishu_enabled`(switch)/`feishu_transport`(select: longpoll, ws, webhook 后两者标注未实现)/`dingtalk_enabled`(switch)/`dingtalk_transport`(select: dws/stream，默认 dws)/`dingtalk_dws_cmd`(默认 dws)/`dingtalk_bot_id`，保留既有凭据键，带 Help；kv 设置无需迁移。 |
+| IMManager | fixed | `runtime/im.go`：`IMConfig` 从 settings+flags 读；每渠道 lifecycle（ctx cancel + ≤5s 等待）；禁用→来源 `disabled` 行 + health ok「未启用」、不构建 driver；半配置→error 行/health；启用→driver（飞书 longpoll；钉钉 DWS 用 nih-integrations `dingtalk.DWSClient`，stream 用官方 driver）→注册 `im.Sender` 到 outbox→轮询/receive 循环→health `im:<channel>`/来源状态；cursor 写 kv `im.cursor.<channel>` 且整批成功后才推进，失败 1s→30s 退避。`ApplyIMSettings(old,new)` 只重启 enable/transport/凭据变化渠道；`SaveSettings("source")` 提交后自动调用。聚合授权检查 `Runtime.CheckChannel` → `IMManager.CheckChannel`（UI `ChannelAuthorizer` 已断言）：飞书 POST token（10s，401/403→auth + open.feishu.cn/app）、DWS `auth status`（未登录返回 authUrl+登录命令）、Stream 检查凭据。 |
+| 工具 | fixed | Runner 构造已设 `PlanTasks/AgentsMD/WebTools=true`；新增 `execution.web_search_url` 设置→`agent.Config.WebSearchURL`（空则 DuckDuckGo）；prompt 已含 task/web 工具名。 |
+| 测试 | — | `runtime/im_test.go`：默认值、禁用不监听、半配置错误（含 health）、轮询→Trigger+cursor 持久化、失败不推进 cursor、Apply 重启/不变不重启、飞书 CheckChannel(httptest 覆盖 httpDo：ready/401/网络错误)、DWS CheckChannel(auth/ready/未知渠道)；`TestWorkerToolSwitches`/`TestWebSearchURLComesFromSettings`；`TestIMEventBecomesATrigger`。cmd 侧改写 verifier IM 测试走 IMManager（Receiver-only driver 走 subscribeLoop），sender 路由测试保留。 |
+| 验证 | — | runtime+cmd build ok；scoped tests ok（19.1s/1.3s）；runtime/cmd `-race` ok（34.9s/5.6s）；gofmt/vet 干净；无 go.mod 改动。**全仓 `go test ./... -skip Live` 仍有 3 个失败在 `internal/im/dingtalk`（nih-integrations 新 DWS 测试：missing-executable 分类、cancel unblock 超时、marker 含换行），非本 scope。** |
+
 ## 5. 跨 scope 待办 / 未完成
 
 1. **engine（conf-domain）**：缺“把 running Assignment 标记 interrupted”的 API。`RecoverAssignments` 目前只能补 note + 新 Assignment，旧 running 记录仍留在 `Ticket.Assignments`（`runtime/recovery.go`；期望 `Engine.InterruptAssignment(ticketID, assignmentID, reason)` 或 `RecoverAssignments` 内建实现）。

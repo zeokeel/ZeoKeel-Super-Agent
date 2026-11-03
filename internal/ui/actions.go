@@ -117,7 +117,7 @@ func (a *App) overviewActions(c *mui.Context, r view.TicketRow) {
 	ch := a.actionChannels()
 	for _, act := range view.ActionsFor(r) {
 		label := act.Label()
-		btn := mui.Button(c, label).Label(label).Height(24).FontSize(11)
+		btn := mui.Button(c, label).Label(label).Height(24).FontSize(13)
 		if !ch.wired(act) {
 			// Disabled, and the band's note says why; no click is handled below,
 			// so a disabled button cannot fall through to a no-op that looks sent.
@@ -159,14 +159,14 @@ func (a *App) answerDialog(c *mui.Context) {
 	open := true
 	mui.Modal(c, &open, func() {
 		mui.Column(c).Width(560).Gap(10).Children(func() {
-			mui.Text(c, "回答 #"+r.ID).FontSize(15).Bold().TextColor(tk.Text)
+			mui.Text(c, "回答 #"+r.ID).FontSize(17).Bold().TextColor(tk.Text)
 			question := r.Detail
 			if r.Attention != nil && r.Attention.Question != "" {
 				question = r.Attention.Question
 			}
-			mui.Text(c, question).FontSize(13).TextColor(tk.Text)
+			mui.Text(c, question).FontSize(15).TextColor(tk.Text)
 			if r.Attention != nil && len(r.Attention.Options) > 0 {
-				mui.Text(c, "选一个，或直接写你的回答").FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, "选一个，或直接写你的回答").FontSize(12).TextColor(tk.TextFaint)
 				mui.Row(c).Gap(6).Wrap().Children(func() {
 					for _, opt := range r.Attention.Options {
 						opt := opt
@@ -183,7 +183,7 @@ func (a *App) answerDialog(c *mui.Context) {
 			}
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 				if a.answerErr != "" {
-					mui.Text(c, a.answerErr).FontSize(10).TextColor(tk.Red)
+					mui.Text(c, a.answerErr).FontSize(12).TextColor(tk.Red)
 				}
 				mui.Spacer(c)
 				if mui.Button(c, "取消").Clicked() {
@@ -263,12 +263,12 @@ func (a *App) stopDialog(c *mui.Context) {
 	open := true
 	mui.Modal(c, &open, func() {
 		mui.Column(c).Width(520).Gap(10).Children(func() {
-			mui.Text(c, "停止 #"+r.ID+"？").FontSize(15).Bold().TextColor(tk.Text)
-			mui.Text(c, r.Title).FontSize(12).TextColor(tk.TextMuted)
+			mui.Text(c, "停止 #"+r.ID+"？").FontSize(17).Bold().TextColor(tk.Text)
+			mui.Text(c, r.Title).FontSize(14).TextColor(tk.TextMuted)
 			mui.Text(c, "停止会结束这张工单并撤销它的 Mandate；执行器会停下，之后只能由新的请求重新开始。").
 				FontSize(11).TextColor(tk.TextMuted)
 			if a.actionErr != "" {
-				mui.Text(c, a.actionErr).FontSize(10).TextColor(tk.Red)
+				mui.Text(c, a.actionErr).FontSize(12).TextColor(tk.Red)
 			}
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 				mui.Spacer(c)

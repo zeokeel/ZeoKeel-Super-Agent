@@ -31,7 +31,7 @@ func (a *App) sourcePage(c *mui.Context) {
 			}
 		})
 		if vm == nil {
-			mui.Text(c, "等待运行时发布来源快照…").FontSize(13).TextColor(tk.TextMuted)
+			mui.Text(c, "等待运行时发布来源快照…").FontSize(15).TextColor(tk.TextMuted)
 			return
 		}
 
@@ -53,15 +53,15 @@ func (a *App) sourceTable(c *mui.Context, vm *view.SourceVM) {
 		Children(func() {
 			mui.Row(c).Height(34).Padding(0, 14).Gap(10).AlignItems(mui.Center).
 				Background(tk.SurfaceAlt).Children(func() {
-				mui.Text(c, "事件源").FontSize(10).TextColor(tk.TextFaint)
+				mui.Text(c, "事件源").FontSize(12).TextColor(tk.TextFaint)
 				mui.Spacer(c)
-				mui.Text(c, "每行：账号事实 · 游标 · 最近一次轮询").FontSize(10).
+				mui.Text(c, "每行：账号事实 · 游标 · 最近一次轮询").FontSize(12).
 					TextColor(tk.TextFaint)
 			})
 			mui.Box(c).Height(1).Background(tk.Border)
 			if len(vm.Sources) == 0 {
 				mui.Row(c).Padding(16, 14).Children(func() {
-					mui.Text(c, "还没有登记任何来源。").FontSize(12).TextColor(tk.TextMuted)
+					mui.Text(c, "还没有登记任何来源。").FontSize(14).TextColor(tk.TextMuted)
 				})
 				return
 			}
@@ -92,8 +92,8 @@ func (a *App) sourceRow(c *mui.Context, s view.SourceRow) {
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			sourceGlyph(c, tk, s.Kind, 30)
 			mui.Column(c).Width(190).Gap(1).Children(func() {
-				mui.Text(c, s.Name).FontSize(13).Bold().TextColor(tk.Text)
-				mui.Text(c, s.Account).FontSize(11).SingleLine().TextColor(tk.TextMuted)
+				mui.Text(c, s.Name).FontSize(15).Bold().TextColor(tk.Text)
+				mui.Text(c, s.Account).FontSize(13).SingleLine().TextColor(tk.TextMuted)
 			})
 			if s.Enabled {
 				chip(c, tk, "已启用", tk.Green, tk.GreenSoft)
@@ -114,8 +114,8 @@ func (a *App) sourceRow(c *mui.Context, s view.SourceRow) {
 				mui.Box(c).Width(30) // aligns under the glyph
 				for _, f := range s.Facts {
 					mui.Row(c).Gap(6).Children(func() {
-						mui.Text(c, f.Label).FontSize(11).TextColor(tk.TextFaint)
-						mui.Text(c, f.Value).FontSize(11).SingleLine().TextColor(tk.Text)
+						mui.Text(c, f.Label).FontSize(13).TextColor(tk.TextFaint)
+						mui.Text(c, f.Value).FontSize(13).SingleLine().TextColor(tk.Text)
 					})
 				}
 			})
@@ -123,7 +123,7 @@ func (a *App) sourceRow(c *mui.Context, s view.SourceRow) {
 
 		mui.Row(c).Gap(20).AlignItems(mui.Center).Children(func() {
 			mui.Box(c).Width(30)
-			mui.Text(c, "游标 "+s.Cursor).FontSize(11).TextColor(tk.TextMuted)
+			mui.Text(c, "游标 "+s.Cursor).FontSize(13).TextColor(tk.TextMuted)
 			if s.LastPoll.Detail != "" {
 				mui.Text(c, fmt.Sprintf("上次轮询 %s · %s", humanfmt.Ago(a.age(s.LastPoll.At)), s.LastPoll.Detail)).
 					FontSize(11).TextColor(tk.TextFaint)
@@ -138,7 +138,7 @@ func (a *App) sourceRow(c *mui.Context, s view.SourceRow) {
 			mui.Row(c).Padding(8, 10).Radius(7).Background(bg).Gap(8).AlignItems(mui.Start).
 				Children(func() {
 					mui.Icon(c, icBell).FontSize(13).TextColor(fg)
-					mui.Text(c, s.LastPoll.Problem).FontSize(11).Grow(1).TextColor(fg)
+					mui.Text(c, s.LastPoll.Problem).FontSize(13).Grow(1).TextColor(fg)
 				})
 		}
 	})
@@ -166,7 +166,7 @@ func (a *App) sourceFilters(c *mui.Context, vm *view.SourceVM) {
 	tk := a.tk
 	card(c, tk, 14, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "过滤与丢弃 · 24 小时").FontSize(13).Bold().TextColor(tk.Text)
+			mui.Text(c, "过滤与丢弃 · 24 小时").FontSize(15).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
 			chip(c, tk, fmt.Sprintf("%d 条", vm.FilteredTotal), tk.TextMuted, tk.SurfaceAlt)
 		})
@@ -174,11 +174,11 @@ func (a *App) sourceFilters(c *mui.Context, vm *view.SourceVM) {
 			mui.Row(c).Padding(8, 9).Radius(7).Background(tk.SurfaceAlt).Gap(8).
 				AlignItems(mui.Center).Children(func() {
 				dot(c, tk.TextFaint, 6)
-				mui.Text(c, f.Reason).FontSize(11).Grow(1).TextColor(tk.Text)
-				mui.Text(c, fmt.Sprint(f.Count)).FontSize(11).TextColor(tk.TextFaint)
+				mui.Text(c, f.Reason).FontSize(13).Grow(1).TextColor(tk.Text)
+				mui.Text(c, fmt.Sprint(f.Count)).FontSize(13).TextColor(tk.TextFaint)
 			})
 		}
-		mui.Text(c, "被丢弃的 Trigger 仍保留在库里，可审计").FontSize(10).TextColor(tk.TextFaint)
+		mui.Text(c, "被丢弃的 Trigger 仍保留在库里，可审计").FontSize(12).TextColor(tk.TextFaint)
 	})
 }
 
@@ -188,9 +188,9 @@ func (a *App) sourceAccountFacts(c *mui.Context, vm *view.SourceVM) {
 	tk := a.tk
 	card(c, tk, 14, func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "账号事实").FontSize(13).Bold().TextColor(tk.Text)
+			mui.Text(c, "账号事实").FontSize(15).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, "事实，不是配置").FontSize(10).TextColor(tk.TextFaint)
+			mui.Text(c, "事实，不是配置").FontSize(12).TextColor(tk.TextFaint)
 		})
 		for _, f := range vm.AccountFacts {
 			kv(c, tk, f.Label, f.Value)
@@ -205,9 +205,9 @@ func (a *App) settingsHint(c *mui.Context, group view.SettingsGroupID, label str
 	row := mui.Row(c).Height(34).Padding(0, 12).Radius(8).Background(tk.Surface).
 		Border(1, tk.Border).Gap(8).AlignItems(mui.Center).Children(func() {
 		mui.Icon(c, icSettings).FontSize(13).TextColor(tk.TextMuted)
-		mui.Text(c, label).FontSize(12).TextColor(tk.Accent)
+		mui.Text(c, label).FontSize(14).TextColor(tk.Accent)
 		mui.Spacer(c)
-		mui.Text(c, "配置在设置页").FontSize(10).TextColor(tk.TextFaint)
+		mui.Text(c, "配置在设置页").FontSize(12).TextColor(tk.TextFaint)
 		mui.Icon(c, icChevR).FontSize(12).TextColor(tk.TextFaint)
 	})
 	if row.Clicked() {

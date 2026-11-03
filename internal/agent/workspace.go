@@ -121,12 +121,18 @@ func newToolRefusalMiddleware() adk.ChatModelAgentMiddleware {
 }
 
 func (m *toolRefusalMiddleware) WrapInvokableToolCall(_ context.Context,
-	endpoint adk.InvokableToolCallEndpoint, _ *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
+	endpoint adk.InvokableToolCallEndpoint, tCtx *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 		out, err := endpoint(ctx, argumentsInJSON, opts...)
 		if err != nil {
 			if msg, ok := toolErrorObservation(err); ok {
 				return "refused: " + msg, nil
+			}
+			// The plan/task tools report user-level problems (unknown task id,
+			// invalid status) as errors; those are observations the model can correct,
+			// not reasons to fail the whole Ticket.
+			if tCtx != nil && isObservationOnlyTool(tCtx.Name) {
+				return "tool_error: " + err.Error(), nil
 			}
 		}
 		return out, err

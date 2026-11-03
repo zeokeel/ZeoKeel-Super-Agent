@@ -12,7 +12,7 @@
 | 状态 | `zeokeel status [--json]`；可在应用运行时执行（只读 inspect，不拿写锁） | `cmd/zeokeel/cli.go:76`；`internal/runtime/status.go:137` |
 | 启动前自检 | `zeokeel check [--json]`（全新安装返回 3=等待 setup） | `cmd/zeokeel/cli.go:143` |
 | 首次配置（非交互） | `zeokeel setup --model ... --workspace ... --root ... [--people ...]` | `cmd/zeokeel/cli.go:216` |
-| 登录检查 | `zeokeel login [--gh gh]`（只检查 GitHub CLI；IM 凭据在设置›来源或 `-feishu-*`/`-dingtalk-*` flag 配置） | `cmd/zeokeel/cli.go` |
+| 登录检查 | `zeokeel login [--gh gh]`（只检查 GitHub CLI）；IM 在设置›来源按渠道开关/配置/检查/授权（详见 `design/im-channels.md`） | `cmd/zeokeel/cli.go`；`internal/ui/channels.go:134-230`；`internal/runtime/im.go:588` |
 | 手动停 | `zeokeel stop [--pid N] [--no-signal]`：写 `<stateDir>/STOPPED`（巡检不自动重启）；`status` 在“手动停且未运行”时返回 0；启动时清标记 | `cmd/zeokeel/cli.go:354`；`internal/runtime/status.go:111-128`；`internal/store` 启动清标记 |
 | 备份 | `zeokeel backup [--out FILE]`（`VACUUM INTO`；应用运行时拒绝） | `cmd/zeokeel/ops.go:46` |
 | 归档 | `zeokeel archive [--before 180d] [--dry-run]` → `archive.db` | `cmd/zeokeel/ops.go:83` |
@@ -191,6 +191,26 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - 排障：PR 已合并但工单没结束，先看消息流有没有 "已关注 Thread …"，再看 `Ticket.Follows` 是否绑到了正确的 `owner/repo#N`
   （`domain.ThreadKey` 用 `<scope>|github|<id>`）；重复关闭事件是幂等的。
 
+## 6.10 IM 渠道（飞书 / 钉钉）
+
+完整契约、DWS JSON 形状与故障矩阵见 **[im-channels.md](im-channels.md)**；这里只列运维动作：
+
+1. **启用/停用**：设置›来源里每个渠道有开关。禁用 = 取消订阅、停止轮询、来源状态"未启用"、health ok；
+   配置保留。保存后只有 enable/transport/凭据/self 变化的渠道会被重启（`internal/runtime/im.go:189,224`）。
+2. **飞书**：transport 只有 `longpoll`；填 app id/secret/chats 后点「检查通道」。
+   检查会换 tenant token；401/403 时按提示打开 `https://open.feishu.cn/app` 修应用权限/发布版本。
+   没有 WS/webhook、不下载媒体。
+3. **钉钉（默认 `dws`）**：本机要安装并登录 DWS：
+   - `dws auth status --json` → `loggedIn:true`；未登录时 `dws auth login`（或面板「打开授权页」）；
+   - 契约命令：`dws poll --cursor <c> --limit 50 --json`、`dws send --conversation <id> --text <t> --idempotency-key <k> --json`、
+     `dws health --json`；单次 30s，不经 shell；
+   - **未安装/不可执行** → 来源 error + "安装 dws 或设置 dingtalk_dws_cmd"；不会自动 fallback 到 Stream；
+   - 每渠道一个**串行 worker**（send > auth/health > poll）；poll 失败 1s→30s 退避；
+     **cursor 只在本批全部被接受后落 kv**；发送带隐藏幂等 marker（`<!-- zeokeel:<key> -->`）；
+   - 想用官方 SDK：`dingtalk_transport=stream` + app key/secret/robot code（检查只验证凭据齐全）。
+4. **排障**：`zeokeel status --json` 看 `im:feishu`/`im:dingtalk` 的 health；日志搜 `IM poll failed` /
+   `IM driver failed` / `IM channel started`；DWS 自身用 `dws health --json`。
+
 ## 7. 外部巡检（006 小时检查的等价物）
 
 `scripts/watchdog-check.sh`：
@@ -208,7 +228,8 @@ ZEOKEEL_BIN=/usr/local/bin/zeokeel scripts/watchdog-check.sh --restart-cmd "syst
 ## 8. 未实现/未覆盖（诚实清单）
 
 - 开机自启、休眠唤醒补跑、自动更新：没有内置实现；用 systemd/launchd 的开机启动 + 系统唤醒策略替代（文档化，不假装内置）。
-- IM：钉钉 Stream 已接（官方 SDK），飞书只有 HTTP 长轮询（无 WS）、无媒体下载；真实凭据 E2E 未验证。
+- IM：钉钉默认 DWS 外部 CLI（官方 Stream SDK 可选），飞书只有 HTTP 长轮询（无 WS）、无媒体下载；
+  钉钉 Stream 选项在面板仍标未实现（runtime 已支持，owner fix-ui2）；真实凭据 E2E 未验证。
 - 监控指标导出（Prometheus 等）：没有；只有 `status --json` 与日志。
 - 设置页规则/admission/accept mode 与 GitHub Source 实例：不可编辑（只读事实或 CLI flag）。
 - 系统钥匙串未实现（API Key 明文 SQLite 0600）。

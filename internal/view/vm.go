@@ -14,6 +14,7 @@ type Section string
 
 const (
 	SecOverview  Section = "overview"
+	SecWorkspace Section = "workspace"
 	SecSource    Section = "source"
 	SecTrigger   Section = "trigger"
 	SecEval      Section = "eval"
@@ -151,6 +152,52 @@ type Storage struct {
 	LastBackup string
 }
 
+// SystemInfo is the machine the window runs on, as a person reads it: the OS and
+// architecture, the timezone, and the offset from UTC. The runtime fills it from
+// its own process; the panel shows it, and never guesses one ("UTC" is a fact,
+// "" is not).
+type SystemInfo struct {
+	OS       string // linux, darwin, windows
+	Arch     string // amd64, arm64
+	Timezone string // Asia/Shanghai, Local…
+	// UTCOffset is "+08:00" or "UTC+08:00" as the runtime writes it; the panel
+	// shows it as it comes.
+	UTCOffset string
+}
+
+// Known reports whether the projector filled the system facts.
+func (s SystemInfo) Known() bool { return s.OS != "" || s.Arch != "" || s.Timezone != "" }
+
+// Label is the one line the sidebar footer and 设置 › 部署 show:
+// "linux/amd64 · Asia/Shanghai (UTC+08:00)".
+func (s SystemInfo) Label() string {
+	head := ""
+	switch {
+	case s.OS != "" && s.Arch != "":
+		head = s.OS + "/" + s.Arch
+	case s.OS != "":
+		head = s.OS
+	case s.Arch != "":
+		head = s.Arch
+	}
+	tz := s.Timezone
+	if tz == "" {
+		tz = "时区未知"
+	}
+	if s.UTCOffset != "" {
+		tz += " (" + s.UTCOffset + ")"
+	}
+	switch {
+	case head == "" && s.Timezone == "" && s.UTCOffset == "":
+		return ""
+	case head == "":
+		return tz
+	case s.Timezone == "" && s.UTCOffset == "":
+		return head
+	}
+	return head + " · " + tz
+}
+
 // OverviewVM is everything the overview page draws.
 type OverviewVM struct {
 	// Approvals are requests that would start work but need a person first. They
@@ -168,7 +215,9 @@ type OverviewVM struct {
 	Artifacts []Artifact
 	Storage   Storage
 	// Usage is the token total since this process started.
-	Usage     Usage
+	Usage Usage
+	// System is the machine the window runs on: OS, architecture and timezone.
+	System    SystemInfo
 	UpdatedAt time.Time
 }
 
@@ -191,6 +240,8 @@ type Snapshot struct {
 	// shards, so a schedule's next-fire countdown never rebuilds a ticket list.
 	schedules atomic.Pointer[ScheduleVM]
 	goals     atomic.Pointer[GoalVM]
+	// workspaces is the sidebar's shard: workspace rows and their conversations.
+	workspaces atomic.Pointer[WorkspacePanelVM]
 	// onboarding is the first-run wizard; nil means "this install is set up".
 	onboarding atomic.Pointer[OnboardingVM]
 	artifacts  atomic.Pointer[ArtifactVM]
@@ -273,6 +324,17 @@ func (s *Snapshot) PublishOnboarding(vm *OnboardingVM) {
 	s.onboarding.Store(vm)
 	s.bump()
 }
+
+// PublishWorkspaces hands the sidebar its workspace rows and conversations.
+func (s *Snapshot) PublishWorkspaces(vm *WorkspacePanelVM) {
+	s.workspaces.Store(vm)
+	s.bump()
+}
+
+// Workspaces returns the last workspace projection, or nil before the first
+// publish. The sidebar then says it waits instead of drawing an empty group as
+// if no workspace existed.
+func (s *Snapshot) Workspaces() *WorkspacePanelVM { return s.workspaces.Load() }
 
 // PublishArtifacts hands the deliverables panel its rows.
 func (s *Snapshot) PublishArtifacts(vm *ArtifactVM) {
@@ -376,7 +438,7 @@ func Nav(o *OverviewVM) []NavItem {
 		running = o.Runtime.Running
 	}
 	return []NavItem{
-		{Section: SecOverview, Label: "总览", Count: person},
+		{Section: SecOverview, Label: "超级Agent", Count: person},
 		{Section: SecMessages, Label: "消息"},
 		{Section: SecSource, Label: "来源"},
 		{Section: SecTrigger, Label: "触发"},
@@ -384,6 +446,21 @@ func Nav(o *OverviewVM) []NavItem {
 		{Section: SecExecution, Label: "执行", Count: running},
 		{Section: SecSettings, Label: "设置"},
 	}
+}
+
+// SectionLabel is how a section reads in the panel. Nav holds the monitoring rail
+// (the sidebar's bottom group and 设置); 工作区 is reached through a workspace row,
+// not a rail item, and this names it too.
+func SectionLabel(s Section) string {
+	if s == SecWorkspace {
+		return "工作区"
+	}
+	for _, it := range Nav(nil) {
+		if it.Section == s {
+			return it.Label
+		}
+	}
+	return string(s)
 }
 
 // WorkspaceChoice is one option in the task composer: what the person can pick.

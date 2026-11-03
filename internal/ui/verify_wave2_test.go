@@ -128,7 +128,7 @@ func TestVerifyOverviewStageCorrectActions(t *testing.T) {
 	actor := &verifyActor{}
 	a := verifyApp(t, actor, snap)
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "总览")
+	click(t, tt, "超级Agent")
 	wantTexts(t, tt, "回答", "重试", "停止")
 	// The answer row's question is the row's detail; ended rows still show but
 	// their action set is empty — clicking 停止 must target only open rows.
@@ -150,7 +150,7 @@ func TestVerifyMissingActionChannelsAreHonest(t *testing.T) {
 	// fakeCmd has only Commander: no action interfaces.
 	a := verifyApp(t, &fakeCmd{}, snap)
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "总览")
+	click(t, tt, "超级Agent")
 	wantTexts(t, tt, "动作未接线")
 	// A disabled button cannot open the answer dialog.
 	if err := tt.Click("回答"); err == nil {
@@ -174,7 +174,7 @@ func TestVerifyAnswerDialogSendsThroughTheChannel(t *testing.T) {
 	actor := &verifyActor{}
 	a := verifyApp(t, actor, snap)
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "总览")
+	click(t, tt, "超级Agent")
 	click(t, tt, "回答")
 	wantTexts(t, tt, "要用哪个环境？", "staging", "production", "回答 #42")
 	click(t, tt, "production")

@@ -75,7 +75,7 @@ func TestSearchPaletteOpensFiltersAndJumps(t *testing.T) {
 	wantTexts(t, tt, "定位", "已合并 · PR #127")
 
 	// Navigating away drops the highlight: it must point at something on screen.
-	click(t, tt, "总览")
+	click(t, tt, "超级Agent")
 	if a.locate != nil {
 		t.Fatalf("navigation kept the location %+v", a.locate)
 	}

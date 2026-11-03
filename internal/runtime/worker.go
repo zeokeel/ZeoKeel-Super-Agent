@@ -44,6 +44,9 @@ type WorkerConfig struct {
 	// it becomes a background job (design §5.6: 5s). Zero means the agent default;
 	// tests shorten it to exercise the job path quickly.
 	BackgroundAfter time.Duration
+	// WebSearchURL overrides the search endpoint (default DuckDuckGo HTML). Empty
+	// means the execution.web_search_url setting, then the agent default.
+	WebSearchURL string
 	// ExtraTools are tools the deployment adds: MCP servers, subagents, anything
 	// installed at boot rather than compiled in.
 	ExtraTools []tool.BaseTool
@@ -61,7 +64,53 @@ func (r *Runtime) EnableWorker(cfg WorkerConfig) {
 	r.mu.Lock()
 	r.worker = &cfg
 	r.skills = cfg.Skills
+	if cfg.Root != "" {
+		r.workerRoots = append(r.workerRoots, cfg.Root)
+	}
 	r.mu.Unlock()
+}
+
+// WaitRootsQuiet waits until the worker roots stop changing for quietFor. A
+// Worker goroutine can finish while an agent-internal writer (session log, event
+// store) is still flushing; TempDir cleanup then fails with "directory not empty
+// (release-run flake). Tests call this before returning.
+func (r *Runtime) WaitRootsQuiet(quietFor, timeout time.Duration) bool {
+	r.mu.Lock()
+	roots := append([]string(nil), r.workerRoots...)
+	r.mu.Unlock()
+	if len(roots) == 0 {
+		return true
+	}
+	count := func() (int, int64) {
+		n, sum := 0, int64(0)
+		for _, root := range roots {
+			_ = filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+				if err != nil || info == nil {
+					return nil
+				}
+				n++
+				sum += info.Size()
+				return nil
+			})
+		}
+		return n, sum
+	}
+	lastN, lastSum := count()
+	stableSince := time.Now()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
+		n, sum := count()
+		if n != lastN || sum != lastSum {
+			lastN, lastSum = n, sum
+			stableSince = time.Now()
+			continue
+		}
+		if time.Since(stableSince) >= quietFor {
+			return true
+		}
+	}
+	return false
 }
 
 // workerConfig returns the current executor configuration. It is read under the
@@ -427,6 +476,10 @@ func (r *Runtime) runnerFor(t domain.Ticket, cfg *WorkerConfig, workdir string) 
 		// The Worker's bash child sees the same ticket facts as the prompt and the
 		// prepare script (no credentials: executionVars only carries paths/ids).
 		Env: r.executionVars(t, workdir),
+		// Framework tools the panel promises (ui2-spec §4): plan/todo tools,
+		// AGENTS.md injection, and web_fetch/web_search.
+		PlanTasks: true, AgentsMD: true, WebTools: true,
+		WebSearchURL: r.searchURLFor(cfg),
 	})
 	if err != nil {
 		return nil, err
@@ -515,6 +568,11 @@ func (r *Runtime) systemPromptFor(t domain.Ticket, cfg *WorkerConfig) string {
 	}
 	// The Ticket's facts, including the ZEOKEEL_* values a prepare script receives.
 	system += "\n\n" + r.promptVars(t, ticketWorkdir(cfg, t))
+	// Framework tools enabled for every Worker (ui2-spec §4/§5): the model needs
+	// to know they exist, not just to have them registered.
+	system += "\n\n计划工具：task_create / task_get / task_update / task_list。" +
+		"\n网络工具：web_fetch / web_search（仅 http/https，拒绝内网地址）。" +
+		"\n工作区根目录的 AGENTS.md 会自动注入；没有该文件不影响执行。"
 	// Team sections last: they own the voice and the delivery standard, and a team
 	// edit applies to the next run without touching the built-in sections.
 	for _, section := range r.teamSections() {
@@ -702,6 +760,17 @@ func (r *Runtime) workerDefaultPrompt(t domain.Ticket) string {
 		name, purpose = ws.Name, ws.Brief.Purpose
 	}
 	return prompts.Worker(name, purpose)
+}
+
+// searchURLFor resolves the web_search endpoint: explicit config first, then the
+// execution.web_search_url setting, then the agent's DuckDuckGo default (empty).
+func (r *Runtime) searchURLFor(cfg *WorkerConfig) string {
+	if cfg != nil && strings.TrimSpace(cfg.WebSearchURL) != "" {
+		return strings.TrimSpace(cfg.WebSearchURL)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return strings.TrimSpace(r.settings["execution.web_search_url"])
 }
 
 // saneBudget keeps a context budget above the fixed part of the prompt. A budget

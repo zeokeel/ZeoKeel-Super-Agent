@@ -110,6 +110,22 @@ func (r *Runner) newADKAgent(ctx context.Context, mb model.ToolCallingChatModel,
 	if err != nil {
 		return nil, err
 	}
+	// agentsmd must come after summarization so AGENTS.md is never compressed away
+	// (the middleware documents that ordering); plantask only adds tools.
+	var agentsMDMiddleware adk.ChatModelAgentMiddleware
+	if r.cfg.AgentsMD {
+		agentsMDMiddleware, err = newAgentsMDMiddleware(ctx, r.cfg.Workdir)
+		if err != nil {
+			return nil, fmt.Errorf("agent: agentsmd middleware: %w", err)
+		}
+	}
+	var planTaskMiddleware adk.ChatModelAgentMiddleware
+	if r.cfg.PlanTasks {
+		planTaskMiddleware, err = newPlanTaskMiddleware(ctx, r.cfg.Workdir)
+		if err != nil {
+			return nil, fmt.Errorf("agent: plantask middleware: %w", err)
+		}
+	}
 	// 悬空 tool_call 修补用 eino 官方中间件：它每次模型调用前扫历史，给"有调用、
 	// 没结果"的 tool_call 补一条占位 tool 消息。这覆盖的不只是崩溃恢复，也包括
 	// 工具执行中途被取消、并行工具丢结果等所有会让真实 provider 400 的历史形态
@@ -135,9 +151,17 @@ func (r *Runner) newADKAgent(ctx context.Context, mb model.ToolCallingChatModel,
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: r.tools},
 		},
 		MaxIterations: maxSteps(r.cfg.MaxSteps),
-		Handlers: append([]adk.ChatModelAgentMiddleware{
-			summarizer, reducer, patcher, fileMiddleware, jobsMiddleware, newToolRefusalMiddleware(),
-		}, subHandler...),
+		Handlers: r.handlers(handlerSet{
+			summarizer: summarizer,
+			agentsMD:   agentsMDMiddleware,
+			reducer:    reducer,
+			patcher:    patcher,
+			files:      fileMiddleware,
+			jobs:       jobsMiddleware,
+			planTasks:  planTaskMiddleware,
+			refusal:    newToolRefusalMiddleware(),
+			subagents:  subHandler,
+		}),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent: new adk agent: %w", err)
@@ -258,4 +282,34 @@ func maxSteps(v int) int {
 		return v
 	}
 	return 40
+}
+
+// handlerSet is the middleware stack of one Worker run. It exists so the order is
+// written down once: summarization first, AGENTS.md after it (so it is never
+// compressed), then tool-result reduction and the tool-providing middlewares.
+type handlerSet struct {
+	summarizer adk.ChatModelAgentMiddleware
+	agentsMD   adk.ChatModelAgentMiddleware
+	reducer    adk.ChatModelAgentMiddleware
+	patcher    adk.ChatModelAgentMiddleware
+	files      adk.ChatModelAgentMiddleware
+	jobs       adk.ChatModelAgentMiddleware
+	planTasks  adk.ChatModelAgentMiddleware
+	refusal    adk.ChatModelAgentMiddleware
+	subagents  []adk.ChatModelAgentMiddleware
+}
+
+// handlers returns the ordered middleware list for a Worker run.
+func (r *Runner) handlers(h handlerSet) []adk.ChatModelAgentMiddleware {
+	out := make([]adk.ChatModelAgentMiddleware, 0, 8+len(h.subagents))
+	out = append(out, h.summarizer)
+	if h.agentsMD != nil {
+		out = append(out, h.agentsMD)
+	}
+	out = append(out, h.reducer, h.patcher, h.files, h.jobs)
+	if h.planTasks != nil {
+		out = append(out, h.planTasks)
+	}
+	out = append(out, h.refusal)
+	return append(out, h.subagents...)
 }

@@ -60,7 +60,7 @@ done
 
 head_ "文档"
 for f in README.md CHANGELOG.md RELEASE.md design/zeokeel-go-mygo-design.md \
-         design/rejected-concepts.md design/ops-runbook.md design/how-to-add-a-source.md \
+         design/rejected-concepts.md design/ops-runbook.md design/how-to-add-a-source.md design/im-channels.md \
          packaging/systemd/zeokeel.service packaging/launchd/com.zeokeel.agent.plist; do
   if [ -s "$f" ]; then ok "$f"; else bad "缺少 $f"; fi
 done
