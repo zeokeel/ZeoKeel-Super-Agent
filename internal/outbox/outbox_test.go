@@ -434,12 +434,15 @@ func TestWithdrawCancelsDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q.Start()
 	ctx := context.Background()
 
 	if _, err := o.Send(msg("draft")); err != nil {
 		t.Fatal(err)
 	}
+	// Withdraw before the queue starts: "withdraw cancels a queued delivery" is
+	// about the effect that has not begun yet. Starting the queue first makes the
+	// assertion depend on scheduler timing (a delivery may legitimately be in
+	// flight and cannot be un-sent), which is exactly the race CI used to hit.
 	removed, err := o.Withdraw("draft")
 	if err != nil || !removed {
 		t.Fatalf("withdraw: removed=%v err=%v", removed, err)
@@ -452,6 +455,13 @@ func TestWithdrawCancelsDelivery(t *testing.T) {
 	}
 	if _, ok, _ := o.Receipt("draft"); ok {
 		t.Fatal("withdrawn receipt still present")
+	}
+	q.Start()
+	if err := o.Sent(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.count() != 0 {
+		t.Fatalf("a withdrawn message was delivered after the queue started: %v", s.deliveredIDs())
 	}
 }
 
