@@ -175,3 +175,7 @@ make release   # verify + package + release-check
 - `execution.prepare` 在 **execution root（工单目录的父目录，`cfg.Root`）** 执行，工作区根由 `$ZEOKEEL_WORKDIR` 提供；面板 Help 文案已按同一口径写明。
 - **shell 工具不是安全边界**：它能执行的命令可以读取本机任何可读文件（包括其它工单的工作树）。
   单机单人使用没问题；多人共机或处理他人数据时，请用独立系统账号或容器隔离（设计 §5.5 已写明）。
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
