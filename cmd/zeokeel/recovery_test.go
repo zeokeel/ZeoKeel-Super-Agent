@@ -72,7 +72,9 @@ func TestAcceptedTicketRunsAfterRestart(t *testing.T) {
 		BaseURL: srv.URL, APIKey: "sk-mock", Model: "mock-tool", Root: work,
 	})
 
-	deadline := time.Now().Add(25 * time.Second)
+	// CI runners are slower (and -race doubles the cost of the mock model); give
+	// the recovered launch effect a wide margin instead of a tight wall clock.
+	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		// Read a deep snapshot, never the engine's live pointer: the launch handler
 		// goroutine may still be writing the Ticket while this loop reads it.
