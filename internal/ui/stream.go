@@ -56,7 +56,11 @@ func (a *App) streamPage(c *mui.Context) {
 		}
 		a.streamList.Key = threadKeys(rows)
 		a.streamList.FollowEnd = true
-		a.streamList.FollowAnimation = &mui.Smooth
+		if a.reduceMotion {
+			a.streamList.FollowAnimation = nil
+		} else {
+			a.streamList.FollowAnimation = &mui.Smooth
+		}
 		mui.List(c, &a.streamList, len(rows), func(i int) {
 			mui.Column(c).Padding(11, 24).AlignItems(mui.Center).Children(func() {
 				mui.Column(c).Width(maxStreamWidth).Children(func() {

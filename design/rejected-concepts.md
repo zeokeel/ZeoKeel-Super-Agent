@@ -103,6 +103,20 @@
 | 首次运行可「稍后设置（演示模式）」 | 接受 | 不再强制 model+workspace 才能进入；任务停在待你决定，总览说明并给「去配置模型」（`internal/runtime/ux.go:445-452`、`internal/ui/onboarding.go:140-180`、`internal/ui/overview.go:76-95`） |
 | 路径真相：项目目录 vs 执行副本 | **接受，诚实披露当前语义** | 详情分列两路径、可打开/复制；提示词明确只在副本工作、不修改项目；交付物是副本路径（`internal/ui/ticketdetail.go:250-286`、`internal/runtime/worker.go:570-582`） |
 | 连接向导（draft 校验/测试/通过才保存） | 接受 | 只显示所选 transport 字段；用填写值测试、不保存；DWS 版本/登录命令/授权链接；Feishu chats ws 可选/longpoll 必填；暂停监听（`internal/ui/channelwizard.go:1-520`、`internal/runtime/ux_im.go`、`internal/runtime/im.go:1392-1505`） |
-| 可访问性最小集（对比度/focus/标签/尺寸） | 接受（系统级未接） | 提高 faint 对比度与 focus token；`Focusable/Role/Label/Tooltip`；28px 目标/16px 图标；状态栏去 debug（`internal/ui/tokens.go:100-145`、`internal/ui/uxsupport.go`、`internal/ui/chrome.go:143-160`） |
+| 可访问性最小集（对比度/focus/标签/尺寸） | 接受（rc.2 接入系统级） | 提高 faint 对比度与 focus token；`Focusable/Role/Label/Tooltip`；28px 目标/16px 图标；状态栏去 debug（`internal/ui/tokens.go:100-145`、`internal/ui/uxsupport.go`、`internal/ui/chrome.go:143-160`）；rc.2 另接系统 TextScale/ReduceMotion/HighContrast/Accent（§G） |
 | 窗口 StateKey + 最小尺寸 | 接受 | `StateKey:"main"` 记忆尺寸/位置；最小 1100×720；不引入多窗口（`internal/ui/app.go:320-330`） |
-| **未接受/仍未做**：原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划可视化、真正原项目执行、多窗口、自动更新 | **拒绝在本轮假装** | 明确写入 README 已知限制/RELEASE F-7；不以窗口内快捷键冒充 app 菜单，不以执行副本冒充原项目修改 |
+| **仍未做（rc.2 时点）**：真正原项目执行、系统钥匙串、多窗口、自动更新下载/安装、真实租户 E2E | **拒绝假装** | 明确写入 README 已知限制/RELEASE F-7：执行副本 + 显式 apply-back 是当前语义；密钥仍 SQLite 0600；更新只检查不下载 |
+
+## G. rc.2（2026-11-04）新增概念登记
+
+| 概念 / 实现 | 判定 | 说明与证据 |
+| --- | --- | --- |
+| 流式聊天 + 停止生成 | 接受（替换一次性回答） | SSE 增量 60ms 节流发布；延迟降低；停止只取消本次请求，已生成部分保留并标「已停止生成」；最终文本只追加一次（`internal/runtime/rc2.go:24-190`、`internal/ui/composer.go:241-305`） |
+| 聊天 Markdown 渲染 | 接受（安全子集） | 标题/粗斜体/行内代码/围栏代码/列表/http(s) 链接；**不解释 HTML**，避免注入；未匹配标记按字面；链接外部浏览器打开（`internal/ui/markdown.go:19-180`） |
+| 计划/待办可见 | 接受（替换“只有日志”） | `.zeokeel/plan/*.json` → `PlanVM`；执行详情+对话任务卡；只读投影，不是计划编辑器（`internal/view/plan.go`、`internal/runtime/rc2.go:302-433`、`internal/ui/planpanel.go`） |
+| 应用到项目（显式回写） | **接受，替代“自动原地执行”** | 不假装 Agent 改了项目：显式按钮、只复制记录交付物、越界拒绝、同名先 `.bak-<timestamp>`、返回相对路径、确认框列出文件/目标/覆盖警告。真正同步/合并仍拒绝（`internal/runtime/rc2.go:193-270`、`internal/ui/applyproject.go`） |
+| 拒绝无损 + 撤销 | **接受，替换“拒绝即丢”** | 保留 proposal/RejectedAt；10s 撤销 toast；UndoReject 幂等/superseded 保护/持久化重启安全；不建单/不启动/不回复（`internal/engine/lifecycle.go:723-815`、`internal/ui/inbox.go:59-66`） |
+| 原生应用菜单 | 接受（替换只有窗口快捷键） | App/文件/编辑/窗口 + 标准编辑 roles；⌘N/⌘,；托盘保留（`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`） |
+| 系统无障碍偏好 | 接受（系统级接入） | TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent；不新增自有“无障碍模式”（`internal/ui/prefs.go:1-61`、`internal/ui/app.go:441-462`） |
+| 关于 / 更新检查（只查不下载） | 接受 | 版本/许可证；查询 GitHub Releases API，显示最新版本/发布页；**不下载、不安装、不自动更新**（`internal/ui/about.go:1-117`、`internal/runtime/rc2.go:355-415`） |
+| **仍拒绝假装**：原项目原地执行、钥匙串、多窗口、自动更新下载、真实租户 E2E | **明确未做** | 写入 README 已知限制/RELEASE F-7：执行副本 + apply-back 是当前真实语义；密钥仍 SQLite 0600；没有多窗口；更新只检查 |

@@ -715,9 +715,111 @@ func (e *Engine) Reject(decisionID domain.ID, why string) error {
 	if !ok || dec.Kind != domain.DecPropose {
 		return fmt.Errorf("engine: decision %q is not awaiting approval", decisionID)
 	}
+	// The proposal is deliberately kept: a rejection is reversible until a newer
+	// decision on the Thread supersedes it, and restoring it must not need a new
+	// Eval. Kind=ignore is the only visible change (it leaves the pending list).
 	dec.Kind = domain.DecIgnore
-	dec.Proposal = nil
-	dec.Reasons = []domain.Reason{{Code: "rejected_by_person", Values: map[string]string{"why": why}}}
+	dec.Reasons = []domain.Reason{{Code: domain.ReasonRejectedByPerson, Values: map[string]string{"why": why}}}
+	dec.RejectedAt = e.clock()
 	e.decisions[dec.ID] = dec
 	return nil
+}
+
+// UndoReject turns a rejected proposal back into a pending DecPropose. It creates
+// no Ticket, launches no worker and sends no reply: the request returns to the
+// operator's approval list exactly as it was, with an audit entry for the undo.
+//
+// Rules (documented contract):
+//   - only a Decision whose rejection went through Reject (kind=ignore with
+//     ReasonRejectedByPerson) can be undone; a pending proposal is left as is and
+//     reported as success (idempotent), an accepted Decision fails;
+//   - a newer decision on the same Thread (At after RejectedAt) supersedes the
+//     rejection and the undo fails with ErrUndoSuperseded;
+//   - the restored Decision is persisted by Persistence.UndoReject, so it
+//     survives a restart and can still be approved.
+func (e *Engine) UndoReject(decisionID domain.ID) (Outcome, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	dec, ok := e.decisions[decisionID]
+	if !ok {
+		return Outcome{}, fmt.Errorf("engine: unknown decision %q", decisionID)
+	}
+	switch dec.Kind {
+	case domain.DecPropose:
+		// Already pending: idempotent success, nothing to restore.
+		return proposalOutcome(e, dec), nil
+	case domain.DecAccept:
+		return Outcome{}, fmt.Errorf("engine: decision %q is already accepted", decisionID)
+	case domain.DecIgnore:
+		if !isRejection(dec) {
+			return Outcome{}, fmt.Errorf("%w: %s", ErrNotRejected, decisionID)
+		}
+	default:
+		return Outcome{}, fmt.Errorf("%w: %s", ErrNotRejected, decisionID)
+	}
+	// A Ticket accepted from this Decision means the work exists: an undo must not
+	// resurrect a proposal beside it.
+	for _, t := range e.tickets {
+		for _, id := range t.DecisionIDs {
+			if id == dec.ID {
+				return Outcome{}, fmt.Errorf("engine: decision %q already created ticket %s", decisionID, t.ID)
+			}
+		}
+	}
+	if superseder, ok := e.supersededByLocked(dec); ok {
+		return Outcome{}, fmt.Errorf("%w: decision %s", ErrUndoSuperseded, superseder)
+	}
+	dec.Kind = domain.DecPropose
+	dec.Reasons = append(dec.Reasons, domain.Reason{
+		Code: domain.ReasonUndoReject, Values: map[string]string{"at": e.clock().Format(time.RFC3339)}})
+	e.decisions[dec.ID] = dec
+	return proposalOutcome(e, dec), nil
+}
+
+// RestoreProposal is the readable alias of UndoReject.
+func (e *Engine) RestoreProposal(decisionID domain.ID) (Outcome, error) {
+	return e.UndoReject(decisionID)
+}
+
+// isRejection reports whether a Decision is a proposal the operator rejected.
+func isRejection(dec domain.Decision) bool {
+	for _, r := range dec.Reasons {
+		if r.Code == domain.ReasonRejectedByPerson {
+			return true
+		}
+	}
+	return false
+}
+
+// supersededByLocked returns the newer Decision on the same Thread that blocks an
+// undo: any decision made after the rejection on that Thread. A Decision with no
+// Thread has no superseding scope.
+func (e *Engine) supersededByLocked(rejected domain.Decision) (domain.ID, bool) {
+	if rejected.Thread == "" || rejected.RejectedAt.IsZero() {
+		return "", false
+	}
+	for id, d := range e.decisions {
+		if id == rejected.ID || d.Thread != rejected.Thread {
+			continue
+		}
+		if d.At.After(rejected.RejectedAt) || d.RejectedAt.After(rejected.RejectedAt) {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// proposalOutcome renders a pending proposal as an Outcome, without creating or
+// launching anything.
+func proposalOutcome(e *Engine, dec domain.Decision) Outcome {
+	out := Outcome{Kind: domain.DispDecided, Decision: copyDecision(dec),
+		Workspace: dec.Workspace, Proposal: true, Trigger: e.decisionTrigger[dec.ID]}
+	if n := len(dec.TriggerIDs); n > 0 {
+		out.Trigger = dec.TriggerIDs[n-1]
+		out.TriggerIDs = append([]domain.ID(nil), dec.TriggerIDs...)
+	}
+	if dec.Proposal != nil {
+		out.Question = dec.Proposal.Intent
+	}
+	return out
 }

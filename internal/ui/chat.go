@@ -71,7 +71,11 @@ func (a *App) chatBubble(c *mui.Context, m view.ChatMessage) {
 		}
 		mui.Text(c, label).FontSize(fs(11)).Bold().Width(64).Shrink(0).TextColor(fg)
 		mui.Column(c).Grow(1).Gap(2).Children(func() {
-			mui.Text(c, m.Text).FontSize(fs(13)).TextColor(ifColor(m.IsFailure(), tk.Red, tk.Text))
+			if m.Role == view.ChatAssistant || m.Role == view.ChatSystem {
+				a.renderMarkdown(c, m.Text, 13)
+			} else {
+				mui.Text(c, m.Text).FontSize(fs(13)).TextColor(ifColor(m.IsFailure(), tk.Red, tk.Text))
+			}
 			if kind := chatKindLabel(m.Kind); kind != "" {
 				mui.Text(c, kind).FontSize(fs(10)).TextColor(tk.TextFaint)
 			}

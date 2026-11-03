@@ -145,7 +145,7 @@ func TestGlossaryIsComplete(t *testing.T) {
 // group.
 func TestRequiredSettingsGroups(t *testing.T) {
 	groups := RequiredSettingsGroups()
-	wantIDs := []SettingsGroupID{SettingsWorker, SettingsSource, SettingsEval, SettingsExecution, SettingsPrompt, SettingsDeploy}
+	wantIDs := []SettingsGroupID{SettingsWorker, SettingsSource, SettingsEval, SettingsExecution, SettingsAbout, SettingsPrompt, SettingsDeploy}
 	if len(groups) != len(wantIDs) {
 		t.Fatalf("%d required groups, want %d", len(groups), len(wantIDs))
 	}
@@ -156,7 +156,9 @@ func TestRequiredSettingsGroups(t *testing.T) {
 		if g.Label == "" || g.Note == "" {
 			t.Fatalf("group %q has no label or note", g.ID)
 		}
-		if len(g.Pending) == 0 {
+		if len(g.Pending) == 0 && g.ID != SettingsAbout {
+			// 关于 is drawn from the build (version/license) and the optional
+			// update checker, not from a projection: nothing to wait for.
 			t.Fatalf("group %q does not say what it is waiting for", g.ID)
 		}
 	}

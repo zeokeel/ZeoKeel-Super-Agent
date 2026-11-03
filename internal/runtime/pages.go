@@ -540,7 +540,7 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 				Note:   "只有这里列出的人可以让它干活；你自己不受限制。改完立即生效。",
 				Fields: pick("people", "allowlist")},
 			{ID: view.SettingsEval, Label: "评估", Note: "只读事实；规则与受理档位的编辑在下一次 UI 迭代接入。", Fields: r.evalFacts()},
-			{ID: view.SettingsGroupID("worker"), Label: "模型",
+			{ID: view.SettingsWorker, Label: "模型",
 				Note: "研判与执行都用这个 OpenAI 兼容端点。保存后立即生效；可用「测试」按钮探测。",
 				Fields: []view.SettingField{
 					{Key: "base_url", Label: "端点 base URL", Value: values[settingWorkerBaseURL], Kind: view.SettingText,

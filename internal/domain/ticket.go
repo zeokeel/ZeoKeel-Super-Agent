@@ -64,6 +64,12 @@ const (
 	// message arrived on an IM Source: inbound IM work is always proposed, never
 	// started on its own (release policy; see engine.isIMSource).
 	ReasonIMApproval = "im_approval_required"
+	// ReasonRejectedByPerson marks a proposal the operator turned down; the
+	// proposal itself is kept so the rejection can be undone until a newer
+	// decision on the same Thread supersedes it.
+	ReasonRejectedByPerson = "rejected_by_person"
+	// ReasonUndoReject marks the audit entry an undone rejection adds.
+	ReasonUndoReject = "undoReject"
 )
 
 // ReplyRoute is who an answer goes to. Design §4.10.
@@ -236,9 +242,14 @@ type Decision struct {
 	// or not at all.
 	Reply ReplyPlan `json:"reply,omitempty"`
 	// Proposal is set when Kind is DecPropose: what the person must judge before
-	// the work may start.
+	// the work may start. A person's rejection keeps it (Kind becomes ignore with
+	// ReasonRejectedByPerson), so UndoReject can restore the same proposal without
+	// re-running an Eval.
 	Proposal *Proposal `json:"proposal,omitempty"`
-	At       time.Time `json:"at,omitempty"`
+	// RejectedAt is when the operator rejected a proposal; UndoReject orders
+	// "a newer decision on the Thread supersedes it" against this instant.
+	RejectedAt time.Time `json:"rejectedAt,omitempty"`
+	At         time.Time `json:"at,omitempty"`
 }
 
 // ReportState is what an Assignment reports back (001:112).

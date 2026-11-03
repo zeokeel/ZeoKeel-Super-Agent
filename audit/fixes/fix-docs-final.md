@@ -376,3 +376,24 @@ engine 路由 `internal/runtime/workspaces.go:182`/`internal/engine/engine.go:15
 - 仍明确未做：mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划/任务面板可视化、真正原项目执行、
   多窗口、自动更新/About、系统钥匙串。README/RELEASE F-7/§13/ops §8 均已写清。
 - 本轮未跑全量 `verify-fixes.sh`/`release-check.sh`；README/RELEASE/CHANGELOG 均声明由 Lead 在 push 前重跑，不预称全绿。
+
+## 15. rc.2 文档与发布说明（2026-11-04，docs-only）
+
+按 Lead 指令准备 `1.0.0-rc.2` 文档；**未改代码/go.mod，未改 VERSION**（文件仍 `1.0.0-rc.1`，由发布负责人 bump）。
+新增 `RELEASE-NOTES-v1.0.0-rc.2.md`；更新 README / CHANGELOG / RELEASE / design §13 / im-channels / ops / rejected-concepts / handoff。
+
+**文档记录（均以当前代码为准）**
+- 流式聊天：`internal/runtime/rc2.go:24-190`（SSE/60ms/StopChat）、`chat.go:38-52`、`ui/composer.go:241-305`、`ui/uxsupport.go:232-240`。
+- Markdown：`internal/ui/markdown.go:19-180`、`ui/chat.go:75`（安全子集，不解释 HTML，http(s) 链接）。
+- 计划/待办：`internal/view/plan.go:1-51`、`runtime/rc2.go:302-433`、`ui/planpanel.go:29-85`、`ui/ticketdetail.go:97-98`、`ui/composer.go:238-239`。
+- 应用到项目：`runtime/rc2.go:193-270`（safeExecPath/备份/相对路径）、`ui/applyproject.go:1-199`、`ui/ticketdetail.go:291-301`。
+- 撤销拒绝：`engine/lifecycle.go:723-815`、`engine/persist.go:835-860`、`runtime/rc2.go:436-463`、`ui/inbox.go:59-66`、`ui/uxsupport.go:201-230,307-310`（10s）。
+- 原生菜单：`ui/menu.go:1-72`、`ui/app.go:345`。
+- 系统无障碍：`ui/prefs.go:1-61`、`ui/app.go:441-462`、`ui/stream.go:59-62`。
+- 关于/更新：`ui/about.go:1-117`、`runtime/rc2.go:355-415`（只 GET，不下载）、`view/pages.go:469-470,644`。
+- 明确未做：真正原项目执行（副本+显式 apply-back）、系统钥匙串（SQLite 0600）、多窗口、自动更新只检查、
+  真实飞书/DWS 租户 E2E、打包无 .dmg/deb/安装器。写入 README 已知限制/RELEASE F-7/§13/ops §8/rejected §G。
+
+**检查**：相对 markdown 链接 0 broken；docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据。
+未跑全量 `verify-fixes.sh`/`release-check.sh`；README/RELEASE/CHANGELOG/发布说明均声明由 Lead bump VERSION 后跑闸门并 tag，
+不预称全绿。

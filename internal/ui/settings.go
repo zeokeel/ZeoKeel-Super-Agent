@@ -165,6 +165,9 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 		if g.ID == view.SettingsWorker {
 			a.modelTestRow(c)
 		}
+		if g.ID == view.SettingsAbout {
+			a.aboutSection(c)
+		}
 		if g.ID == view.SettingsSource {
 			// The IM channels get a card each: enable, transport, credentials and
 			// the runtime's check. Their fields are drawn inside the cards, not
@@ -282,7 +285,7 @@ func (a *App) fontScaleControl(c *mui.Context, g view.SettingsGroup) {
 	if !ok {
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			mui.Text(c, "界面字号").FontSize(fs(12)).TextColor(tk.Text)
-			mui.Text(c, fmt.Sprintf("当前 %d%%", int(a.viewScale()*100))).
+			mui.Text(c, fmt.Sprintf("当前 %d%%", int(a.settingViewScale()*100))).
 				FontSize(12).TextColor(tk.TextMuted)
 			mui.Text(c, "还没有数据：ui.font_scale（0.9 / 1.0 / 1.1）").
 				FontSize(10).TextColor(tk.Amber)
@@ -290,7 +293,7 @@ func (a *App) fontScaleControl(c *mui.Context, g view.SettingsGroup) {
 		return
 	}
 	ptr := a.settingsPtr(g.ID, field)
-	cur := a.viewScale()
+	cur := a.settingViewScale()
 	idx := 1
 	for i, v := range scales {
 		if abs32(v-cur) < 0.001 {

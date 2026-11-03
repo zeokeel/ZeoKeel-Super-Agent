@@ -569,3 +569,18 @@ func DemoChat(now time.Time) *ChatVM {
 		UpdatedAt: now,
 	}
 }
+
+// DemoPlan is a running task's plan: a done step, a running one and a blocked one,
+// so the panel's status icons all appear.
+func DemoPlan(now time.Time) *PlanVM {
+	return &PlanVM{
+		TicketID: "tk-42",
+		Items: []PlanItem{
+			{ID: "p1", Title: "读 auth 的 session 代码", Status: PlanDone, Detail: "3 个文件"},
+			{ID: "p2", Title: "补 SessionTimeout 默认值", Status: PlanRunning, Detail: "step 7"},
+			{ID: "p3", Title: "跑 auth 包测试", Status: PlanPending},
+			{ID: "p4", Title: "更新配置文档", Status: PlanBlocked, Detail: "等待你确认配置项名"},
+		},
+		UpdatedAt: now,
+	}
+}

@@ -3,26 +3,47 @@
 你的 AI 同事：从聊天里接活，自己研判该不该做、该派给哪个项目，干完把交付物和结论送回原处。
 单人模式、单机、单二进制、原生窗口——**不是又一个聊天框**。
 
-> **当前状态：`1.0.0-rc.1` 候选，代码 2026-11-04 最终状态（修复波已落地）。** 本轮修复了 IM 审批优先、
-> 飞书官方长连接、DWS 真实契约、异步命令边界、超级Agent 聊天双态、Ticket 身份、项目 ID/过滤、设置事务与 secret 脱敏、
-> 工具信任边界。**2026-11-04 UI/UX 优化轮**把首跑、输入、收件箱、模型设置、路径真相、连接向导、可访问性
-> 按交互审计重做（见下）。**未完成的是产品面**：打包只有 tar/zip（无 `.dmg`/deb/安装器）、系统钥匙串未做（API Key 明文存库）、
-> 设置页规则/admission/Source 实例仍只读、飞书 webhook/IM 媒体下载、`steer/inject` 与 `domain.Thread`/`UserError`；
-> 系统 TextScale/ReduceMotion/高对比、原生 app 菜单、多窗口、自动更新仍未做（见「已知限制」）。
-> 全量闸门由 Lead 合并前统一跑（本文不预称全绿）。`VERSION` 是否升 1.0.0 由发布负责人按 [RELEASE.md](RELEASE.md) F 组决定。
+> **当前状态：`1.0.0-rc.2` 发布候选（2026-11-04）。** rc.2 在修复波/UI-UX 轮之上补了：
+> 聊天流式输出（可停止）、Markdown 渲染、计划/待办可见、**应用到项目**（显式回写）、撤销拒绝、
+> 原生 app 菜单、系统无障碍偏好（TextScale/ReduceMotion/HighContrast/Accent）、设置›关于与更新检查。
+> **仍未完成**：真正在原项目执行（当前是执行副本 + 显式 apply-back）、系统钥匙串（密钥仍 SQLite 0600）、
+> 多窗口、自动更新只检查不下载、真实飞书/DWS 租户 E2E；打包仍只有 tar/zip（无 `.dmg`/deb/安装器）。
+> 全量闸门由 Lead 在 bump VERSION 后统一跑（本文不预称全绿）；发布说明见 [RELEASE-NOTES-v1.0.0-rc.2.md](RELEASE-NOTES-v1.0.0-rc.2.md)。
 > 渠道契约见 [design/im-channels.md](design/im-channels.md)，变更见 [CHANGELOG](CHANGELOG.md)。
 
-## 当前状态（2026-11-04，rc.1 候选）
+## 当前状态（2026-11-04，rc.2 候选）
 
 | 层 | 已实现（代码证据见设计 §13） | 未完成 / 限制 |
 | --- | --- | --- |
 | 领域与授权 | Deterministic gate（Strength/Basis）、admission table、bot list、团队规则、accept mode、Mandate/Policy version、Proposal 审批、两阶段 Eval、Input/Delivery、PR/Issue 生命周期（`follow` + `CloseThread → ThreadClosed`）、followup owners、hand-back、revalidate、pause/resume/stop/retry、`AnswerAttention`、投递三段式；**IM 入站审批优先**：每条飞书/钉钉消息（含操作员自己的）先变成一个 `DecPropose` 待批准项，Approve 才建 Ticket，Reject 什么都不留；来源页显示「待审批 N」 | 领域仍未搬 `Thread`/`UserError`；Eval 的 deadline/暂停细节仍在演进；审批逃生阀 `AutoApproveIM` 默认关闭 |
 | 执行 | 每 Ticket 一个 Worker 会话 + inbox；eino `filesystem`/`backgroundtask`/`patchtoolcalls`/`reduction`/`summarization`/`subagent`；skills/MCP/定时/目标；崩溃恢复；`execution.prepare`（`sh -c`、10m、scrub 后 `ZEOKEEL_*`、失败不自动重试）；30 分钟后台作业规则；**UI 命令异步边界**：发送/新建会话/保存设置都提交到 runtime 后台命令队列，面板显示「发送中/保存中/渠道重启中」，主线程不等 DB/模型/渠道 | `Runner.Resume` 已删除；无 steer/inject；跨工作区自动路由仍只靠 Router |
 | 来源 | GitHub（notifications + Issue/PR 评论；receive-all/CI 仅配置结构）；IM：**飞书官方 SDK 长连接（ws：新装默认/推荐；旧凭据迁移时 pin longpoll）与 HTTP 长轮询（longpoll，显式 fallback）**，**钉钉默认 DWS 个人 OAuth CLI（长驻 NDJSON consumer，无 poll/cursor）**，官方 Stream SDK 为 bot 模式可选 transport；按渠道三态启停（显式开关优先，缺省按凭据/flag 推导）、设置变更只重启变化渠道、失败批不推进 cursor、DWS 断线 1s→30s 重连并按 event id 去重；本地面板；定时任务 | 无 Source 实例表/面板“添加来源”：GitHub 仍需 `-repo/-gh-login`；飞书 webhook 未实现、无 IM 媒体下载；检查只验证凭据/订阅，不代替真实消息 E2E |
-| 面板 | 日常导航：超级Agent / 收件箱 / 项目 / 执行 / 设置，外加折叠的「诊断」组（对话记录·消息·连接·触发·评估）；**收件箱统一「待你决定 N」**，含 IM 批准与任务回答/重试/停止；输入条多行、Enter 换行、⌘/Ctrl+Enter 发送、target chip 明确聊天/项目（派活）；回答可展开/复制/看全部（对话记录）；模型设置在设置›模型，可测试连接；项目树/执行行内动作/`#number`；窗口记忆尺寸/位置、最小 1100×720；界面字号 90/100/110%（`ui.font_scale`） | 会话不能重命名/删除；评估组只读；删除有工单的项目会被拒绝；系统级 TextScale/ReduceMotion/高对比、原生菜单、多窗口、自动更新未做 |
+| 面板 | 日常导航：超级Agent / 收件箱 / 项目 / 执行 / 设置 + 折叠「诊断」；**收件箱统一「待你决定 N」**，含 IM 批准与任务回答/重试/停止，拒绝后 10s 可撤销；输入条多行、Enter 换行、⌘/Ctrl+Enter 发送、target chip 聊天/项目（派活）；回答支持流式/Markdown/停止生成/复制；计划/待办可见；详情可**应用到项目**；原生 App/File/Edit/Window 菜单；系统 TextScale×`ui.font_scale`、ReduceMotion、HighContrast、Accent；设置›关于含版本/许可证/检查更新（只查询）；窗口记忆尺寸/位置、最小 1100×720 | 会话不能重命名/删除；评估组只读；删除有工单的项目会被拒绝；真正原项目执行/多窗口/自动下载未做 |
 | 项目与会话 | UI 把工作区叫**项目**：注册项目（名称/根目录/用途/类型 + 原生目录选择器；根目录归一为绝对路径，重复 root 拒绝；opaque `ws_*` ID，名字可改且历史不断）；项目→会话（Ticket）按操作员/超级Agent 创建分组，最近 50 条；选中项目后「消息/执行」默认只看该项目；详情分开显示「项目目录 / 执行副本」 | 删除仅限“没有工单”的项目；会话列表每项目 50 条上限；Agent 只在执行副本工作 |
 | 内置工具 | eino `plantask`（TaskCreate/Get/Update/List，任务 JSON 存 `.zeokeel/plan`）、**AGENTS.md 作为不可信仓库内容信封注入（≤64KB，带显式 untrusted 标记）**、`web_fetch`（仅 http(s)、DNS 解析后 pin IP、拒绝私网、显式 `Proxy:nil`、10s、2MiB、返回 untrusted-content 信封）、`web_search`（前 5 条，端点可用 `execution.web_search_url` 覆盖）；设置›执行有 `plan_tasks/agents_md/web_tools` 开关（默认开） | 无浏览器渲染/JS；web 检索仍是 HTML 解析，受站点反爬/限流影响；工具能力在工单里的可视化仍有限 |
 | 运维 | `status/check/setup/login/backup/archive/stop`（退出码 0/1/2/3；stop 写 STOPPED）；`-headless` 服务；slog JSON 日志按天轮转 14 天；supervisor；单实例锁；systemd/launchd；watchdog；**settings 保存说明真实生效方式**（来源=重启相关渠道几秒、执行=下次新工单、提示词=热更新、部署=重启后生效）；`status --json`/Inspect 对 secret 做 redaction | 无开机自启/休眠唤醒/自动更新；无设置页 Source 实例/规则编辑；真实 IM 凭据 E2E 仍待环境 |
+
+## rc.2 新增（2026-11-04）
+
+- **聊天流式输出**：SSE 增量文本，60ms 节流发布；顶部/对话记录显示打字光标；`停止生成` 取消（已生成的部分保存并标「已停止生成」）；
+  最终文本只追加一次，不重复（`internal/runtime/rc2.go:24-190`、`internal/ui/composer.go:241-305`）。
+- **Markdown 渲染**：标题/粗体/斜体/行内代码/围栏代码块/有序/无序列表/http(s) 链接；不解释 HTML；
+  链接用系统浏览器打开（`internal/ui/markdown.go:19-180`、`internal/ui/chat.go:75`）。
+- **计划/待办可见**：从 `.zeokeel/plan/*.json` 投影 `view.PlanVM`，在执行详情和对话任务卡显示步骤、状态与
+  「3/5 完成 · 1 进行中 · 1 需要你」计数（`internal/view/plan.go:1-51`、`internal/runtime/rc2.go:302-433`、
+  `internal/ui/planpanel.go:29-85`、`internal/ui/ticketdetail.go:97-98`）。
+- **应用到项目**：把记录过的交付物从执行副本复制到项目根；拒绝绝对/越界路径；已有同名文件先备份
+  `.bak-<timestamp>`；返回相对路径；UI 确认框列出目标/文件/覆盖警告（`internal/runtime/rc2.go:193-270`、
+  `internal/ui/applyproject.go:1-199`、`internal/ui/ticketdetail.go:291-301`）。
+- **撤销拒绝**：拒绝无损（保留 proposal 与 `RejectedAt`）；10 秒内「撤销」恢复为待批（幂等；
+  同一 Thread 有更新决策则拒绝 undo；重启安全）；不建 Ticket、不启动、不回复（`internal/engine/lifecycle.go:723-815`、
+  `internal/engine/persist.go:835-860`、`internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`）。
+- **原生应用菜单**：App/文件/编辑/窗口；新建对话 ⌘N、设置 ⌘,、打开主窗口、标准编辑 roles（撤销/重做/剪切/复制/粘贴/全选）
+  （`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`）。
+- **系统无障碍偏好**：mygo `Theme.Preferences` 的 TextScale 与 `ui.font_scale` 相乘、ReduceMotion、
+  HighContrast、系统 Accent 生效（`internal/ui/prefs.go:1-61`、`internal/ui/app.go:441-462`、`internal/ui/stream.go:59`）。
+- **关于/更新检查**：设置›关于显示版本/许可证；「检查更新」只查询 GitHub Releases API（不下载），
+  显示最新版本与发布页链接（`internal/ui/about.go:1-117`、`internal/runtime/rc2.go:355-415`、`internal/view/pages.go:469-470,644`）。
 
 ## 界面结构（2026-11-04 UI/UX 优化轮后）
 
@@ -42,6 +63,8 @@
 **输入条**（`internal/ui/composer.go`）：多行输入，**Enter 换行、⌘/Ctrl+Enter 发送**（IME 合成回车不会误发）；
 上方 target chip 明确「发给 超级Agent（聊天）」或「项目 X（派活）」，切换后提交到该目标；
 发送失败保留草稿并给「再次发送」；最新回答内联可**展开/复制/查看全部**，完整对话在「诊断›对话记录」。
+回答**流式**到达（带光标，可「停止生成」），对话/历史渲染 **Markdown**（代码块、列表、http(s) 链接）。
+新任务有**计划/待办卡**（`.zeokeel/plan`，显示 x/y 完成与进行中/受阻）。
 
 **收件箱**（`internal/ui/inbox.go`、`internal/runtime/ux.go:316`）：统一「待你决定 N」一个数；
 请求批准卡片（谁/哪条消息/要做什么/敏感项）可批准/拒绝；任务卡可回答/重试/停止/打开；
@@ -56,6 +79,8 @@ Ticket 行/详情 ID 都是 domain ID，显示 `#N`。
 会话=工单，按「我创建的 / 超级Agent 创建的」分组，每项目最近 50 条。**路径真相**：
 详情「位置」分别列出「项目目录」与「执行副本」，可打开/复制；Agent 只在执行副本里工作，项目目录不会被自动修改；
 交付物可打开/复制，提示词也明确这一点（`internal/ui/ticketdetail.go:250-286`、`internal/runtime/ux.go:279`、`worker.go:570-582`）。
+需要把成果写回项目时用**「应用到项目」**：只复制记录过的交付物、拒绝越界路径、同名文件先备份 `.bak-<timestamp>`，
+确认框列出目标和文件（`internal/runtime/rc2.go:193-270`、`internal/ui/applyproject.go`）。
 
 **执行**（`internal/ui/execution.go:150-210`）：行内直接给「回答/重试/停止」，各自 pending 与就地错误，
 不用跳总览；`#N` 标签与筛选 tabs（全部/待开工/排队/执行中/等你处理/已结束）。
@@ -67,7 +92,9 @@ Ticket 行/详情 ID 都是 domain ID，显示 `#N`。
 **视觉/可访问性**（`internal/ui/tokens.go:100-145`、`internal/ui/uxsupport.go`）：提高次要文字对比度、
 统一 focus token；可点击行用 `Focusable/Role/Label/Tooltip`；主要目标 28px、图标 16px；
 状态栏去掉版本/rev/Go/SQLite 调试串；窗口用 `StateKey:"main"` 记忆尺寸/位置，最小 1100×720；
-快捷键 ⌘K 搜索、⌘/ 名词表、⌘N 新会话、⌘, 设置。
+快捷键 ⌘K 搜索、⌘/ 名词表、⌘N 新会话、⌘, 设置。**原生菜单** App/文件/编辑/窗口（新建对话、设置、打开主窗口、标准编辑 roles）；
+**系统无障碍偏好** TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent 生效；
+设置›关于显示版本/许可证并可「检查更新」（只查询 GitHub Releases，不下载）。
 
 ## 内置工具（2026-11-04 最终）
 
@@ -111,7 +138,7 @@ Worker 默认拿到这些内置工具；设置›执行可逐个关闭（`plan_t
 # 从源码构建（需要 Go 1.27.3+；产品构建恒 CGO_ENABLED=0）
 CGO_ENABLED=0 go build -tags mygo_noinspector -o zeokeel ./cmd/zeokeel
 
-# 或用发布包（VERSION 目前是 1.0.0-rc.1）
+# 或用发布包（VERSION 为 1.0.0-rc.2，由发布负责人 bump）
 tar -xzf zeokeel-<VERSION>-linux-x86_64.tar.gz   # Linux
 unzip zeokeel-<VERSION>-macos-arm64.zip          # macOS（未签名，右键 → 打开）
 unzip zeokeel-<VERSION>-windows-x86_64.zip       # Windows（zip + install.ps1，无 MSI/NSIS）
@@ -206,9 +233,9 @@ sh scripts/verify-fixes.sh   # 唯一的机械闸门：零 cgo build/test/vet + 
 sh scripts/release-check.sh  # 发布闸门：版本/产物/文档 + 上面的闸门
 ```
 
-**代码最终状态：2026-11-04（P0/P1 修复 + UI/UX 优化轮已落地）。** 本轮文档按最终代码同步；**全量闸门由 Lead 在合并前统一跑**
+**代码最终状态：2026-11-04（P0/P1 修复 + UI/UX 优化轮 + rc.2 功能已落地）。** 本轮文档按最终代码同步；**全量闸门由 Lead 在 bump VERSION 后统一跑**
 （`sh scripts/verify-fixes.sh` + `sh scripts/release-check.sh`），本文不预称"已全绿"。
-上一轮 2026-11-03 的 2×非 race + 1×-race 全绿是历史快照，P0/P1 修复后必须重跑；`VERSION` 仍 `1.0.0-rc.1`，无新 tag。
+上一轮 2026-11-03 的 2×非 race + 1×-race 全绿是历史快照；P0/P1、UX 轮、rc.2 功能后必须重跑。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.2`；本文不预称全绿。
 
 ## 依赖
 
@@ -284,7 +311,23 @@ Agent 在**执行副本**里工作，项目目录不会被自动修改。执行�
 
 **界面字太小/窗口裁切怎么办？**
 设置›部署有界面字号 90/100/110%（`ui.font_scale`，保存后立即生效）；窗口会记住尺寸/位置，
-最小 1100×720。系统级 TextScale/ReduceMotion/高对比尚未接入（见已知限制）。
+最小 1100×720。系统 TextScale 会与 `ui.font_scale` 相乘，ReduceMotion/HighContrast/系统 Accent 也生效。
+  读屏仍取决于 mygo 控件语义，没有自有“屏幕阅读器专用模式”。
+
+**回答能中途停止/继续吗？怎么复制代码？**
+回答是流式到达的；生成中可点「停止生成」，已生成部分会保留并标「已停止生成」。完成后可「复制」；
+代码块/列表/链接按 Markdown 渲染，链接只允许 http(s)。历史在「诊断›对话记录」。
+
+**「应用到项目」会覆盖我的文件吗？**
+会先列出要写的相对路径、目标项目目录与覆盖警告；项目里已有同名文件会先备份为 `.bak-<时间戳>`，
+然后才复制。它只复制任务记录过的交付物；绝对路径/越界路径会被跳过。没有真正“原地执行”，这是显式回写。
+
+**拒绝错了怎么办？**
+收件箱拒绝后 10 秒内可点「撤销」恢复待批；拒绝本身无损（保留 proposal 与时间），同一 Thread 有更新决策后不能再撤销；
+撤销不会建任务/启动执行/发回复。
+
+**怎么检查更新？**
+设置›关于显示版本/许可证；「检查更新」只查询 GitHub Releases API 并显示最新版本/发布页，**不下载、不自动安装**。
 
 **为什么「删除项目」被拒绝？**
 只有当项目没有工单时才会真正删除（项目行+默认策略+路由）；有工单时会拒绝并说明数量。可以重命名项目，历史不受影响。
@@ -302,16 +345,19 @@ Esc 关闭弹层。
 - Windows 只有 zip + `install.ps1`，没有 MSI/NSIS 安装器；CI 只交叉编译与查体积，不产包。
 - **项目**：可新建、重命名、删除（仅空项目；有工单拒绝）；会话不能重命名/删除；每项目会话列表只投影最近 50 条；
   根目录创建时归一为绝对路径并拒绝重复，创建后不能改根目录/类型。
-- **执行语义**：Agent 只在**执行副本**里工作，项目目录不会被自动修改；目前没有“真正在原项目里执行”的同步/合并。
+- **执行语义**：Agent 只在**执行副本**里工作，项目目录不会被自动修改；成果要用「应用到项目」显式回写（带备份/覆盖警告），
+  目前没有真正“在原项目里原地执行”的同步/合并。
 - **IM**：飞书 webhook/媒体下载未实现；DWS 依赖外部 `dws` CLI，真实 CLI 版本/登录流程与真实租户 E2E 未在本机验证；
   Stream 是 bot 模式（需 app key/secret/robot code）；两者都不下载图片/文件。
 - **设置页**：**来源组**用连接向导配置 IM；**评估组**只读（规则/admission/accept mode 不可编辑）；
   没有 Source 实例表，GitHub 仓库/登录仍只能 `-repo/-gh-login`（改设置需重启）。
 - **系统钥匙串未实现**：API Key 明文存 SQLite（0600）；读取侧已做 redaction（`status --json`/Inspect/health detail 不泄密），
-  worker 的 shell 环境已剥离凭证变量。复制/备份数据库时仍请按密钥保管。
-- **可访问性**：已提高对比度、加 focus/标签/工具提示，但**没有**系统 TextScale、ReduceMotion、高对比模式接入。
-- **平台集成**：没有 mygo 原生 app 菜单项（只有窗口内快捷键/托盘「打开/退出」）；没有多窗口；没有自动更新/About 版本检查。
-- **计划/任务可见性**：Worker 有 TaskCreate/Get/Update/List，但面板还没有显示计划/待办的可视化页面。
+  worker 的 shell 环境已剥离凭证变量。复制/备份数据库时仍请按密钥保管；**rc.2 仍是这个状态**。
+- **可访问性**：已提高对比度/焦点/标签，并接入系统 TextScale（×`ui.font_scale`）、ReduceMotion、HighContrast、系统 Accent；
+  没有操作系统级“屏幕阅读器专用模式”，读屏仍取决于 mygo 控件语义。
+- **平台集成**：已有原生 App/文件/编辑/窗口菜单、设置›关于与“检查更新”；**没有多窗口**；
+  **自动更新只检查不下载/不安装**。
+- **计划/任务可见性**：已从 `.zeokeel/plan/*.json` 投影计划卡（执行详情+对话）；没有独立的计划编辑/历史页。
 - 提示词：保存时校验未知变量/占位符/超长，历史每层最近 20 版已记录；面板展示"内置默认值已更新"，但还没有历史列表页。
 - 领域类型 `domain.Thread`/`domain.UserError` 未落地；无 `steer/inject`；`Runner.Resume` 已删除。
 - 没有开机自启/休眠唤醒（交给 systemd/launchd）。

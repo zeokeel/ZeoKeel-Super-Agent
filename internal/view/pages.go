@@ -466,6 +466,8 @@ const (
 	// SettingsWorker is the 模型 group: endpoint, model name, API key. The runtime
 	// publishes it; ModelGroup() is the panel's fallback shape when it does not.
 	SettingsWorker SettingsGroupID = "worker"
+	// SettingsAbout is the 关于 group: version, license, update check.
+	SettingsAbout SettingsGroupID = "about"
 )
 
 // SettingKind is the control a field draws. "fact" is a read-only fact inside
@@ -580,6 +582,8 @@ func SaveEffect(id SettingsGroupID) string {
 		return "热更新：下一次模型调用生效"
 	case SettingsDeploy:
 		return "重启后生效"
+	case SettingsAbout:
+		return "立即生效"
 	}
 	return "保存后生效"
 }
@@ -635,6 +639,10 @@ func RequiredSettingsGroups() []SettingsGroup {
 				"prepare 命令与命令超时",
 				"被禁止的命令（blocked commands）",
 			},
+		},
+		{
+			ID: SettingsAbout, Label: "关于",
+			Note: "版本、许可证与更新检查",
 		},
 		{
 			ID: SettingsPrompt, Label: "提示词",

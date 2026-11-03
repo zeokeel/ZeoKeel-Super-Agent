@@ -132,6 +132,17 @@ var (
 			})
 		})
 	}
+	startStopChat = func(a *App) {
+		a.runOffMain(func() {
+			if streamer, ok := a.cmd.(ChatStreamer); ok && streamer != nil {
+				streamer.StopChat()
+			}
+			a.postToUI(func() {
+				a.chatStopping = false
+				a.toast("已停止生成", toastOK)
+			})
+		})
+	}
 	startOnboardingRootPicker = func(a *App, apply func(string)) {
 		a.runOffMain(func() {
 			paths, err := openFolderDialog(a.win, "选择项目目录")
@@ -156,10 +167,74 @@ var (
 	}
 )
 
+// chatStreaming reports a streaming answer: the published ChatVM flag, or the
+// runtime's own ChatStreaming when it keeps the text outside the VM.
+func (a *App) chatStreaming(chat *view.ChatVM) bool {
+	if chat != nil && chat.Streaming {
+		return true
+	}
+	if streamer, ok := a.cmd.(ChatStreamer); ok && streamer != nil {
+		return streamer.ChatStreaming()
+	}
+	return false
+}
+
+// lastUserMessage is the newest line the person wrote (for 再次发送).
+func lastUserMessage(chat *view.ChatVM) (string, bool) {
+	if chat == nil {
+		return "", false
+	}
+	for i := len(chat.Messages) - 1; i >= 0; i-- {
+		if chat.Messages[i].Role == view.ChatUser {
+			return chat.Messages[i].Text, true
+		}
+	}
+	return "", false
+}
+
 type errNoWorkspaceDispatch struct{}
 
 func (errNoWorkspaceDispatch) Error() string {
 	return "暂时不可用：运行时还没有接入按项目派活"
+}
+
+// RejectUndoer puts a rejected request back into the inbox (runtime:
+// UndoReject(decisionID string) error).
+type RejectUndoer interface {
+	UndoReject(decisionID string) error
+}
+
+var startUndoReject = func(a *App, decisionID string) {
+	a.runOffMain(func() {
+		undoer, ok := a.cmd.(RejectUndoer)
+		var err error
+		if !ok || undoer == nil {
+			err = errNoUndoReject{}
+		} else {
+			err = undoer.UndoReject(decisionID)
+		}
+		a.postToUI(func() {
+			if err != nil {
+				a.toast(err.Error(), toastErr)
+				return
+			}
+			a.toast("已撤销拒绝：这条请求回到收件箱", toastOK)
+		})
+	})
+}
+
+type errNoUndoReject struct{}
+
+func (errNoUndoReject) Error() string {
+	return "暂时不可用：运行时还没有接入撤销拒绝"
+}
+
+// ChatStreamer is the runtime's streaming answer channel: ChatStreaming reports
+// whether one is arriving, StopChat stops it (the runtime then records its
+// "（已停止生成）" note). Runtime signature: StopChat() has no error.
+type ChatStreamer interface {
+	ChatStreaming() bool
+	StopChat()
 }
 
 type errNoTicketRetrier struct{}
@@ -189,11 +264,22 @@ const (
 	toastErr
 )
 
-// toast is one transient line above the composer.
+// toast is one transient line above the composer; an action makes it undoable
+// (已拒绝 · 撤销) for ten seconds.
 type toast struct {
-	text string
-	kind toastKind
-	at   time.Time
+	text        string
+	kind        toastKind
+	at          time.Time
+	actionLabel string
+	action      func()
+}
+
+// toastAction queues a message with one action button (撤销).
+func (a *App) toastAction(text string, kind toastKind, label string, fn func()) {
+	a.toast(text, kind)
+	last := &a.toasts[len(a.toasts)-1]
+	last.actionLabel = label
+	last.action = fn
 }
 
 // toast queues a message; at most three show at once, newest last.
@@ -218,7 +304,11 @@ func (a *App) toastsView(c *mui.Context) {
 	tk := a.tk
 	live := a.toasts[:0]
 	for _, t := range a.toasts {
-		if !t.at.IsZero() && a.now.Sub(t.at) > 6*time.Second {
+		ttl := 10 * time.Second
+		if t.action == nil {
+			ttl = 6 * time.Second
+		}
+		if !t.at.IsZero() && a.now.Sub(t.at) > ttl {
 			continue
 		}
 		live = append(live, t)
@@ -236,6 +326,12 @@ func (a *App) toastsView(c *mui.Context) {
 			AlignItems(mui.Center).Gap(8).Children(func() {
 			dot(c, fg, 6)
 			mui.Text(c, t.text).FontSize(fs(12)).TextColor(fg)
+			if t.action != nil && t.actionLabel != "" {
+				act := t.action
+				if b := mui.Button(c, t.actionLabel).Height(24).FontSize(fs(11)); b.Clicked() {
+					act()
+				}
+			}
 		})
 	}
 }

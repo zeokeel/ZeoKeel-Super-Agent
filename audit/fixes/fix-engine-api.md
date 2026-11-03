@@ -173,3 +173,15 @@ Ticket 创建前再按目标工作区 re-gate（不会因合并扩大授权）�
 `DecPropose`（一条消息一个 proposal，批内不合并），不建 Ticket、不 launch、不自动回复；只有 `Approve(decisionID)`
 创建 Ticket。非 IM 来源（github/local/schedule）行为不变。runtime 侧：收到 Proposal 后 UI 展示待办，Approve 走
 `Persistence.Approve`；不要为 proposal 启动 worker。重启后 proposal 仍可 Approve（Decision.TriggerIDs 重建边）。
+
+
+## rc2：撤销拒绝
+
+```go
+func (e *Engine) UndoReject(decisionID domain.ID) (Outcome, error)   // 别名 RestoreProposal
+func (p *Persistence) UndoReject(decisionID domain.ID) (Outcome, error)
+```
+`Reject` 现在保留 `Decision.Proposal` 并写 `RejectedAt`；`UndoReject` 把经 Reject 的 decision 恢复为 `DecPropose`
+（追加 `undoReject` 审计 reason），不建 Ticket/不 launch/不回复。pending 提案上调用为幂等成功；accept/已建单/
+非拒绝 decision 返回错误；`ErrUndoSuperseded` 表示同 Thread 已有更新 Decision。Restore 由 Persistence 单事务写库，
+重启后仍可 Approve。

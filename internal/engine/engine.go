@@ -34,6 +34,12 @@ var ErrNotRetryable = errors.New("engine: the ticket is not retryable")
 // ErrNotPaused reports a resume when processing is not paused.
 var ErrNotPaused = errors.New("engine: processing is not paused")
 
+// ErrNotRejected reports an undo on a Decision that is not a rejected proposal.
+var ErrNotRejected = errors.New("engine: the decision is not a rejected proposal")
+
+// ErrUndoSuperseded reports an undo blocked by a newer decision on the Thread.
+var ErrUndoSuperseded = errors.New("engine: a newer decision on the thread supersedes this rejection")
+
 // contextBackground is the parent context for one assessor call.
 func contextBackground() context.Context { return context.Background() }
 

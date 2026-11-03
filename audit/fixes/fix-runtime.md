@@ -192,6 +192,17 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 | view 落地填充（Lead 轮4） | fixed | `view.AttentionVM` 已 Publish（`PublishAttention`），Count == `AttentionCount` == `OverviewVM.PersonCount`（测试断言）；`TicketRow.CanStop`（running/queued）与 `TicketDetailVM.ProjectRoot/ExecutionRoot` 已填；`view.Artifact.Path` 改绝对路径（execution copy，`absoluteArtifactPath`，测试 `TestArtifactPathsAreAbsoluteInExecutionCopy`）。cmd 编译断言：ModelTester/WorkspaceDispatcher/AttentionCounter/OnboardingSkipper/OnboardingFinisher/DemoModer/ChannelValidator。 |
 | 验证 | — | 最终：`go build ./...` ok；全仓 `go test ./... -skip Live -count=1` → 27 ok / 0 FAIL；`-race ./internal/runtime ./cmd/zeokeel` ok（39.2s/5.5s，无 DATA RACE）；gofmt/vet 干净。 |
 
+## 4octies. rc2 UX 收尾
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| 流式 SuperAgent 聊天 | fixed | `chatAnswerStreaming` 走 OpenAI 兼容 SSE（`/chat/completions`, stream=true, `httpDoStream` 可注入）；partial 文本发布为 ChatVM 最后一条 assistant（60ms 节流），结束后 `appendChat` 一次并清空；`StopChat()` 取消并在有/无 partial 时都写「（已停止生成）」；新消息入口先 `StopChat` 再处理（Dispatch 在流式阶段释放 commandMu，避免阻塞/可取消）；未配置模型或流首包失败回退确定性回答。测试：partial→final、stop 取消。 |
+| 交付物写回项目 | fixed | `ApplyArtifacts(ticketID) ([]string,error)` 从执行副本复制到 workspace root：仅接受执行副本内相对路径（绝对/../ 跳过），目标已存在先重命名 `<name>.bak-<时间戳>` 再复制；返回项目相对路径；`ArtifactRelPaths` 供确认对话框。测试：复制+备份+跳过不安全路径。 |
+| 计划可见性 | fixed | `PlanTasks(ticketID) []PlanTask{ID,Title,Description,Status,Order}` 读 `<ticketWorkdir>/.zeokeel/plan/*.json`（按数字排序，忽略 highwatermark）；每次 Publish 选择最新有计划的工单发布 `view.PlanVM`（TicketID/Items）；测试读取+publish。 |
+| UndoReject | fixed | engine/persistence `UndoReject` 已由 conf-domain 落地；`Runtime.UndoReject(decisionID) error` 包装并 Publish（提案回到待办）。测试 reject→undo→1 proposal。 |
+| 更新检查 | fixed | `CheckForUpdate(ctx) (latest string, upToDate bool, url string, err error)` 请求 GitHub releases API（仅查询，不下载），`httpDoUpdate` 可注入；`SetVersion/Version` 记录构建版本（cmd 传 ldflags，VERSION 未改）；`ui.UpdateChecker` 编译断言。测试 200/相等版本/500。 |
+| 验证 | — | runtime+cmd build/test 绿；全仓 `go test ./... -skip Live -count=1` 27 ok/0 FAIL；-race 复跑绿；gofmt/vet 干净。 |
+
 ## 5. 跨 scope 待办 / 未完成
 
 1. **engine（conf-domain）**：缺“把 running Assignment 标记 interrupted”的 API。`RecoverAssignments` 目前只能补 note + 新 Assignment，旧 running 记录仍留在 `Ticket.Assignments`（`runtime/recovery.go`；期望 `Engine.InterruptAssignment(ticketID, assignmentID, reason)` 或 `RecoverAssignments` 内建实现）。

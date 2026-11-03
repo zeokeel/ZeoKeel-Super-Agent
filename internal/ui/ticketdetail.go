@@ -92,6 +92,12 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 			})
 		}
 
+		// Plan: what the Agent intends to do, when the runtime publishes one for
+		// this Ticket (or a general "current work" plan).
+		if plan := a.snap.Plan(); plan != nil && (plan.TicketID == "" || plan.TicketID == r.ID) {
+			a.planPanel(c, plan, false)
+		}
+
 		// Origin: where the work came from, in the panel's words.
 		mui.Row(c).Gap(18).AlignItems(mui.Center).Children(func() {
 			detailFact(c, tk, "来源", d.Source)
@@ -101,7 +107,7 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 
 		// Where the work actually happened: the project the person chose and the
 		// per-Ticket copy the Agent works in. The two are different on purpose.
-		a.executionPathSection(c, d)
+		a.executionPathSection(c, r, d)
 
 		// Mandate: why the work may be done, and how far it may go.
 		detailTitle(c, tk, "授权（Mandate）")
@@ -254,7 +260,7 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 // executionPathSection tells the truth about where work happened: the project
 // directory the person chose, and the per-Ticket copy the Agent edits. It never
 // claims the Agent changed the project in place.
-func (a *App) executionPathSection(c *mui.Context, d *view.TicketDetailVM) {
+func (a *App) executionPathSection(c *mui.Context, r view.TicketRow, d *view.TicketDetailVM) {
 	tk := a.tk
 	detailTitle(c, tk, "位置")
 	mui.Text(c, "Agent 在「执行副本」里工作；项目目录不会被直接修改。").
@@ -282,4 +288,16 @@ func (a *App) executionPathSection(c *mui.Context, d *view.TicketDetailVM) {
 	}
 	row("项目目录", d.ProjectRoot)
 	row("执行副本", d.ExecutionRoot)
+	// 应用到项目: copy the deliverables back, after a confirmation.
+	_, wired := a.cmd.(ArtifactApplier)
+	apply := mui.Button(c, "应用到项目").Label("应用 " + view.TicketLabel(r.ID, r.Number) + " 的交付物到项目").
+		Height(26).FontSize(fs(11))
+	if !wired {
+		apply.Disabled(true)
+	} else if apply.Clicked() {
+		a.openApply(r, d)
+	}
+	if !wired {
+		mui.Text(c, "暂时不可用：运行时还没有接入应用到项目").FontSize(fs(10)).TextColor(tk.Amber)
+	}
 }

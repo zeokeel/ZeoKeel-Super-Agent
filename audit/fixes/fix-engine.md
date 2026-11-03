@@ -187,3 +187,17 @@ merged-policy 确定性/最终强度测试仍绿。
 
 **跨 scope 影响**：`cmd/zeokeel/acceptance_test.go` 的 A3/A7/Overview 三个用例仍断言"操作员自己的 IM 消息直接开单"，
 这是被本次产品规则取代的旧行为，需要 runtime/Lead 更新（engine 不编辑 cmd）。
+
+
+## Undo reject（rc2，撤销已拒绝的请求）
+
+- API：`Engine.UndoReject(decisionID domain.ID) (Outcome, error)`（别名 `RestoreProposal`）；`Persistence.UndoReject`（同签名，单事务持久化）。
+- 表示（最不侵入）：`Reject` 不再清空 `Decision.Proposal`，只把 Kind 置 ignore、Reasons=`rejected_by_person`、
+  记录 `Decision.RejectedAt`；因此 Undo 不需要重跑 Eval、不丢提案内容。JSON 兼容（新字段 omitempty）。
+- 语义：只接受"经 Reject 的 ignore"（pending 提案→幂等成功；accept 或已建 Ticket→error；其余→`ErrNotRejected`）；
+  同 Thread 上出现 `At/RejectedAt` 晚于 `RejectedAt` 的更新 Decision → `ErrUndoSuperseded`；Thread 为空则不设上限。
+  恢复后 Kind=propose、追加 reason `undoReject`（审计）、**不建 Ticket/不 launch/不回复**；`Approve` 仍是唯一建单路径。
+- 测试：`TestUndoRejectRestoresProposal`、`TestUndoRejectIsIdempotentAndAudited`、`TestUndoRejectSupersededByNewerDecision`、
+  `TestUndoRejectRejectsNonRejection`、`TestUndoRejectSurvivesRestart`（拒绝→重启→undo→再重启→proposal 仍在→Approve 建单）。
+- 验证：engine/domain/assess 测试 + engine `-race` 绿；`go build ./...` 绿；runtime/ui/cmd 测试绿（runtime 首次全量有一次
+  已知时序 flake，重跑绿）。

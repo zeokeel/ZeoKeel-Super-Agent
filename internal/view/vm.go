@@ -273,6 +273,8 @@ type Snapshot struct {
 	chat atomic.Pointer[ChatVM]
 	// attention is the unified inbox shard.
 	attention atomic.Pointer[AttentionVM]
+	// plan is the running task's plan shard.
+	plan atomic.Pointer[PlanVM]
 	// onboarding is the first-run wizard; nil means "this install is set up".
 	onboarding atomic.Pointer[OnboardingVM]
 	artifacts  atomic.Pointer[ArtifactVM]
@@ -366,6 +368,15 @@ func (s *Snapshot) PublishWorkspaces(vm *WorkspacePanelVM) {
 // publish. The sidebar then says it waits instead of drawing an empty group as
 // if no workspace existed.
 func (s *Snapshot) Workspaces() *WorkspacePanelVM { return s.workspaces.Load() }
+
+// PublishPlan hands the panel the running task's plan.
+func (s *Snapshot) PublishPlan(vm *PlanVM) {
+	s.plan.Store(vm)
+	s.bump()
+}
+
+// Plan returns the last published plan, or nil when nothing is planned.
+func (s *Snapshot) Plan() *PlanVM { return s.plan.Load() }
 
 // PublishAttention hands the panel the unified attention inbox.
 func (s *Snapshot) PublishAttention(vm *AttentionVM) {

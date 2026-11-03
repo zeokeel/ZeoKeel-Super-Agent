@@ -253,6 +253,7 @@ func realMain() int {
 		rt.SetStateDir(*stateDir)
 	}
 	rt.EnableWorker(worker)
+	rt.SetVersion(version)
 	// P0-A: model settings saved in the 模型 group take effect at startup too.
 	rt.ApplyModelSettings()
 	// A configured install records the marker `zeokeel status` reads. Status never

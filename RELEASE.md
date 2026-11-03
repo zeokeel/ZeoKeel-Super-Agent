@@ -1,7 +1,9 @@
 # 1.0.0 发布清单
 
+**当前候选：`1.0.0-rc.2`（2026-11-04）。** 发布说明：[RELEASE-NOTES-v1.0.0-rc.2.md](RELEASE-NOTES-v1.0.0-rc.2.md)。
+
 一条不过就不发 1.0.0。每项都要有可复现的证据（测试名、命令输出或文件路径）。
-**本清单按 2026-11-03 Wave 2 之后的代码重写；未验证/未实现的不勾，不用"完成了"装饰。**
+**本清单按 2026-11-04 rc.2 代码重写；未验证/未实现的不勾，不用"完成了"装饰。**
 
 闸门命令（本地与 CI 同一个）：
 
@@ -12,7 +14,7 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 
 ## A. 功能完整（对照测试/代码，逐条可复现）
 
-> **本清单对应 2026-11-04 最终代码（P0/P1 修复波之后）。**
+> **本清单对应 2026-11-04 最终代码（P0/P1 修复波 + UI/UX 轮 + rc.2 之后）。**
 > 2026-11-03 20:53 的历史快照曾全绿（2×非 race + 1×-race + release-check 16/0/6），但修复波改了大量并发/IM/UI 代码，
 > **不能拿旧快照当本轮证据**：由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` 与 `sh scripts/release-check.sh` 后再勾 C/B。
 > 以下 A 组行为勾选按最终代码；未能本机验证的仍不勾。
@@ -94,11 +96,12 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
    （`store/redact.go`、`inspect.go`），worker 环境已剥离凭证。真实 IM 凭据 E2E 仍需环境。
 5. **分发**：`.dmg`/deb/PKGBUILD/NSIS/自动更新；CI 出包与签名公证。
 6. **运维**：开机自启/休眠唤醒（委托 systemd/launchd）；`--respect-stop` 由 stop 标记 + 巡检承担（无独立 flag）。
-7. **平台/UX 收尾**：mygo 原生 app 菜单项；系统 TextScale / ReduceMotion / 高对比；计划/任务在面板的可视化；
-   真正在原项目执行（当前为执行副本，已在 UI/提示词披露）；多窗口；自动更新/About 版本检查。
+7. **平台/UX 收尾**：真正在原项目执行（当前为执行副本 + 显式「应用到项目」，已在 UI/提示词披露）；
+   多窗口；自动更新只检查不下载/不安装（About 检查更新已实现）；真实飞书/DWS 租户 E2E 需环境。
+   ~~mygo 原生 app 菜单 / 系统 TextScale·ReduceMotion·HighContrast / 计划可视化~~ 已在 rc.2 实现。
 ## G. rc.1 的签发语义（不要误读）
 
-`VERSION=1.0.0-rc.1` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
+`VERSION=1.0.0-rc.2` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
 但 F 组的产品面缺口未完成。F 组全部完成、E 组最后一项通过后，才由发布负责人把 `VERSION` 改为 `1.0.0`。
 
 ## H. Round 2/3 + 修复波 + UI/UX 优化轮增量（2026-11-04，不新增 release tag）
@@ -145,7 +148,32 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 - [x] **视觉/可访问性**：对比度 token、focus token、Focusable/Role/Label/Tooltip、28px 目标/16px 图标、
   状态栏去 debug、`StateKey:"main"`+最小 1100×720、⌘N/⌘, 快捷键（`internal/ui/tokens.go:100-145`、
   `internal/ui/chrome.go:143-160`、`internal/ui/app.go:320-330,441-455`）
-- [ ] **明确未做（F-7）**：mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划/任务可视化、真正原项目执行、
-  多窗口、自动更新/About（见 README「已知限制」与 F 组第 7 条）
+- [ ] **明确未做（F-7）**：真正原项目执行、系统钥匙串、多窗口、自动更新下载/安装、真实飞书/DWS 租户 E2E
+  （rc.2 已补原生菜单/系统无障碍偏好/计划/About；见 I 组与 README「已知限制」）
 - [ ] **最终全量闸门未在本轮代码上运行**：由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` 与
-  `sh scripts/release-check.sh`；本文不预称全绿。`VERSION` 仍 `1.0.0-rc.1`，无新 tag。
+  `sh scripts/release-check.sh`；本组不预称全绿。`VERSION` 在 I 组（rc.2）由发布负责人 bump。
+
+## I. rc.2 增量（2026-11-04，发布候选）
+
+> 在 UI/UX 轮之后补齐交互审计剩余项；`VERSION` 由发布负责人 bump 为 `1.0.0-rc.2`。逐条有代码证据，不预称测试全绿。
+
+- [x] 聊天流式输出：SSE 增量、60ms 节流、打字光标、停止生成（部分保留）、最终只追加一次
+  （`internal/runtime/rc2.go:24-190`、`internal/ui/composer.go:241-305`）
+- [x] Markdown 渲染（标题/粗斜体/行内代码/围栏代码/列表/http(s) 链接；不解析 HTML）
+  （`internal/ui/markdown.go:19-180`、`internal/ui/chat.go:75`）
+- [x] 计划/待办可见：`.zeokeel/plan/*.json` → PlanVM；执行详情+对话任务卡；状态计数
+  （`internal/view/plan.go:1-51`、`internal/runtime/rc2.go:302-433`、`internal/ui/planpanel.go:29-85`）
+- [x] 应用到项目：只复制记录交付物、拒绝越界、同名 `.bak-<timestamp>` 备份、返回相对路径、UI 确认列文件/目标/覆盖警告
+  （`internal/runtime/rc2.go:193-270`、`internal/ui/applyproject.go:1-199`）
+- [x] 拒绝无损 + 撤销：保留 proposal/RejectedAt；10s toast；幂等、superseded 拒绝、重启安全；不建单/不启动/不回复
+  （`internal/engine/lifecycle.go:723-815`、`internal/engine/persist.go:835-860`、`internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`）
+- [x] 原生应用菜单 App/文件/编辑/窗口；新建对话 ⌘N、设置 ⌘,、打开主窗口、标准编辑 roles
+  （`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`）
+- [x] 系统无障碍偏好：TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent
+  （`internal/ui/prefs.go:1-61`、`internal/ui/app.go:441-462`、`internal/ui/stream.go:59`）
+- [x] 设置›关于：版本/许可证；检查更新只查询 GitHub Releases API（不下载），显示最新版本/发布页
+  （`internal/ui/about.go:1-117`、`internal/runtime/rc2.go:355-415`、`internal/view/pages.go:469-470,644`）
+- [ ] **rc.2 明确未做**：真正在原项目执行（执行副本 + apply-back）、系统钥匙串、多窗口、自动更新下载/安装、
+  真实飞书/DWS 租户 E2E；打包仍无 `.dmg`/deb/安装器
+- [ ] **最终闸门**：Lead 在 bump VERSION 后跑 `sh scripts/verify-fixes.sh` 与 `sh scripts/release-check.sh`，
+  再 tag `v1.0.0-rc.2`；本文不预称全绿。

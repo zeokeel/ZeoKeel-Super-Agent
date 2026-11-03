@@ -41,6 +41,10 @@ type ChatMessage struct {
 type ChatVM struct {
 	Messages  []ChatMessage
 	UpdatedAt time.Time
+	// Streaming is true while the newest assistant line is still arriving: the
+	// panel draws a typing cursor and offers 停止 instead of pretending the
+	// answer is complete.
+	Streaming bool
 }
 
 // Tail returns the last n messages, oldest first. n <= 0 returns none.

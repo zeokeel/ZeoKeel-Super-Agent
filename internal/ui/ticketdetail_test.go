@@ -15,6 +15,7 @@ import (
 func ticketDetailFixture(now time.Time) *view.TicketDetailVM {
 	return &view.TicketDetailVM{
 		ID: "tk-42", Number: 42, Title: "修改登录超时配置", Workspace: "acme/webapp",
+		ProjectRoot: "/tmp/project", ExecutionRoot: "/tmp/project/.zeokeel/work/ticket-42",
 		Stage: view.StageWorking, StageLabel: "执行中", Tone: view.ToneInfo,
 		Source: "GitHub · Issue #42", Thread: "th-42", Actor: "@lin",
 		Detail:       "step 7 · 正在补 SessionTimeout 默认值",

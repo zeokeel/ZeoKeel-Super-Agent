@@ -198,7 +198,8 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 1. **审批优先（首要注意）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**一个待批准项**；
    到**收件箱**（或总览旧「待你批准」）逐条 Approve/Reject；收件箱是唯一「待你决定 N」。**批准才建 Ticket 并启动 Worker；拒绝什么都不留**；
    来源页显示「待审批 N」。重复投递只产生一个待批项。没有"IM 消息自动开工"的路径（除非部署显式打开
-   Policy 的 `AutoApproveIM`，默认关闭）。
+   Policy 的 `AutoApproveIM`，默认关闭）。拒绝无损；收件箱拒绝后 10 秒内可「撤销」恢复待批
+   （不建单/不启动/不回复；同一 Thread 有更新决策后不可撤销）。
 2. **启用/停用（三态）**：设置›来源每渠道有开关。显式 1/0 优先；没写过开关时按凭据/flags 推导；
    flag-only 部署由启动 bootstrap 补写启用。禁用=停止监听、来源"未启用"、health 不假装在线。
    保存后只重启 enable/transport/凭据/self/profile 变化的渠道（`internal/runtime/im.go:345-470`）。
@@ -239,6 +240,22 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - **cursor**：per-channel+transport 命名空间；旧 `im.cursor.<channel>` 会被读取一次以兼容升级；切换 transport 清 cursor。
 - **secret**：设置页不回显（留空=保留）；`status --json`/Inspect/health detail 的 secret 已 redaction。
 
+## 6.12 rc.2 新 UI 操作（流式 / 计划 / 应用回写 / 更新）
+
+- **流式聊天**：回答增量到达（光标）；「停止生成」取消并保留已生成部分（记「已停止生成」）；最终文本只落一次。
+  聊天/历史按 Markdown 渲染，链接只允许 http(s)（外部浏览器打开）。
+- **计划/待办**：执行详情与对话任务卡显示 `.zeokeel/plan/*.json` 的步骤/状态；卡片计数“x/y 完成 · n 进行中 · m 需要你”。
+- **应用到项目**：执行详情→「应用到项目」；确认框列出目标目录、相对路径与覆盖警告；已存在文件先备份
+  `.bak-<timestamp>`；越界/绝对路径跳过；不自动执行原地合并。
+- **撤销拒绝**：收件箱拒绝后 10 秒内撤销；超时/同 Thread 新决策后不可撤销。
+- **原生菜单**：App/文件/编辑/窗口；⌘N 新建对话、⌘, 设置、打开主窗口；编辑菜单含标准复制/粘贴/全选。
+- **无障碍偏好**：系统 TextScale 与 `ui.font_scale` 相乘；ReduceMotion 关掉平滑动画；HighContrast 强化边框/文字；
+  系统 Accent 覆盖品牌色。
+- **关于/更新**：设置›关于显示版本/许可证；「检查更新」只 GET GitHub Releases API（15s，不下载），
+  只显示最新版本与发布页 HTML URL；网络失败会显示错误，不假装已检查。
+- **排障新增**：流式不动看模型端点/HTTP/SSE 错误；停止生成卡住看 runtime；应用失败看目标权限/备份是否成功；
+  更新检查 403/限流是 GitHub API 侧问题。
+
 ## 7. 外部巡检（006 小时检查的等价物）
 
 `scripts/watchdog-check.sh`：
@@ -260,7 +277,8 @@ ZEOKEEL_BIN=/usr/local/bin/zeokeel scripts/watchdog-check.sh --restart-cmd "syst
   官方 Stream 是 bot 模式（app key/secret/robot）。
 - 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
 - `ui.font_scale` 已投影并可在设置›部署编辑（0.9/1.0/1.1，保存立即生效）。
-- UX 未做：mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划/任务可视化、真正原项目执行、多窗口、自动更新。
+- rc.2 未做：真正原项目执行（当前执行副本+显式 apply-back）、系统钥匙串、多窗口、自动更新只检查不下载、
+  真实飞书/DWS 租户 E2E；打包仍无 .dmg/deb/安装器。
 - 升级迁移已接线（`LoadSettings` 的 `migrateSettings` + schema stamp）；历史旧文件仍按读取层兼容。
 - 监控指标导出（Prometheus 等）：没有；只有 `status --json` 与日志。
 - 设置页规则/admission/accept mode 与 GitHub Source 实例：不可编辑（只读事实或 CLI flag）。

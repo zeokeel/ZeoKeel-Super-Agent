@@ -523,4 +523,47 @@ $ sh scripts/check-nocgo.sh                                             → PASS
 
 未做（明确推迟）：mygo 应用菜单项（窗口快捷键已有）、系统 TextScale/ReduceMotion/高对比主题（mygo Preferences 已可见，UI 尚未消费）、计划/任务可见性（待 runtime 投影）。
 
-runtime 待办：发布 `AttentionVM`（items 与 AttentionCount/Overview.PersonCount 保持一致）；`TicketActions`/`ExecutionPaths` 对应的 view 字段已就位（CanStop/ProjectRoot/ExecutionRoot/Artifact.Path）。IM `ChannelValidator` 适配器由 conf-arch/nih-runtime 提供，UI 已按契约探测。
+runtime 已发布 `AttentionVM`（items 与 AttentionCount/Overview.PersonCount 保持一致，runtime 测试断言）；收件箱已消费，仅在投影为空时回退 Overview 列表（UI 测试 `TestAttentionInboxConsumesPublishedProjection`）。`TicketActions`/`ExecutionPaths` 对应的 view 字段已就位（CanStop/ProjectRoot/ExecutionRoot/Artifact.Path）。IM `ChannelValidator` 适配器由 conf-arch/nih-runtime 提供，UI 已按契约探测。
+
+---
+
+# Round 5（rc2：流式/Markdown 聊天、计划面板、应用到项目、撤销拒绝、菜单、系统可达性、关于/更新）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime/cmd/store 改动，无 `go.mod`，无 commit。
+
+## 已完成
+
+1. **流式 + Markdown 聊天**：`renderMarkdown`（`internal/ui/markdown.go`）支持标题、粗体/斜体、行内 code、围栏代码块（mono + CodeBg）、无序/有序列表、链接（`Shell.OpenExternal` seam，只接受 http(s)）、换行；无 HTML。`ChatVM.Streaming` 存在时最新 assistant 行追加 `▍` 光标（`对话记录` 页与总览对话卡都走 Markdown），并出现「停止生成」（可选 `ChatStopper{StopChat() error}`，未接线则禁用 + 明说）；非流式时提供「再次发送上一条」。每条消息可复制。新增 `markdown`/streaming 测试与 link-open 测试。
+2. **计划/待办面板**：新增 `view.PlanVM/PlanItem`（pending/running/done/blocked/failed、Counts()）+ `Snapshot.PublishPlan/Plan()`；执行详情内渲染「计划与待办」（状态图标 + 完成/进行中/需要你摘要 + 空态"还没有计划"），`对话记录` 页顶部显示同一计划的任务卡（compact，最多 4 项 + 剩余计数）。viewtest 新增 `DemoPlan`。
+3. **应用到项目**：可选 `ApplyToProject{ApplyArtifacts(ticketID) ([]string,error)}`；详情「应用到项目」先弹确认（目标项目目录 + 文件列表/路径 + "会被覆盖" 警告 + 打开目标目录），确认后 off-frame 调用，pending/错误/成功 toast；未接线按钮禁用并明说。保留 项目目录/执行副本 的打开与复制。
+4. **撤销拒绝**：可选 `UndoReject{UndoReject(decisionID) error}`；收件箱拒绝成功后 toast 带 10s「撤销」（真实调用后才显示；未接线不出现假按钮），撤销成功 toast 回收入件箱。
+5. **原生应用菜单**（`internal/ui/menu.go`）：App（About/Hide/Quit）、文件（新建对话 ⌘N、设置… ⌘,、打开主窗口）、编辑（Undo/Redo/Cut/Copy/Paste/SelectAll 标准角色）、窗口（最小化/Zoom）；`Run` 里 `mygo.App.SetMenu`，回调主线程并 Invalidate；窗口内快捷键保留。
+6. **系统可达性偏好**（`internal/ui/prefs.go`）：读取 `mygo.Theme.Preferences`（seam 便于测试）——字号 = OS TextScale × ui.font_scale（clamp 0.8–1.4）；ReduceMotion 时关闭消息流平滑滚动；HighContrast 时边框/次要文字提升到正文强度；系统 Accent 可用时覆盖品牌 accent（品牌色为兜底）。测试用 fake prefs 覆盖 4 项。
+7. **关于/更新**：`view.SettingsAbout` + `关于` 设置组显示版本/许可证（MIT）；`检查更新` 走可选 `UpdateChecker{CheckForUpdate(ctx) (latest, upToDate, url, err)}`：已是最新/有新版本+打开发布页（Shell seam）/错误；未接线禁用并明说。测试覆盖 up-to-date、newer、unwired。
+8. 测试：新增 `round5_test.go`（Markdown、流式光标/停止、计划详情/聊天卡/空态、应用到项目（含未接线）、拒绝撤销（含未接线）、系统偏好、关于/更新）；既有 ui/view 测试全部保持绿。
+
+## 结果
+
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/... -count=1  → ok
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...            → 干净
+$ gofmt -l internal/ui internal/view                                    → 空
+$ CGO_ENABLED=0 go build ./...                                          → OK
+$ sh scripts/check-nocgo.sh                                             → PASS (zero cgo)
+```
+
+## 未完成 / 待 runtime
+
+- `view.AttentionVM` 已发布并被收件箱消费（runtime 已补 `PublishAttention`）；`PlanVM`、`ChatVM.Streaming`、`ApplyToProject`、`UndoReject`、`UpdateChecker` 均需 runtime 端适配器（UI 已按可选接口探测，缺失即诚实禁用）。
+- macOS 菜单的角色在前端由 mygo 处理；headless 测试未覆盖真实菜单渲染（只编译级）。
+- 更新检查的"最新版本号比较/协议"由 runtime/后端决定，UI 只显示其结果。
+
+## Round 5 addendum（rc2 后端接口对齐）
+
+- **ChatStreamer**（替代旧 ChatStopper）：`interface{ ChatStreaming() bool; StopChat() }`（与 runtime 的 `StopChat()` 无返回值一致）。UI 以 `ChatVM.Streaming || ChatStreaming()` 判断流式：显示 ▍ 光标与「停止生成」；点击 off-frame 调 `StopChat()`，toast「已停止生成」，runtime 追加「（已停止生成）」note；非流式才显示「再次发送上一条」。新消息取消旧流由 runtime 负责，UI 无需额外处理。
+- **ArtifactApplier**：`interface{ ApplyArtifacts(ticketID string) ([]string,error); ArtifactRelPaths(ticketID string) []string }`。确认弹窗打开时 off-frame 读取 `ArtifactRelPaths` 并列出将写入的相对路径（无时回退 artifact 路径/标题），确认后 off-frame `ApplyArtifacts`，按返回数量 toast「已应用 N 个文件」；未接线禁用 + 明说。runtime 的备份（`.bak-<ts>`）/不安全路径跳过是后端行为，UI 只展示结果数量。
+- **RejectUndoer**：`interface{ UndoReject(decisionID string) error }`；收件箱拒绝成功后仅当 cmd 实现它才显示 10s「撤销」。
+- **UpdateChecker**：`CheckForUpdate(ctx) (latest string, upToDate bool, url string, err error)` 与 runtime 完全一致；新增 **VersionReporter**`{ Version() string }`，关于页优先显示 runtime 版本（否则用 ui.Version）。
+- **模型组**：`view.SettingsWorker`（"worker"，label 模型）已是 RequiredSettingsGroups 的成员；当前静态组共 **7** 个：worker、source（连接）、eval、execution、about、prompt、deploy（people 由 runtime 发布，非静态骨架）。`dingtalk_pause_listen_on_send` 已由 runtime 发布，UI 卡片/向导读取并保存。
+- Snapshot `Plan()` 消费 runtime 发布的 PlanVM（详情 + 对话页任务卡）；`AttentionVM` 已由 runtime 发布（`runtime.Publish → snap.PublishAttention`），收件箱优先消费它（含 stop 动作），仅在为空时回退 Overview 列表。
+- 测试仍全绿：`go test ./internal/ui/... ./internal/view/...`、vet、gofmt、build。

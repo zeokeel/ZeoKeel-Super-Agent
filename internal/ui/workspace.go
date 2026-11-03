@@ -161,7 +161,7 @@ func (a *App) workspaceKind() (id, label string) {
 
 // viewScale reads the panel's text scale from the ui.font_scale setting (0.9 /
 // 1.0 / 1.1 today), clamped so a bad value cannot make the panel unusable.
-func (a *App) viewScale() float32 {
+func (a *App) settingViewScale() float32 {
 	vm := a.snap.Settings()
 	if v, ok := vm.FieldValue("ui.font_scale"); ok {
 		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 32); err == nil {

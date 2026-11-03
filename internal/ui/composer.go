@@ -235,10 +235,15 @@ func (a *App) chatPage(c *mui.Context) {
 			})
 			return
 		}
+		if plan := a.snap.Plan(); plan != nil && plan.TicketID != "" {
+			a.planPanel(c, plan, true)
+		}
+		streaming := a.chatStreaming(chat)
+		lastIdx := len(chat.Messages) - 1
 		mui.Scroll(c).Grow(1).Children(func() {
 			mui.Column(c).Gap(8).Children(func() {
-				for _, m := range chat.Messages {
-					m := m
+				for i, m := range chat.Messages {
+					i, m := i, m
 					card(c, tk, 12, func() {
 						mui.Row(c).Gap(8).AlignItems(mui.Start).Children(func() {
 							role := "你"
@@ -252,7 +257,19 @@ func (a *App) chatPage(c *mui.Context) {
 								fg = tk.Red
 							}
 							mui.Text(c, role).FontSize(fs(11)).Bold().Width(64).Shrink(0).TextColor(fg)
-							mui.Text(c, m.Text).FontSize(fs(13)).Grow(1).TextColor(tk.Text)
+							mui.Column(c).Grow(1).Children(func() {
+								if m.Role == view.ChatAssistant || m.Role == view.ChatSystem {
+									// Streamed answers render as Markdown while they arrive;
+									// the cursor says "still writing".
+									if streaming && i == lastIdx {
+										a.renderMarkdown(c, m.Text+" ▍", 13)
+									} else {
+										a.renderMarkdown(c, m.Text, 13)
+									}
+								} else {
+									mui.Text(c, m.Text).FontSize(fs(13)).TextColor(tk.Text)
+								}
+							})
 							if cp := mui.Button(c, "复制").Height(22).FontSize(fs(10)); cp.Clicked() {
 								a.copyValue(m.Text, "这条对话")
 							}
@@ -261,11 +278,29 @@ func (a *App) chatPage(c *mui.Context) {
 				}
 			})
 		})
-		// The last thing the person asked can be sent again when a call failed.
+		// While the answer streams: 停止. Afterwards: send the last request again.
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			if last, ok := chat.Last(); ok && last.Role == view.ChatUser {
+			if streaming {
+				_, wired := a.cmd.(ChatStreamer)
+				label := "停止生成"
+				if a.chatStopping {
+					label = "停止中…"
+				}
+				stop := mui.Button(c, label).Label(label).Height(28).FontSize(fs(12))
+				if !wired || a.chatStopping {
+					stop.Disabled(true)
+				} else if stop.Clicked() {
+					a.chatStopping = true
+					startStopChat(a)
+				}
+				if !wired {
+					mui.Text(c, "暂时不可用：运行时还没有接入停止生成").
+						FontSize(fs(10)).TextColor(tk.Amber)
+				}
+			}
+			if lastUser, ok := lastUserMessage(chat); ok {
 				if again := mui.Button(c, "再次发送上一条").Label("再次发送上一条").Height(26); again.Clicked() {
-					a.draft = last.Text
+					a.draft = lastUser
 					a.submit()
 				}
 			}

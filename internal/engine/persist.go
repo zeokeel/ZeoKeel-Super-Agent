@@ -831,3 +831,31 @@ func (p *Persistence) MarkUnrelated(ticketID domain.ID, thread, reason string) e
 func (p *Persistence) InterruptAssignment(ticketID domain.ID) error {
 	return p.commitTicket(ticketID, func() error { return p.e.InterruptAssignment(ticketID) })
 }
+
+// UndoReject restores a rejected proposal and persists the change in one
+// transaction, so the restored pending approval survives a restart and can still
+// be approved.
+func (p *Persistence) UndoReject(decisionID domain.ID) (Outcome, error) {
+	out, err := p.e.UndoReject(decisionID)
+	if err != nil {
+		// A refused undo changes nothing; do not reload over the caller's error.
+		return Outcome{}, err
+	}
+	if cerr := p.commit(func() error {
+		p.e.mu.Lock()
+		defer p.e.mu.Unlock()
+		dec, ok := p.e.decisions[decisionID]
+		if !ok {
+			return fmt.Errorf("engine: persist: no decision %q", decisionID)
+		}
+		return p.st.PutDecision(dec)
+	}); cerr != nil {
+		return Outcome{}, cerr
+	}
+	return out, nil
+}
+
+// RestoreProposal is the readable alias of UndoReject.
+func (p *Persistence) RestoreProposal(decisionID domain.ID) (Outcome, error) {
+	return p.UndoReject(decisionID)
+}

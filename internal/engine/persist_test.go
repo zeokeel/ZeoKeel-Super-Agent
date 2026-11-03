@@ -240,3 +240,50 @@ func TestIMProposalsSurviveRestart(t *testing.T) {
 		t.Fatalf("one approval must remain pending, got %d", len(e2.Proposals()))
 	}
 }
+
+// A rejection can be undone across a restart: the proposal content, the rejection
+// instant and the restored kind all live in the decision row.
+func TestUndoRejectSurvivesRestart(t *testing.T) {
+	st := openTestStore(t)
+	_, p1, _ := restart(t, st)
+	if err := p1.Register(repoWS("ws_web"), imPolicy()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p1.Receive(imTrigger("urr1", "ding", "chat-urr", "webapp: change the timeout")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p1.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(p1.Engine().Proposals()); got != 1 {
+		t.Fatalf("want one proposal, got %d", got)
+	}
+	id := p1.Engine().Proposals()[0].ID
+	if err := p1.Reject(id, "later"); err != nil {
+		t.Fatal(err)
+	}
+	// Restart after the rejection.
+	e2, p2, _ := restart(t, st)
+	if len(e2.Proposals()) != 0 {
+		t.Fatal("the rejection must survive the restart")
+	}
+	out, err := p2.UndoReject(id)
+	if err != nil {
+		t.Fatalf("undo after restart: %v", err)
+	}
+	if !out.Proposal || out.Ticket != "" {
+		t.Fatalf("restart undo returned %+v", out)
+	}
+	// The restored proposal survives another restart and can be approved.
+	e3, p3, _ := restart(t, st)
+	ps := e3.Proposals()
+	if len(ps) != 1 || ps[0].ID != id {
+		t.Fatalf("the restored proposal must survive a restart: %+v", ps)
+	}
+	if _, err := p3.Approve(id); err != nil {
+		t.Fatalf("approve restored proposal: %v", err)
+	}
+	if len(e3.AllTickets()) != 1 {
+		t.Fatalf("approve must create one ticket, got %d", len(e3.AllTickets()))
+	}
+}

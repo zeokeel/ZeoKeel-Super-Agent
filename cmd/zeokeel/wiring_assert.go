@@ -41,3 +41,14 @@ var (
 	_ ui.OnboardingSkipper   = (*runtime.Runtime)(nil)
 	_ ui.DemoModer           = (*runtime.Runtime)(nil)
 )
+
+// rc2: About/设置 的更新检查（仅查询，不下载）。
+var _ ui.UpdateChecker = (*runtime.Runtime)(nil)
+
+// rc2 UI optional capabilities (streaming stop / apply-back / undo / version).
+var (
+	_ ui.ChatStreamer    = (*runtime.Runtime)(nil)
+	_ ui.ArtifactApplier = (*runtime.Runtime)(nil)
+	_ ui.RejectUndoer    = (*runtime.Runtime)(nil)
+	_ ui.VersionReporter = (*runtime.Runtime)(nil)
+)

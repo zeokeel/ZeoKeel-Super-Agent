@@ -36,6 +36,14 @@ func (r *Runtime) chatHistory() []view.ChatMessage {
 
 func (r *Runtime) chatVM() *view.ChatVM {
 	msgs := r.chatHistory()
+	r.mu.Lock()
+	partial := r.chatPartial
+	r.mu.Unlock()
+	if strings.TrimSpace(partial) != "" {
+		// The streaming answer is a partial assistant message; the final full text
+		// replaces it when the stream finishes.
+		msgs = append(msgs, view.ChatMessage{Role: view.ChatAssistant, Kind: view.ChatAnswer, Text: partial, At: r.clock()})
+	}
 	return &view.ChatVM{Messages: msgs, UpdatedAt: r.clock()}
 }
 

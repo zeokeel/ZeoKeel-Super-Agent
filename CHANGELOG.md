@@ -1,7 +1,33 @@
 # Changelog
 
 本文件记录用户可见的变化。版本号遵循语义化版本；1.0.0 之前的 `-rc.N` / `-dev` 后缀表示
-发布清单（RELEASE.md）尚未全部通过——`1.0.0-rc.1` 不表示功能完成。
+发布清单（RELEASE.md）尚未全部通过——`1.0.0-rc.N` 不表示功能完成。
+
+## [1.0.0-rc.2] — 发布候选（2026-11-04）
+
+rc.2 在修复波 + UI/UX 优化轮之上补齐交互审计剩余项。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.2`；
+发布说明见 [RELEASE-NOTES-v1.0.0-rc.2.md](RELEASE-NOTES-v1.0.0-rc.2.md)。**仍不预称闸门全绿**，由 Lead 在 bump 后重跑。
+
+- **聊天流式输出 + 停止生成**：OpenAI 兼容 SSE 客户端；增量文本 60ms 节流发布，打字光标；`停止生成` 取消
+  并保留已生成部分（标「已停止生成」）；最终文本只追加一次，不重复（`internal/runtime/rc2.go:24-190`、`internal/ui/composer.go:241-305`）。
+- **Markdown 渲染**：标题/粗体/斜体/行内代码/围栏代码块/有序/无序列表/http(s) 链接；不解释 HTML；
+  链接用系统浏览器打开（`internal/ui/markdown.go:19-180`、`internal/ui/chat.go:75`）。
+- **计划/待办可见**：`.zeokeel/plan/*.json` → `view.PlanVM`；执行详情与对话任务卡显示步骤/状态/计数
+  （`internal/view/plan.go:1-51`、`internal/runtime/rc2.go:302-433`、`internal/ui/planpanel.go:29-85`、`internal/ui/ticketdetail.go:97-98`）。
+- **应用到项目**：只复制记录过的交付物；拒绝绝对/越界路径；同名文件先备份 `.bak-<timestamp>`；返回相对路径；
+  UI 确认列出目标/文件/覆盖警告（`internal/runtime/rc2.go:193-270`、`internal/ui/applyproject.go:1-199`）。
+- **撤销拒绝**：拒绝无损（保留 proposal + `RejectedAt`）；10s 内可恢复待批（幂等；同一 Thread 有更新决策则拒绝；
+  重启安全）；不建 Ticket/不启动/不回复（`internal/engine/lifecycle.go:723-815`、`internal/engine/persist.go:835-860`、
+  `internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`）。
+- **原生应用菜单**：App/文件/编辑/窗口；新建对话 ⌘N、设置 ⌘,、打开主窗口、标准编辑 roles
+  （`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`）。
+- **系统无障碍偏好**：TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent
+  （`internal/ui/prefs.go:1-61`、`internal/ui/app.go:441-462`、`internal/ui/stream.go:59`）。
+- **关于/更新检查**：设置›关于显示版本/许可证；「检查更新」只查询 GitHub Releases API（不下载），
+  显示最新版本/发布页（`internal/ui/about.go:1-117`、`internal/runtime/rc2.go:355-415`）。
+
+**rc.2 诚实限制**：真正在原项目执行未实现（执行副本 + 显式 apply-back）；系统钥匙串未实现（密钥 SQLite 0600）；
+多窗口未实现；自动更新只检查不下载；真实飞书/DWS 租户 E2E 未验证；打包仍只有 tar/zip（无 `.dmg`/deb/安装器）。
 
 ## [1.0.0-rc.1] — 发布候选（2026-11-03，Wave 2 后）
 

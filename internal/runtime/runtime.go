@@ -78,6 +78,12 @@ type Runtime struct {
 	// one pass, not one goroutine each (P1-14).
 	evalKick chan struct{}
 	evalStop chan struct{}
+	// chatStream is the in-flight streaming answer; chatPartial is its text until
+	// the final message is appended (rc2 streaming chat).
+	chatStream  *chatStreamState
+	chatPartial string
+	// version is the running build (ldflags value), used by CheckForUpdate.
+	version string
 	// commandMu serializes the UI command boundary: the panel calls Dispatch,
 	// NewConversation, CreateWorkspace and SaveSettings from goroutines, and the
 	// runtime must never run two of them at once (P0-2).
@@ -310,6 +316,9 @@ func (r *Runtime) Publish() {
 	r.snap.PublishWorkspaces(r.workspacesVM(now, all))
 	r.snap.PublishChat(r.chatVM())
 	r.snap.PublishAttention(r.attentionVM())
+	if plan := r.currentPlan(); plan != nil {
+		r.snap.PublishPlan(plan)
+	}
 	r.notifyAttention()
 	r.snap.PublishSettings(r.settingsVM(now))
 	r.snap.PublishPrompts(r.promptsVM())
@@ -819,8 +828,15 @@ func reasonText(code string) string {
 // Dispatch submits a line the operator typed. Where it goes is the Router's job,
 // so no workspace is passed: deciding that is the whole reason the agent exists.
 func (r *Runtime) Dispatch(text string) error {
+	// A new send cancels the previous streaming answer instead of stacking them.
+	r.StopChat()
 	r.commandMu.Lock()
-	defer r.commandMu.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			r.commandMu.Unlock()
+		}
+	}()
 	r.mu.Lock()
 	p := r.persist
 	r.mu.Unlock()
@@ -862,8 +878,17 @@ func (r *Runtime) Dispatch(text string) error {
 		}
 		r.appendChat(view.ChatSystem, view.ChatOutcome, "需要你确认："+q)
 	default:
-		answer := r.answerChat(text)
-		r.appendChat(view.ChatAssistant, view.ChatAnswer, answer)
+		// Streaming can take seconds: release the command lock so a new send/stop
+		// can cancel it, then stream with partial ChatVM updates.
+		locked = false
+		r.commandMu.Unlock()
+		answer := r.chatAnswerStreaming(text)
+		if strings.TrimSpace(answer) != "" {
+			r.appendChat(view.ChatAssistant, view.ChatAnswer, answer)
+		}
+		r.setErr("")
+		r.Publish()
+		return nil
 	}
 	r.setErr("")
 	r.Publish()

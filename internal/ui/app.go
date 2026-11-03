@@ -108,6 +108,28 @@ type App struct {
 	sendFailedText  string
 	sendFailedErr   string
 	answerExpanded  bool
+	// chatStopping is set while a streaming answer is being stopped.
+	chatStopping bool
+	// 应用到项目 dialog state.
+	applyOpen         bool
+	applyTicket       string
+	applyTitle        string
+	applyProject      string
+	applyArtifacts    []view.Artifact
+	applyPending      bool
+	applyErr          string
+	applyPaths        []string
+	applyPathsLoading bool
+	// 设置 › 关于's update check.
+	aboutChecking bool
+	aboutChecked  bool
+	aboutLatest   string
+	aboutUpToDate bool
+	aboutURL      string
+	aboutErr      string
+	// accessibility preferences read from the desktop for the current frame.
+	reduceMotion bool
+	highContrast bool
 	// toasts are the transient success/failure/undo lines above the composer.
 	toasts []toast
 	// hidden is true while the window is hidden (close = hide): notifications for
@@ -318,6 +340,9 @@ func Run(o Options) error {
 	}
 
 	mygo.App.WhenReady(func() {
+		// The native application menu: the usual App/Edit/Window menus plus the
+		// product commands (新对话, 设置, 打开主窗口, 退出).
+		mygo.App.SetMenu(a.appMenu())
 		a.win = mygo.NewWindow(mygo.WindowOptions{
 			Title:     o.Title,
 			Width:     int(o.Width),
@@ -417,7 +442,13 @@ func (a *App) drainFinished() bool {
 func (a *App) view(c *mui.Context) {
 	// One text scale for the whole panel, from the ui.font_scale setting (P2:
 	// it replaces the magic +2 that was applied once at the numbers).
-	viewScale = a.viewScale()
+	// One text scale: the panel's ui.font_scale times the desktop's text scale.
+	prefs := readUIPrefs(a)
+	osScale := prefs.TextScale
+	if osScale <= 0 {
+		osScale = 1
+	}
+	viewScale = clampViewScale(a.settingViewScale() * float32(osScale))
 	// The one attention number: notify when it grows while the window is hidden.
 	a.watchAttention()
 
@@ -426,6 +457,8 @@ func (a *App) view(c *mui.Context) {
 	// the desktop's preferences are not a second code path (design §6.5).
 	a.theme = brandFor(c.Theme().Dark).theme(c.Theme())
 	a.tk = tokensFrom(a.theme)
+	a.applyPrefs(prefs)
+	a.accentPrefs(prefs)
 	mui.Themed(c, a.theme)
 	tk := a.tk
 
@@ -507,6 +540,7 @@ func (a *App) view(c *mui.Context) {
 	a.renameDialog(c)
 	a.deleteDialog(c)
 	a.connectionWizard(c)
+	a.applyDialog(c)
 	a.answerDialog(c)
 	a.stopDialog(c)
 	a.helpDialog(c)

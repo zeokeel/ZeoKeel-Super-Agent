@@ -1,4 +1,4 @@
-# IM 渠道：飞书 / 钉钉（2026-11-04 UX 轮后）
+# IM 渠道：飞书 / 钉钉（2026-11-04 rc.2）
 
 > 规格来源：`audit/fixes/im-channel-spec.md` + `audit/design-review-r2.md`（P0-1/P0-4/P0-6/P0-7/P1-10/P1-11）。
 > 本文写**已实现**行为；结论尽量给生产代码 file:line。行号随代码移动，以函数名为主。
@@ -108,7 +108,8 @@
   飞书：401/403 显示可打开/复制的授权 URL；`feishu_chats` 规则见 §2。
 - 钉钉卡片有「发送时暂停监听」开关（`dingtalk_pause_listen_on_send`，默认关；仅 CLI 要求 profile 独占时打开）。
 - 禁用=未监听，卡片显示「未启用」，health 不假装在线；保存异步（「保存中…」），只重启 enable/transport/凭据/profile 变化的渠道。
-- 收件箱「待你决定 N」包含审批与任务；总览的旧「待你批准」仍作兼容；批准/拒绝在收件箱就地完成（含 pending/错误）。
+- 收件箱「待你决定 N」包含审批与任务；总览的旧「待你批准」仍作兼容；批准/拒绝在收件箱就地完成（含 pending/错误）；
+  拒绝后 10s toast 可撤销（见 §1）。
 - 运行时未接检查/授权接口时，向导显示「暂时不可用」而不是假成功。
 
 ## 6. 秘密与诊断
@@ -147,6 +148,7 @@
 ## 9. 代码证据索引
 
 - 审批优先：`internal/engine/evaluate.go:396-461`；`internal/engine/gate.go:56-60`；`internal/runtime/runtime.go:894-930`；
+  撤销拒绝：`internal/engine/lifecycle.go:723-815`、`internal/engine/persist.go:835-860`、`internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`；
   `cmd/zeokeel/acceptance_test.go:129-160,207-232`；`internal/runtime/im_approval_test.go:55-129`。
 - 三态/迁移：`internal/runtime/im.go:33-130,186-248`；`internal/runtime/settingscodec.go:1-70,106-160,182-230`；
   `cmd/zeokeel/main.go:300`、`cmd/zeokeel/imwiring.go:91`。

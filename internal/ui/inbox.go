@@ -56,6 +56,13 @@ func (a *App) reject(decisionID string) {
 				a.inboxErr[decisionID] = err.Error()
 				return
 			}
+			if _, ok := a.cmd.(RejectUndoer); ok {
+				// A real undo channel only: no fake 撤销 button.
+				a.toastAction("已拒绝：不会建任务", toastOK, "撤销", func() {
+					startUndoReject(a, decisionID)
+				})
+				return
+			}
 			a.toast("已拒绝：不会建任务；重新批准也来得及", toastOK)
 		})
 	})
@@ -67,14 +74,14 @@ func (a *App) inboxPage(c *mui.Context) {
 	ov := a.snap.Overview()
 	mui.Column(c).Fill().Padding(24).Gap(12).Children(func() {
 		heading(c, tk, "收件箱", "只有这些事需要你：批准请求，或回答任务的问题")
-		if ov == nil {
-			mui.Text(c, "等待运行时发布快照…").FontSize(fs(14)).TextColor(tk.TextMuted)
-			return
-		}
-		// Prefer the runtime's unified attention projection when it is published;
-		// until then the two overview lists are the same inbox.
+		// The runtime's unified attention inbox is the source of truth; the
+		// overview's two lists are the fallback (older runtimes, no projection yet).
 		if avm := a.snap.Attention(); avm != nil && len(avm.Items) > 0 {
 			a.attentionInbox(c, avm)
+			return
+		}
+		if ov == nil {
+			mui.Text(c, "等待运行时发布快照…").FontSize(fs(14)).TextColor(tk.TextMuted)
 			return
 		}
 		total := ov.PersonCount()
@@ -176,6 +183,13 @@ func (a *App) attentionInbox(c *mui.Context, avm *view.AttentionVM) {
 									if row, ok := a.ticketRowByID(item.TicketID); ok {
 										if b := mui.Button(c, "重试").Height(26).FontSize(fs(12)); b.Clicked() {
 											a.retryRow(row)
+										}
+									}
+								}
+								if item.Has("stop") {
+									if row, ok := a.ticketRowByID(item.TicketID); ok {
+										if b := mui.Button(c, "停止").Height(26).FontSize(fs(12)); b.Clicked() {
+											a.openStop(row)
 										}
 									}
 								}
