@@ -73,14 +73,14 @@ func TestTicketDetailShowsTheFullProjection(t *testing.T) {
 		"输入（2）", "登录超时应可配置", "已读", "已投递", "默认值别动",
 		"订阅线程（1）", "th-128",
 		"交付物（1）", "PR #128 草案",
-		"来源", "GitHub · Issue #42", "线程", "th-42", "发起人", "@lin",
+		"连接", "GitHub · Issue #42", "线程", "th-42", "发起人", "@lin",
 	)
 	// The one section the projection leaves empty is named, not hidden: Attention
 	// is the only nil part of this fixture.
 	if !tt.HasText("暂无数据：Attention") {
 		t.Fatalf("the missing Attention section is not named; texts: %q", tt.Texts())
 	}
-	if tt.HasText("运行时尚未投影完整详情") {
+	if tt.HasText("还没有数据完整详情") {
 		t.Fatalf("a full projection still claims not to be projected; texts: %q", tt.Texts())
 	}
 }
@@ -93,7 +93,7 @@ func TestTicketDetailShortSaysWhatIsMissing(t *testing.T) {
 	click(t, tt, "修改登录超时配置")
 	wantTexts(t, tt,
 		"step 7 · 正在补 SessionTimeout 默认值", "PR #128 草案",
-		"暂无数据：Mandate 依据 · Assignments / Reports · Inputs · Follows（运行时尚未投影完整详情）",
+		"暂无数据：Mandate 依据 · Assignments / Reports · Inputs · Follows",
 	)
 }
 
@@ -127,5 +127,5 @@ func TestOpenTicketOutsideTheProjection(t *testing.T) {
 	if a.actionErr == "" {
 		t.Fatal("a failed open said nothing")
 	}
-	wantTexts(t, mui.NewTester(a.view, 1440, 900), "不在当前的执行投影里")
+	wantTexts(t, mui.NewTester(a.view, 1440, 900), "不在当前的执行列表里")
 }

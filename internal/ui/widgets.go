@@ -47,22 +47,24 @@ func heading(c *mui.Context, tk Tokens, title, sub string) {
 // sourceGlyph is the small square that says which Source a row came from. A
 // GitHub issue and a DingTalk message must not look alike (design §6.3).
 func sourceGlyph(c *mui.Context, tk Tokens, kind string, size float32) {
-	icon, fg, bg := icTrigger, tk.Accent, tk.AccentSoft
+	icon, fg := icTrigger, tk.TextMuted
 	switch kind {
 	case "github":
-		icon, fg, bg = icBranch, tk.Text, tk.SurfaceAlt
+		icon = icBranch
 	case "feishu":
-		icon, fg, bg = icSpark, tk.Cyan, tk.SurfaceAlt
+		icon, fg = icSpark, tk.Accent
 	case "dingtalk":
-		icon, fg, bg = icBell, tk.Violet, tk.VioletSoft
+		icon, fg = icBell, tk.Violet
 	case "local":
-		icon, fg, bg = icTerminal, tk.Text, tk.SurfaceAlt
+		icon = icTerminal
 	case "schedule":
-		icon, fg, bg = icClock, tk.TextMuted, tk.SurfaceAlt
+		icon = icClock
 	}
-	mui.Row(c).Size(size, size).Radius(tk.RadiusSmall).Background(bg).Border(1, tk.Border).
+	// 16px glyphs at one stroke width read at 1x; a hairline 13px glyph inside a
+	// bordered tile looked like a missing-glyph box (visual audit V1).
+	mui.Row(c).Size(size, size).Radius(tk.RadiusSmall).Background(tk.SurfaceAlt).
 		Center().Children(func() {
-		mui.Icon(c, icon).FontSize(fs(size * 0.5)).TextColor(fg)
+		mui.Icon(c, icon).FontSize(fs(16)).TextColor(fg)
 	})
 }
 
@@ -78,8 +80,12 @@ func filterChip(c *mui.Context, tk Tokens, label string, on bool, count int) boo
 	if count >= 0 {
 		text = fmt.Sprintf("%s %d", label, count)
 	}
-	row := mui.Row(c).Height(24).Padding(0, 10).Radius(6).Background(bg).Border(1, border).
-		AlignItems(mui.Center).Children(func() {
+	row := mui.Row(c).Height(28).Padding(0, 10).Radius(6).
+		Focusable().Role(mui.RoleButton).Label(label)
+	if !on && row.Hovered() {
+		bg = tk.SurfaceHover
+	}
+	row.Background(bg).Border(1, border).AlignItems(mui.Center).Children(func() {
 		mui.Text(c, text).FontSize(fs(13)).SingleLine().TextColor(fg)
 	})
 	return row.Clicked()

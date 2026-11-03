@@ -73,7 +73,7 @@ func TestSourcePageShowsFactsCursorAndActionableFailure(t *testing.T) {
 	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	click(t, tt, "来源")
+	click(t, tt, "连接")
 	wantTexts(t, tt,
 		"每个事件源各管各的账号与游标；过滤在这里，Agent 之前",
 		"GitHub", "@acme · acme/webapp", "已启用",
@@ -156,8 +156,8 @@ func TestExecutionPageFiltersAndOpensRowInPlace(t *testing.T) {
 	click(t, tt, "执行")
 	wantTexts(t, tt,
 		"#42", "修改登录超时配置", "acme/webapp", "执行中",
-		"12 分前 · edit 工具调用", "点一行就地展开 · 动作在总览",
-		"共 8 个任务 · 当前筛选 8 个 · 按最近活动排序",
+		"12 分前 · edit 工具调用", "点一行展开",
+		"共 8 个任务 · 当前筛选 8 个 · 点一行展开",
 	)
 
 	// Opening a row shows why it waits and what authorized it, in place.
@@ -169,7 +169,7 @@ func TestExecutionPageFiltersAndOpensRowInPlace(t *testing.T) {
 	if tt.HasText("修改登录超时配置") {
 		t.Fatalf("working rows should be filtered out; texts: %q", tt.Texts())
 	}
-	wantTexts(t, tt, "把登录超时改成可配置", "已结束", "共 8 个任务 · 当前筛选 1 个 · 按最近活动排序")
+	wantTexts(t, tt, "把登录超时改成可配置", "已结束", "共 8 个任务 · 当前筛选 1 个 · 点一行展开")
 
 	click(t, tt, "全部 8")
 	if !tt.HasText("修改登录超时配置") {
@@ -188,7 +188,7 @@ func TestSettingsPageFormsAndSaveBarOnlyWhenChanged(t *testing.T) {
 
 	click(t, tt, "设置")
 	wantTexts(t, tt,
-		"来自 mygo.json", "来源", "评估", "执行", "提示词", "部署",
+		"来自 mygo.json", "连接", "评估", "执行", "提示词", "部署",
 		"轮询间隔（秒）", "GitHub Token", "飞书订阅群", "丢弃机器人消息",
 		"每块只有一个保存条；能从默认值来的，就不做成设置项",
 	)
@@ -227,9 +227,14 @@ func TestSettingsPageFormsAndSaveBarOnlyWhenChanged(t *testing.T) {
 	// The new projection clears it.
 	now := time.Now()
 	next := viewtest.DemoSettings(now)
-	for i := range next.Groups[0].Fields {
-		if next.Groups[0].Fields[i].Key == "poll_interval" {
-			next.Groups[0].Fields[i].Value = "30"
+	for gi := range next.Groups {
+		if next.Groups[gi].ID != view.SettingsSource {
+			continue
+		}
+		for i := range next.Groups[gi].Fields {
+			if next.Groups[gi].Fields[i].Key == "poll_interval" {
+				next.Groups[gi].Fields[i].Value = "30"
+			}
 		}
 	}
 	next.Revision = saver.rev
@@ -316,9 +321,9 @@ func TestSettingsSaveBarSaysWhenUnwired(t *testing.T) {
 	*a.settingsPtr(view.SettingsExecution, conc) = "4"
 	tt.Frame()
 
-	wantTexts(t, tt, "1 处未保存更改", "当前运行时不能保存设置")
+	wantTexts(t, tt, "1 处未保存更改", "暂时不可用：运行时还没有接入保存设置")
 	click(t, tt, "保存")
-	if !tt.HasText("当前运行时不能保存设置：没有保存通道。") {
+	if !tt.HasText("暂时不可用：运行时还没有接入保存设置：没有保存通道。") {
 		t.Fatalf("a disabled save must say why; texts: %q", tt.Texts())
 	}
 	if a.settingsDirty(g) != 1 {

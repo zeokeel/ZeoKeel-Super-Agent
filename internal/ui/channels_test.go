@@ -42,7 +42,7 @@ func channelApp(t *testing.T, cmd Commander) (*App, *mui.Tester) {
 	t.Helper()
 	a := pageApp(t)
 	a.cmd = cmd
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 	click(t, tt, "设置")
 	return a, tt
 }
@@ -54,7 +54,7 @@ func TestSourceChannelCards(t *testing.T) {
 	_, tt := channelApp(t, &fakeCmd{})
 	wantTexts(t, tt,
 		"IM 通道", "飞书", "钉钉",
-		"HTTP 长轮询", "官方长连接", "DWS 长连接",
+		"传输方式 HTTP 长轮询", "传输方式 官方长连接", "传输方式 DWS 长连接",
 		"飞书 App ID", "飞书 App Secret", "飞书会话 ID（逗号分隔）",
 		"钉钉 AppKey", "钉钉 AppSecret", "钉钉机器人 RobotCode",
 		"检查通道",
@@ -134,7 +134,7 @@ func TestChannelAuthorizationURLMustBeHTTP(t *testing.T) {
 // A runtime without ChannelAuthorizer gets a disabled check and the reason.
 func TestChannelCheckUnwired(t *testing.T) {
 	a, tt := channelApp(t, &fakeCmd{})
-	wantTexts(t, tt, "动作未接线：运行时未提供 CheckChannel")
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入 CheckChannel")
 	if err := tt.Click("检查通道"); err != nil {
 		t.Fatalf("click 检查通道: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestChannelEnableUsesSaveProtocol(t *testing.T) {
 func TestChannelTransportSelectsAndSaves(t *testing.T) {
 	saver := &fakeSaver{}
 	a, tt := channelApp(t, saver)
-	click(t, tt, "官方 Stream")
+	click(t, tt, "传输方式 官方 Stream")
 	ptr := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "dingtalk_transport"})
 	if *ptr != "stream" {
 		t.Fatalf("transport %q, want stream", *ptr)
@@ -189,7 +189,7 @@ func TestChannelTransportNotProjected(t *testing.T) {
 	snap.PublishSettings(&view.SettingsVM{
 		Source: "mygo.json", Revision: 3, UpdatedAt: now,
 		Groups: []view.SettingsGroup{{
-			ID: view.SettingsSource, Label: "来源", Note: "n",
+			ID: view.SettingsSource, Label: "连接", Note: "n",
 			Fields: []view.SettingField{
 				{Key: "dingtalk_enabled", Label: "钉钉：启用", Value: "1", Kind: view.SettingSwitch},
 				{Key: "dingtalk_app_key", Label: "钉钉 AppKey", Value: "k", Kind: view.SettingText},
@@ -200,10 +200,10 @@ func TestChannelTransportNotProjected(t *testing.T) {
 	a.now = now
 	a.sec = view.SecSettings
 	a.settingsGroup = view.SettingsSource
-	tt := mui.NewTester(a.view, 1440, 900)
-	wantTexts(t, tt, "官方 Stream", "等待运行时投影：dingtalk_transport")
+	tt := mui.NewTester(a.view, 1440, 1600)
+	wantTexts(t, tt, "传输方式 官方 Stream", "还没有数据：dingtalk_transport")
 	// No projected key means no setting to write: clicking changes nothing.
-	click(t, tt, "官方 Stream")
+	click(t, tt, "传输方式 官方 Stream")
 	if got := a.settingsDirty(&view.SettingsGroup{ID: view.SettingsSource, Fields: []view.SettingField{
 		{Key: "dingtalk_transport", Value: "dws"},
 	}}); got != 0 {
@@ -220,7 +220,7 @@ func TestChannelNotProjected(t *testing.T) {
 	snap.PublishSettings(&view.SettingsVM{
 		Source: "mygo.json", Revision: 2, UpdatedAt: now,
 		Groups: []view.SettingsGroup{{
-			ID: view.SettingsSource, Label: "来源", Note: "n",
+			ID: view.SettingsSource, Label: "连接", Note: "n",
 			Fields: []view.SettingField{{Key: "poll_interval", Label: "轮询间隔", Value: "12", Kind: view.SettingText}},
 		}},
 	})
@@ -228,8 +228,8 @@ func TestChannelNotProjected(t *testing.T) {
 	a.now = now
 	a.sec = view.SecSettings
 	a.settingsGroup = view.SettingsSource
-	tt := mui.NewTester(a.view, 1440, 900)
-	wantTexts(t, tt, "等待运行时投影：feishu_enabled", "等待运行时投影：feishu_app_id", "未投影")
+	tt := mui.NewTester(a.view, 1440, 1600)
+	wantTexts(t, tt, "还没有数据：feishu_enabled", "还没有数据：feishu_app_id", "未投影")
 }
 
 // Channel cards are on 来源 only: the 执行 group does not repeat them.

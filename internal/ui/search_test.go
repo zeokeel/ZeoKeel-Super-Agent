@@ -198,7 +198,7 @@ func TestSearchPrefersThePublishedSearchVMForTheSameQuery(t *testing.T) {
 		Query: "登录",
 		Total: 1,
 		Groups: []view.SearchGroup{{
-			Kind: view.SearchSources, Label: "来源",
+			Kind: view.SearchSources, Label: "连接",
 			Hits: []view.SearchHit{{
 				Kind: view.SearchSources, Title: "运行时索引命中",
 				Section: view.SecSource, Source: "github",

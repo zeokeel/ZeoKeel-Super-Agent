@@ -112,7 +112,7 @@ var (
 	workspaceKindZH = []string{"仓库", "数据", "文档", "混合"}
 )
 
-// workspaceDraft is the 新建工作区 form's text, held across frames in app state so
+// workspaceDraft is the 新建项目 form's text, held across frames in app state so
 // the inputs keep what was typed (design §6.1, rule 2).
 type workspaceDraft struct {
 	name, root, purpose string
@@ -188,7 +188,7 @@ func (a *App) workspaceSection(c *mui.Context) {
 	tk := a.tk
 	mui.Column(c).AlignItems(mui.Stretch).Children(func() {
 		mui.Row(c).Padding(14, 10, 4, 10).Gap(6).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "工作区").FontSize(fs(13)).Bold().TextColor(tk.TextFaint)
+			mui.Text(c, "项目").FontSize(fs(13)).Bold().TextColor(tk.TextFaint)
 			mui.Spacer(c)
 			if a.newWorkspaceEntry(c) {
 				return
@@ -221,7 +221,8 @@ func (a *App) workspaceSection(c *mui.Context) {
 // was clicked.
 func (a *App) newWorkspaceEntry(c *mui.Context) bool {
 	tk := a.tk
-	plus := mui.Row(c).Size(18, 18).Center().Radius(5).Children(func() {
+	plus := mui.Row(c).Size(28, 28).Center().Radius(6).Label("新建项目").Focusable().
+		Role(mui.RoleButton).Tooltip("新建项目").Children(func() {
 		mui.Text(c, "＋").FontSize(fs(16)).TextColor(tk.TextMuted)
 	})
 	if plus.Clicked() {
@@ -231,14 +232,14 @@ func (a *App) newWorkspaceEntry(c *mui.Context) bool {
 	return false
 }
 
-// newWorkspaceRow is the sidebar's discoverable "＋ 新建工作区".
+// newWorkspaceRow is the sidebar's discoverable "＋ 新建项目".
 func (a *App) newWorkspaceRow(c *mui.Context) {
 	tk := a.tk
 	row := mui.Row(c).Height(30).Padding(0, 8).Gap(8).Radius(7).AlignItems(mui.Center).
 		OnClick(func() { a.openWorkspaceModal() })
 	row.Children(func() {
 		mui.Icon(c, icFolder).FontSize(fs(14)).TextColor(tk.TextFaint)
-		mui.Text(c, "＋ 新建工作区").FontSize(fs(15)).TextColor(tk.TextMuted)
+		mui.Text(c, "＋ 新建项目").FontSize(fs(15)).TextColor(tk.TextMuted)
 	})
 }
 
@@ -252,14 +253,14 @@ func (a *App) workspaceRow(c *mui.Context, ws *view.WorkspaceEntryVM) {
 		mui.Row(c).Height(32).Padding(0, 6).Gap(6).Radius(7).AlignItems(mui.Center).
 			Background(ifColor(on, tk.AccentSoft, mui.Transparent)).Children(func() {
 			// The arrow toggles; the rest of the row opens the workspace page.
-			chev := mui.Row(c).Size(18, 18).Center().Label("展开工作区 " + ws.Name).OnClick(func() {
+			chev := mui.Row(c).Size(18, 18).Center().Label("展开项目 " + ws.Name).OnClick(func() {
 				a.wsExpanded[ws.ID] = !expanded
 			})
 			chev.Children(func() {
 				mui.Icon(c, ifIcon(expanded, icChevD, icChevR)).FontSize(fs(12)).TextColor(tk.TextFaint)
 			})
 			body := mui.Row(c).Grow(1).Gap(6).AlignItems(mui.Center).
-				Label("工作区 " + ws.Name).OnClick(func() {
+				Label("项目 " + ws.Name).OnClick(func() {
 				a.openWorkspace(ws.ID)
 			})
 			body.Children(func() {
@@ -316,8 +317,9 @@ func (a *App) conversationRow(c *mui.Context, ws *view.WorkspaceEntryVM, conv vi
 	if conv.CreatedBy == view.CreatedByAgent {
 		icon = icSpark
 	}
-	row := mui.Row(c).Height(28).Padding(0, 8).Gap(6).Radius(6).AlignItems(mui.Center).
-		Label("会话 " + conv.Title).OnClick(func() { a.openConversation(ws.ID, conv) })
+	row := mui.Row(c).Height(30).Padding(0, 8).Gap(6).Radius(6).AlignItems(mui.Center).
+		Focusable().Role(mui.RoleButton).Label("会话 " + conv.Title).Tooltip(conv.Title).
+		OnClick(func() { a.openConversation(ws.ID, conv) })
 	row.Children(func() {
 		mui.Icon(c, icon).FontSize(fs(12)).TextColor(tk.TextMuted)
 		if id := conv.IDLabel(); id != "" {
@@ -372,7 +374,7 @@ func (a *App) workspaceFilterBar(c *mui.Context) {
 	mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 		chip(c, tk, "工作区", tk.Accent, tk.AccentSoft)
 		mui.Text(c, a.workspaceName(a.filterWorkspace)).FontSize(fs(12)).TextColor(tk.Text)
-		all := mui.Row(c).Height(24).Padding(0, 10).Radius(6).Border(1, tk.Border).
+		all := mui.Row(c).Height(28).Padding(0, 10).Radius(6).Border(1, tk.Border).
 			Background(tk.Surface).AlignItems(mui.Center).Label("全部工作区").
 			OnClick(func() { a.setWorkspaceFilter("") })
 		all.Children(func() {
@@ -450,13 +452,13 @@ func (a *App) workspacePage(c *mui.Context) {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 				_, canRename := a.workspaceRenamer()
 				_, canDelete := a.workspaceDeleter()
-				rename := mui.Button(c, "重命名").Label("重命名").Height(24).FontSize(fs(12))
+				rename := mui.Button(c, "重命名").Label("重命名").Height(28).FontSize(fs(12))
 				if !canRename {
 					rename.Disabled(true)
 				} else if rename.Clicked() {
 					a.openRename(ws)
 				}
-				del := mui.Button(c, "删除").Label("删除").Height(24).FontSize(fs(12))
+				del := mui.Button(c, "删除").Label("删除").Height(28).FontSize(fs(12))
 				if !canDelete {
 					del.Disabled(true)
 				} else if del.Clicked() {
@@ -471,7 +473,7 @@ func (a *App) workspacePage(c *mui.Context) {
 					missing = append(missing, "WorkspaceDeleter")
 				}
 				if len(missing) > 0 {
-					mui.Text(c, "动作未接线：运行时未实现 "+strings.Join(missing, " / ")).
+					mui.Text(c, "暂时不可用：运行时还没有接入 "+strings.Join(missing, " / ")).
 						FontSize(fs(10)).TextColor(tk.Amber)
 				}
 			})
@@ -561,10 +563,10 @@ func (a *App) workspaceConversationRow(c *mui.Context, ws *view.WorkspaceEntryVM
 }
 
 // ---------------------------------------------------------------------------
-// 新建工作区 dialog
+// 新建项目 dialog
 // ---------------------------------------------------------------------------
 
-// openWorkspaceModal starts the 新建工作区 form with the defaults the runtime
+// openWorkspaceModal starts the 新建项目 form with the defaults the runtime
 // wants: a repo workspace with nothing filled in yet.
 func (a *App) openWorkspaceModal() {
 	a.wsModal = true
@@ -573,7 +575,7 @@ func (a *App) openWorkspaceModal() {
 	a.wsErr = ""
 }
 
-// workspaceDialog is 新建工作区: name, root, purpose and kind. Without a
+// workspaceDialog is 新建项目: name, root, purpose and kind. Without a
 // WorkspaceCreator the form still opens, but creating is disabled with the reason
 // — the operator can see what the field asks for and the runtime cannot silently
 // do nothing.
@@ -586,7 +588,7 @@ func (a *App) workspaceDialog(c *mui.Context) {
 	open := true
 	mui.Modal(c, &open, func() {
 		mui.Column(c).Width(560).Gap(10).Children(func() {
-			mui.Text(c, "新建工作区").FontSize(fs(19)).Bold().TextColor(tk.Text)
+			mui.Text(c, "新建项目").FontSize(fs(19)).Bold().TextColor(tk.Text)
 			mui.Text(c, "工作区是一个仓库或数据目录；超级Agent 在里面干活，会话属于它。").
 				FontSize(12).TextColor(tk.TextMuted)
 			a.formTextField(c, "名称", "如 acme/webapp；面板里显示的名字", &a.wsDraft.name, "workspace-name", true)
@@ -598,7 +600,7 @@ func (a *App) workspaceDialog(c *mui.Context) {
 					Label("工作区类型")
 			})
 			if !wired {
-				mui.Text(c, "动作未接线：运行时未实现 WorkspaceCreator（表单可看，创建不可用）").
+				mui.Text(c, "暂时不可用：运行时还没有接入 WorkspaceCreator（表单可看，创建不可用）").
 					FontSize(11).TextColor(tk.Amber)
 			}
 			if a.wsErr != "" {
@@ -701,7 +703,7 @@ func (a *App) renameDialog(c *mui.Context) {
 			mui.Text(c, "重命名工作区").FontSize(fs(17)).Bold().TextColor(tk.Text)
 			a.formTextField(c, "名称", "面板里显示的名字；ID 与目录不变", &a.renameDraft, "rename-workspace", true)
 			if !wired {
-				mui.Text(c, "动作未接线：运行时未实现 WorkspaceRenamer").
+				mui.Text(c, "暂时不可用：运行时还没有接入 WorkspaceRenamer").
 					FontSize(11).TextColor(tk.Amber)
 			}
 			if a.renameErr != "" {
@@ -756,7 +758,7 @@ func (a *App) deleteDialog(c *mui.Context) {
 			mui.Text(c, "会从面板移除这个工作区及其会话记录；磁盘上的目录不会被删除。").
 				FontSize(12).TextColor(tk.TextMuted)
 			if !wired {
-				mui.Text(c, "动作未接线：运行时未实现 WorkspaceDeleter").
+				mui.Text(c, "暂时不可用：运行时还没有接入 WorkspaceDeleter").
 					FontSize(11).TextColor(tk.Amber)
 			}
 			if a.deleteErr != "" {
@@ -845,7 +847,7 @@ func (a *App) conversationDialog(c *mui.Context) {
 				FontSize(12).TextColor(tk.TextMuted)
 			a.formTextField(c, "会话内容", "要它做什么；说清楚目标就行", &a.convDraft, "conversation-text", true)
 			if !wired {
-				mui.Text(c, "动作未接线：运行时未实现 ConversationCreator（表单可看，创建不可用）").
+				mui.Text(c, "暂时不可用：运行时还没有接入 ConversationCreator（表单可看，创建不可用）").
 					FontSize(11).TextColor(tk.Amber)
 			}
 			if a.convErr != "" {

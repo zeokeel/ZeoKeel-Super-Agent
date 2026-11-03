@@ -202,7 +202,7 @@ func TestMissingActionChannelsAreDisabledWithAReason(t *testing.T) {
 	a := actionApp(t, &fakeCmd{}) // no action interfaces
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	wantTexts(t, tt, "动作未接线：运行时未提供",
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入",
 		"回答（AttentionAnswerer）", "重试（TicketRetrier）", "停止（TicketStopper）")
 
 	// The disabled 回答 does nothing: no dialog, no state.
@@ -260,13 +260,14 @@ type errFake string
 func (e errFake) Error() string { return string(e) }
 
 // Work-item actions are 总览's alone (design §6.3): 执行 draws no action buttons.
-func TestActionsExistOnlyOnOverview(t *testing.T) {
+func TestActionsAreOnTheOverviewAndTheExecutionRow(t *testing.T) {
 	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
 	click(t, tt, "执行")
-	for _, action := range []string{"回答", "重试", "停止"} {
-		if got := exactTexts(tt, action); got != 0 {
-			t.Fatalf("执行 drew the %q action %d times; texts: %q", action, got, tt.Texts())
-		}
+	// P0-B: the execution list carries its own actions now (回答/重试/停止),
+	// and the dead-end hint is gone.
+	// P0-B: running rows carry 停止; 回答/重试 appear when the row asks for them.
+	if got := exactTexts(tt, "停止"); got == 0 {
+		t.Fatal("执行 lost the inline 停止 action")
 	}
 }

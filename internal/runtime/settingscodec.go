@@ -104,6 +104,15 @@ func migrateSettings(values map[string]string) map[string]string {
 	if _, ok := values["source.feishu_transport"]; !ok && feishuCredsComplete(values) {
 		changed["source.feishu_transport"] = "longpoll"
 	}
+	if _, ok := values["source.feishu_transport"]; !ok && feishuCredsComplete(values) {
+		// New transport default is ws; a legacy install that had long-poll chat
+		// ids keeps longpoll. Both keep working without a misconfigured warning.
+		if strings.TrimSpace(values["source.feishu_chats"]) != "" {
+			changed["source.feishu_transport"] = "longpoll"
+		} else {
+			changed["source.feishu_transport"] = "ws"
+		}
+	}
 	if _, ok := values["source.dingtalk_transport"]; !ok {
 		// The pre-switch build only had Stream. A legacy install with stream
 		// credentials must keep working instead of suddenly probing a missing
@@ -133,6 +142,15 @@ func migrateSettings(values map[string]string) map[string]string {
 	// DWS intent evidence: a custom dws command or explicit DWS profile/listen
 	// config means this install already uses DWS. Pin the transport so an upgrade
 	// does not reinterpret it as stream.
+	if _, ok := values["source.feishu_transport"]; !ok && feishuCredsComplete(values) {
+		// New transport default is ws; a legacy install that had long-poll chat
+		// ids keeps longpoll. Both keep working without a misconfigured warning.
+		if strings.TrimSpace(values["source.feishu_chats"]) != "" {
+			changed["source.feishu_transport"] = "longpoll"
+		} else {
+			changed["source.feishu_transport"] = "ws"
+		}
+	}
 	if _, ok := values["source.dingtalk_transport"]; !ok {
 		dwsIntent := values["source.dingtalk_profile"] != "" ||
 			values["source.dingtalk_chat_query"] != "" ||

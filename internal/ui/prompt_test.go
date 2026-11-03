@@ -193,14 +193,14 @@ func TestPromptEditorSaysWhenUnwired(t *testing.T) {
 	tt := mui.NewTester(a.view, 1440, 900)
 	click(t, tt, "设置")
 	click(t, tt, "提示词")
-	wantTexts(t, tt, "当前运行时不能保存设置：可编辑，但保存写不出去")
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入保存设置")
 
 	click(t, tt, "编辑 Router")
 	tt.Type("x")
 	tt.Frame()
-	wantTexts(t, tt, "1 处未保存更改", "当前运行时不能保存设置")
+	wantTexts(t, tt, "1 处未保存更改", "暂时不可用：运行时还没有接入保存设置")
 	click(t, tt, "保存")
-	if !tt.HasText("当前运行时不能保存设置：没有保存通道。") {
+	if !tt.HasText("暂时不可用：运行时还没有接入保存设置：没有保存通道。") {
 		t.Fatalf("a disabled save must say why; texts: %q", tt.Texts())
 	}
 	if a.promptDirty(a.snap.Prompts()) != 1 {

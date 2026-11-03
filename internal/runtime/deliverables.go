@@ -13,7 +13,7 @@ func (r *Runtime) artifactsVM(now time.Time) *view.ArtifactVM {
 	for _, a := range r.eng.AllArtifacts() {
 		row := view.ArtifactRow{
 			ID: string(a.ID), Title: a.Title, Kind: string(a.Kind),
-			Detail: a.Detail, Path: a.Path, URL: a.URL, At: a.At,
+			Detail: a.Detail, Path: r.absoluteArtifactPath(a), URL: a.URL, At: a.At,
 		}
 		// The workspace and ticket number live on the Ticket, not the artifact; a
 		// deliverable without them is not findable a month later.

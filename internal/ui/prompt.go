@@ -39,7 +39,7 @@ func (a *App) promptGroup(c *mui.Context, g *view.SettingsGroup) {
 			a.settingField(c, g, f)
 		}
 		if !wired {
-			mui.Text(c, "当前运行时不能保存设置：可编辑，但保存写不出去").FontSize(fs(12)).
+			mui.Text(c, "暂时不可用：运行时还没有接入保存设置：可编辑，但保存写不出去").FontSize(fs(12)).
 				TextColor(tk.Amber)
 		}
 		return
@@ -67,7 +67,7 @@ func (a *App) promptGroup(c *mui.Context, g *view.SettingsGroup) {
 	}
 
 	if !wired {
-		mui.Text(c, "当前运行时不能保存设置：可编辑，但保存写不出去").FontSize(fs(12)).
+		mui.Text(c, "暂时不可用：运行时还没有接入保存设置：可编辑，但保存写不出去").FontSize(fs(12)).
 			TextColor(tk.Amber)
 	}
 }
@@ -180,13 +180,13 @@ func (a *App) promptSaveBar(c *mui.Context, vm *view.PromptVM, dirty int) {
 						mui.Text(c, "保存").FontSize(fs(14)).TextColor(tk.TextFaint)
 					})
 					if btn.Clicked() {
-						a.promptErr = "当前运行时不能保存设置：没有保存通道。"
+						a.promptErr = "暂时不可用：运行时还没有接入保存设置：没有保存通道。"
 					}
 				}
 			})
 		}
 		if !wired && dirty > 0 {
-			mui.Text(c, "当前运行时不能保存设置").FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, "暂时不可用：运行时还没有接入保存设置").FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 		if a.promptConflict {
 			mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
@@ -279,7 +279,7 @@ func (a *App) promptWired() bool {
 func (a *App) savePrompts(vm *view.PromptVM) {
 	saver, ok := a.cmd.(SettingsSaver)
 	if !ok || saver == nil {
-		a.promptErr = "当前运行时不能保存设置：没有保存通道。"
+		a.promptErr = "暂时不可用：运行时还没有接入保存设置：没有保存通道。"
 		return
 	}
 	values := make(map[string]string, len(vm.Layers)+1)

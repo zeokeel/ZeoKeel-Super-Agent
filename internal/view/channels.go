@@ -89,3 +89,76 @@ func ChannelKey(key string) bool {
 	}
 	return false
 }
+
+// ChannelFieldSpec is one input of a connection wizard step.
+type ChannelFieldSpec struct {
+	Key   string
+	Label string
+	Help  string
+	// Kind is "text", "secret", "switch" or "select"; empty means text.
+	Kind     string
+	Required bool
+	Options  []string
+	Default  string
+}
+
+// ChannelTransportSpec is one way to connect a channel, with only the fields that
+// transport needs (a DWS profile is meaningless for Stream, and vice versa).
+type ChannelTransportSpec struct {
+	ID          string
+	Label       string
+	Implemented bool
+	Fields      []ChannelFieldSpec
+}
+
+// ChannelTransports lists a channel's transports and their fields. It is the
+// panel's fallback when the runtime does not publish per-transport metadata, so a
+// wizard is still usable without a runtime adapter.
+func ChannelTransports(name string) []ChannelTransportSpec {
+	switch name {
+	case "feishu":
+		return []ChannelTransportSpec{
+			{ID: "ws", Label: "官方长连接（推荐）", Implemented: true, Fields: []ChannelFieldSpec{
+				{Key: "feishu_app_id", Label: "App ID", Required: true},
+				{Key: "feishu_app_secret", Label: "App Secret", Kind: "secret", Required: true},
+				{Key: "feishu_chats", Label: "监听会话（可选）", Help: "逗号分隔；留空 = 全部可用的群/@你"},
+			}},
+			{ID: "longpoll", Label: "HTTP 长轮询（兜底）", Implemented: true, Fields: []ChannelFieldSpec{
+				{Key: "feishu_app_id", Label: "App ID", Required: true},
+				{Key: "feishu_app_secret", Label: "App Secret", Kind: "secret", Required: true},
+				{Key: "feishu_chats", Label: "监听会话（必填）", Help: "逗号分隔的群 ID", Required: true},
+			}},
+		}
+	case "dingtalk":
+		return []ChannelTransportSpec{
+			{ID: "dws", Label: "DWS（本机命令行）", Implemented: true, Fields: []ChannelFieldSpec{
+				{Key: "dingtalk_dws_cmd", Label: "dws 命令", Default: "dws"},
+				{Key: "dingtalk_profile", Label: "profile"},
+				{Key: "dingtalk_listen_kind", Label: "监听类型", Kind: "select",
+					Options: []string{"im", "event"}, Default: "im"},
+				{Key: "dingtalk_chat_query", Label: "会话查询（可选）"},
+			}},
+			{ID: "stream", Label: "官方 Stream（推荐）", Implemented: true, Fields: []ChannelFieldSpec{
+				{Key: "dingtalk_app_key", Label: "AppKey", Required: true},
+				{Key: "dingtalk_app_secret", Label: "AppSecret", Kind: "secret", Required: true},
+				{Key: "dingtalk_robot", Label: "RobotCode", Required: true},
+				{Key: "dingtalk_bot_id", Label: "机器人自身 ID（@ 判定）", Required: true},
+			}},
+		}
+	}
+	return nil
+}
+
+// ChannelTransportOf finds one transport of a channel.
+func ChannelTransportOf(name, id string) (ChannelTransportSpec, bool) {
+	for _, t := range ChannelTransports(name) {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return ChannelTransportSpec{}, false
+}
+
+// ChannelPauseListenKey is the switch that pauses listening while sending, so a
+// channel cannot feed its own messages back in.
+const ChannelPauseListenKey = "dingtalk_pause_listen_on_send"

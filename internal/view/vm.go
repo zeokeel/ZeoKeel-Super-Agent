@@ -21,6 +21,8 @@ const (
 	SecExecution Section = "execution"
 	SecSettings  Section = "settings"
 	SecMessages  Section = "messages"
+	SecInbox     Section = "inbox"
+	SecChat      Section = "chat"
 )
 
 // Tone colors a row's state chip.
@@ -65,6 +67,9 @@ type TicketRow struct {
 	// Attention is the question the row waits to have answered; nil when the row
 	// waits for something else. The panel's 回答 dialog draws it.
 	Attention *TicketAttention
+	// CanStop is the projector's answer to "may this Ticket be stopped now?" (a
+	// running or queued Ticket may). The execution row and the inbox use it.
+	CanStop bool
 	// CanRetry is the projector's answer to "may this Ticket run again?" (a
 	// blocked, failed or undeliverable Assignment may). It adds 重试 to the row's
 	// actions for a stage the panel does not know.
@@ -142,6 +147,8 @@ type Artifact struct {
 	Kind   string // "pr" | "file" | "report" | "image"
 	Title  string
 	Detail string
+	// Path is where the file is, when the runtime knows: 打开/复制 on the panel.
+	Path string
 }
 
 // Counts are the four activity totals.
@@ -264,6 +271,8 @@ type Snapshot struct {
 	workspaces atomic.Pointer[WorkspacePanelVM]
 	// chat is the 超级Agent conversation shard.
 	chat atomic.Pointer[ChatVM]
+	// attention is the unified inbox shard.
+	attention atomic.Pointer[AttentionVM]
 	// onboarding is the first-run wizard; nil means "this install is set up".
 	onboarding atomic.Pointer[OnboardingVM]
 	artifacts  atomic.Pointer[ArtifactVM]
@@ -357,6 +366,16 @@ func (s *Snapshot) PublishWorkspaces(vm *WorkspacePanelVM) {
 // publish. The sidebar then says it waits instead of drawing an empty group as
 // if no workspace existed.
 func (s *Snapshot) Workspaces() *WorkspacePanelVM { return s.workspaces.Load() }
+
+// PublishAttention hands the panel the unified attention inbox.
+func (s *Snapshot) PublishAttention(vm *AttentionVM) {
+	s.attention.Store(vm)
+	s.bump()
+}
+
+// Attention returns the last attention inbox, or nil before the first publish
+// (the panel then falls back to the overview's two lists).
+func (s *Snapshot) Attention() *AttentionVM { return s.attention.Load() }
 
 // PublishChat hands the panel the 超级Agent conversation.
 func (s *Snapshot) PublishChat(vm *ChatVM) {
@@ -469,25 +488,50 @@ func Nav(o *OverviewVM) []NavItem {
 	if o != nil {
 		running = o.Runtime.Running
 	}
+	// The daily rail: five places a person uses every day. Everything else is
+	// diagnostics, reached below a group separator (NavAdvanced).
 	return []NavItem{
-		{Section: SecOverview, Label: "超级Agent", Count: person},
-		{Section: SecMessages, Label: "消息"},
-		{Section: SecSource, Label: "来源"},
-		{Section: SecTrigger, Label: "触发"},
-		{Section: SecEval, Label: "评估"},
+		{Section: SecOverview, Label: "超级Agent"},
+		{Section: SecInbox, Label: "收件箱", Count: person},
+		{Section: SecWorkspace, Label: "项目"},
 		{Section: SecExecution, Label: "执行", Count: running},
 		{Section: SecSettings, Label: "设置"},
 	}
+}
+
+// NavAdvanced is the diagnostics group: the engineering pages stay reachable,
+// below a separator and out of the daily path (interaction audit §III).
+func NavAdvanced() []NavItem {
+	return []NavItem{
+		{Section: SecChat, Label: "对话记录"},
+		{Section: SecMessages, Label: "消息"},
+		{Section: SecSource, Label: "连接"},
+		{Section: SecTrigger, Label: "触发"},
+		{Section: SecEval, Label: "评估"},
+	}
+}
+
+// AttentionLabel is the one wording for everything that waits for a person.
+func AttentionLabel(n int) string {
+	if n <= 0 {
+		return "待你决定"
+	}
+	return "待你决定 " + itoa(n)
 }
 
 // SectionLabel is how a section reads in the panel. Nav holds the monitoring rail
 // (the sidebar's bottom group and 设置); 工作区 is reached through a workspace row,
 // not a rail item, and this names it too.
 func SectionLabel(s Section) string {
-	if s == SecWorkspace {
-		return "工作区"
+	switch s {
+	case SecWorkspace:
+		return "项目"
+	case SecChat:
+		return "对话记录"
+	case SecInbox:
+		return "收件箱"
 	}
-	for _, it := range Nav(nil) {
+	for _, it := range append(Nav(nil), NavAdvanced()...) {
 		if it.Section == s {
 			return it.Label
 		}

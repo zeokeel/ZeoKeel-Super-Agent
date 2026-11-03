@@ -95,12 +95,32 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 			// The open step's card.
 			mui.Column(c).Grow(1).MinWidth(0).Padding(20, 24).Children(func() {
 				mui.Column(c).Width(560).Gap(14).Children(func() {
-					mui.Text(c, cur.Title).FontSize(fs(18)).Bold().TextColor(tk.Text)
+					mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+						mui.Text(c, cur.Title).FontSize(fs(18)).Bold().TextColor(tk.Text)
+						if cur.Optional {
+							chip(c, tk, "可选", tk.TextMuted, tk.SurfaceAlt)
+						} else {
+							chip(c, tk, "必填", tk.Amber, tk.AmberSoft)
+						}
+					})
 					mui.Text(c, cur.Note).FontSize(fs(14)).TextColor(tk.TextMuted)
 					for _, f := range cur.Fields {
 						f := f
 						p := a.onboardingEdit(string(cur.ID)+"."+f.Key, f.Value)
-						a.formField(c, f.Label, f.Help, f.Kind, p, f.Options)
+						label := f.Label
+						if onboardingRequired(cur.ID, f.Key) {
+							label = "* " + label
+						}
+						a.formField(c, label, f.Help, f.Kind, p, f.Options)
+						if cur.ID == view.OnboardWorkspace && f.Key == "ws_root" {
+							browse := mui.Button(c, "浏览…").Label("选择项目目录").Height(28).FontSize(fs(12))
+							if a.pickingFolder {
+								browse.Disabled(true)
+							} else if browse.Clicked() {
+								a.pickingFolder = true
+								startOnboardingRootPicker(a, func(path string) { *p = path })
+							}
+						}
 					}
 					if a.onb.err != "" {
 						mui.Text(c, a.onb.err).FontSize(fs(13)).TextColor(tk.Red)
@@ -115,23 +135,37 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 							})
 						}
 						btn("保存这一步", true, func() {
-							vals := map[string]string{}
-							for _, f := range cur.Fields {
-								vals[f.Key] = a.onboardingValue(string(cur.ID) + "." + f.Key)
-							}
-							if saver, ok := a.cmd.(OnboardingSaver); ok {
-								if _, err := saver.SaveOnboarding(vals); err != nil {
-									a.onb.err = err.Error()
-								} else {
-									a.onb.err = ""
-									if a.onb.sel < len(vm.Steps)-1 {
-										a.onb.sel++
-									}
-								}
-								return
-							}
-							a.onb.err = "当前运行时不能保存设置：没有保存通道"
+							a.saveOnboardingStep(cur, true)
 						})
+						if cur.ID == view.OnboardModel {
+							btn("保存并测试", false, func() {
+								a.saveOnboardingStep(cur, false)
+								if _, ok := a.cmd.(ModelTester); ok {
+									a.modelTestPending = true
+									a.modelTestOK = false
+									a.modelTestDetail = ""
+									startModelProbe(a)
+								}
+							})
+						}
+						if _, ok := a.cmd.(OnboardingSkipper); ok && a.onb.sel == 0 {
+							btn("稍后设置（演示模式）", false, func() {
+								a.onbSkipping = true
+								startSkipOnboarding(a)
+							})
+						}
+						if a.onbSkipping {
+							spinner(c, tk, "正在跳过…")
+						}
+						if a.modelTestPending {
+							spinner(c, tk, "正在测试模型…")
+						} else if a.modelTestDetail != "" {
+							fg := tk.Red
+							if a.modelTestOK {
+								fg = tk.Green
+							}
+							mui.Text(c, a.modelTestDetail).FontSize(fs(12)).TextColor(fg)
+						}
 						if cur.Optional {
 							btn("跳过", false, func() {
 								if a.onb.sel < len(vm.Steps)-1 {
@@ -141,13 +175,13 @@ func (a *App) onboardingPage(c *mui.Context, vm *view.OnboardingVM) {
 						}
 						mui.Spacer(c)
 						if vm.Ready {
-							btn("开始使用", false, func() {
-								if saver, ok := a.cmd.(OnboardingSaver); ok {
-									if err := saver.FinishOnboarding(); err != nil {
-										a.onb.err = err.Error()
-									}
-								}
+							btn("开始使用", true, func() {
+								a.onbFinishing = true
+								startFinishOnboarding(a)
 							})
+							if a.onbFinishing {
+								spinner(c, tk, "正在进入…")
+							}
 						} else {
 							mui.Text(c, "还有必填项没完成").FontSize(fs(13)).TextColor(tk.TextFaint)
 						}
@@ -199,4 +233,37 @@ func (a *App) formField(c *mui.Context, label, help string, kind view.SettingKin
 			field.Password()
 		}
 	})
+}
+
+// onboardingRequired marks the fields a step cannot be done without.
+func onboardingRequired(step view.OnboardingStepID, key string) bool {
+	switch step {
+	case view.OnboardModel:
+		return key == "base_url" || key == "model"
+	case view.OnboardWorkspace:
+		return key == "ws_name" || key == "ws_root"
+	}
+	return false
+}
+
+// saveOnboardingStep persists one step's values. advance moves to the next step
+// when the save succeeded; the test path stays so the result is visible.
+func (a *App) saveOnboardingStep(step view.OnboardingStep, advance bool) {
+	saver, ok := a.cmd.(OnboardingSaver)
+	if !ok || saver == nil {
+		a.onb.err = "暂时不可用：运行时还没有接入保存设置"
+		return
+	}
+	vals := map[string]string{}
+	for _, f := range step.Fields {
+		vals[f.Key] = a.onboardingValue(string(step.ID) + "." + f.Key)
+	}
+	if _, err := saver.SaveOnboarding(vals); err != nil {
+		a.onb.err = err.Error()
+		return
+	}
+	a.onb.err = ""
+	if advance {
+		a.onb.sel++
+	}
 }

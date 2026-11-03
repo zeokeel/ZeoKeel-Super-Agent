@@ -24,7 +24,7 @@ import (
 func (a *App) openTicket(id string) {
 	vm := a.snap.Tickets()
 	if vm == nil || id == "" {
-		a.actionErr = "没有执行快照，打不开工单 #" + id
+		a.actionErr = "没有执行快照，暂时打不开这个任务"
 		return
 	}
 	a.ticketFilter = ""
@@ -43,13 +43,13 @@ func (a *App) openTicket(id string) {
 	// The Ticket is not in the published list (a projection from another
 	// workspace, or one that just closed): stay where the click was and say so,
 	// instead of opening a row at random.
-	a.actionErr = "工单 #" + id + " 不在当前的执行投影里（可能刚结束或属于其他工作区）"
+	a.actionErr = "这个任务不在当前的执行列表里（可能刚结束或属于其他项目）"
 }
 
 // ticketDetailEmpty is one missing section's line: the panel says what is not
 // projected instead of drawing an empty box as if nothing had happened.
 func ticketDetailEmpty(c *mui.Context, tk Tokens, what ...string) {
-	mui.Text(c, "暂无数据："+strings.Join(what, " · ")+"（运行时尚未投影）").
+	mui.Text(c, "还没有数据："+strings.Join(what, " · ")).
 		FontSize(10).TextColor(tk.TextFaint)
 }
 
@@ -98,6 +98,10 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 			detailFact(c, tk, "线程", d.Thread)
 			detailFact(c, tk, "发起人", d.Actor)
 		})
+
+		// Where the work actually happened: the project the person chose and the
+		// per-Ticket copy the Agent works in. The two are different on purpose.
+		a.executionPathSection(c, d)
 
 		// Mandate: why the work may be done, and how far it may go.
 		detailTitle(c, tk, "授权（Mandate）")
@@ -218,7 +222,16 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 		} else {
 			mui.Row(c).Gap(6).Wrap().Children(func() {
 				for _, art := range d.Artifacts {
+					art := art
 					textChip(c, tk, art.Title+" · "+art.Detail)
+					if art.Path != "" {
+						if b := mui.Button(c, "打开").Label("打开 " + art.Title).Height(22).FontSize(fs(10)); b.Clicked() {
+							a.openPath(art.Path)
+						}
+						if b := mui.Button(c, "复制路径").Label("复制 " + art.Title + " 的路径").Height(22).FontSize(fs(10)); b.Clicked() {
+							a.copyValue(art.Path, "路径")
+						}
+					}
 				}
 			})
 		}
@@ -236,4 +249,37 @@ func (a *App) ticketDetailRich(c *mui.Context, r view.TicketRow, d *view.TicketD
 				FontSize(10).TextColor(tk.TextFaint)
 		}
 	})
+}
+
+// executionPathSection tells the truth about where work happened: the project
+// directory the person chose, and the per-Ticket copy the Agent edits. It never
+// claims the Agent changed the project in place.
+func (a *App) executionPathSection(c *mui.Context, d *view.TicketDetailVM) {
+	tk := a.tk
+	detailTitle(c, tk, "位置")
+	mui.Text(c, "Agent 在「执行副本」里工作；项目目录不会被直接修改。").
+		FontSize(fs(12)).TextColor(tk.TextMuted)
+	if d.ProjectRoot == "" && d.ExecutionRoot == "" {
+		mui.Text(c, "运行时还没有提供路径，所以不能在这里打开。").
+			FontSize(fs(11)).TextColor(tk.TextFaint)
+		return
+	}
+	row := func(label, path string) {
+		if path == "" {
+			return
+		}
+		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+			mui.Text(c, label).FontSize(fs(11)).Width(72).Shrink(0).TextColor(tk.TextFaint)
+			mui.Text(c, path).FontSize(fs(12)).Font("monospace").SingleLine().Grow(1).
+				Tooltip(path).TextColor(tk.TextMuted)
+			if b := mui.Button(c, "打开").Label("打开" + label).Height(22).FontSize(fs(10)); b.Clicked() {
+				a.openPath(path)
+			}
+			if b := mui.Button(c, "复制").Label("复制" + label).Height(22).FontSize(fs(10)); b.Clicked() {
+				a.copyValue(path, label)
+			}
+		})
+	}
+	row("项目目录", d.ProjectRoot)
+	row("执行副本", d.ExecutionRoot)
 }

@@ -45,7 +45,7 @@ func onboardingSnap(ready bool) *view.Snapshot {
 				}},
 			{ID: view.OnboardSource, Title: "从哪里接活", Optional: true,
 				Fields: []view.OnboardField{
-					{Key: "source_kind", Label: "来源", Kind: view.SettingSelect,
+					{Key: "source_kind", Label: "连接", Kind: view.SettingSelect,
 						Options: []string{"local", "github"}},
 				}},
 		},
@@ -95,5 +95,5 @@ func TestOnboardingWithoutSaver(t *testing.T) {
 	app := newApp(onboardingSnap(false), &fakeCmd{})
 	tt := mui.NewTester(app.view, 1440, 900)
 	click(t, tt, "保存这一步")
-	wantTexts(t, tt, "当前运行时不能保存设置")
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入保存设置")
 }

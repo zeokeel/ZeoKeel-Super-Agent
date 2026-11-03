@@ -339,3 +339,40 @@ design/im-channels / design/ops-runbook / rejected-concepts：
 文档已改为“新装默认 ws；旧配置迁移 pin longpoll”。`DeleteWorkspace` 现在删除空工作区（行 `internal/store/store.go:390` +
 engine 路由 `internal/runtime/workspaces.go:182`/`internal/engine/engine.go:157`），有工单拒绝，测试
 `internal/runtime/round3_test.go:244` `TestDeleteWorkspaceRemovesEmptyOnly`；README/§13 已补“策略+engine 路由”。
+
+## 14. UI/UX 优化轮文档同步（2026-11-04，docs-only，code final）
+
+按 Lead 指令把 README / CHANGELOG / RELEASE / design §13 / im-channels / ops-runbook / rejected-concepts
+更新到 UI/UX 优化轮代码；**未改代码/go.mod**；`VERSION` 仍 `1.0.0-rc.1`，无新 tag。
+
+**文档改动**
+- README：顶部状态加 UX 轮；「当前状态」面板/项目行重写；「界面结构」整节重写（五项日常导航 + 折叠诊断、
+  首跑/多行 composer/target chip/收件箱/路径真相/模型设置/执行行内动作/可访问性）；IM 节加连接向导；
+  FAQ 重写（聊天 vs 派活、收件箱、IM 向导、模型测试、路径真相、快捷键）；已知限制加入明确未做（app 菜单、
+  TextScale/ReduceMotion/高对比、计划可视化、原项目执行、多窗口、自动更新）。
+- CHANGELOG：新增「### UI/UX 优化轮（2026-11-04，同一 rc.1，不新增 tag）」；修正“IM 入口待接线/飞书 WS”旧句；
+  测试状态改为“旧快照不作本轮证据，Lead 重跑闸门”。
+- RELEASE：H 标题加入 UX 轮，新增 11 条 UX 勾选 + 明确未做项；F 组加第 7 条平台/UX 收尾。
+- design §13：标题改“UI/UX 优化轮后”；新增/重写 IA、composer、收件箱、模型设置/测试、首跑、路径真相、IM 向导、
+  可访问性等行；“明确未做”加 UX 收尾。
+- design/im-channels.md：§0/§2（feishu_chats 规则）/§5（连接向导）/§7（向导步骤）/§8/§9 证据更新。
+- design/ops-runbook.md：§6.10 改为收件箱+连接向导+DWS 版本/登录；§8 加 UX 未做。
+- design/rejected-concepts.md：新增 §F UX 轮概念登记（五项导航、项目词、composer、收件箱、模型测试、演示跳过、
+  路径真相、连接向导、可访问性、StateKey；未做项明确拒绝假装）。
+
+**代码/文档对齐（本轮新行为）**
+- IA：`internal/view/vm.go:486-520`；`internal/ui/chrome.go:60-110`。
+- composer：`internal/ui/composer.go:19-220`；`internal/ui/commands.go:137-188`；`internal/runtime/ux.go:134-172`。
+- 收件箱/通知：`internal/ui/inbox.go:1-360`；`internal/runtime/ux.go:279-440`；`internal/ui/uxsupport.go:286-300`。
+- 模型：`internal/runtime/ux.go:36-125`；`internal/runtime/pages.go:524-526,543-558`；`internal/ui/settings.go:501-535`。
+- 首跑：`internal/ui/onboarding.go:60-180`；`internal/runtime/ux.go:445-452`。
+- 路径真相：`internal/ui/ticketdetail.go:257-290`；`internal/runtime/ux.go:279-303`；`internal/runtime/worker.go:570-582`。
+- IM 向导：`internal/ui/channelwizard.go:1-520`；`internal/runtime/ux_im.go:1-120`；`internal/runtime/im.go:1392-1505`；
+  `internal/im/dingtalk/dws_setup.go`；`internal/im/feishu/ws_chats.go`。
+- 视觉/窗口：`internal/ui/tokens.go:100-145`；`internal/ui/chrome.go:143-160`；`internal/ui/app.go:320-330,441-455`。
+
+**仍需 Lead 注意**
+- 模型超时实际在「设置›执行›模型响应超时」（`execution.model_timeout`），不在「模型」组；文档如实写，未虚构。
+- 仍明确未做：mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划/任务面板可视化、真正原项目执行、
+  多窗口、自动更新/About、系统钥匙串。README/RELEASE F-7/§13/ops §8 均已写清。
+- 本轮未跑全量 `verify-fixes.sh`/`release-check.sh`；README/RELEASE/CHANGELOG 均声明由 Lead 在 push 前重跑，不预称全绿。

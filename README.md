@@ -1,12 +1,14 @@
 # ZeoKeel Super Agent
 
-你的 AI 同事：从聊天里接活，自己研判该不该做、该派给哪个工作区，干完把交付物和结论送回原处。
+你的 AI 同事：从聊天里接活，自己研判该不该做、该派给哪个项目，干完把交付物和结论送回原处。
 单人模式、单机、单二进制、原生窗口——**不是又一个聊天框**。
 
 > **当前状态：`1.0.0-rc.1` 候选，代码 2026-11-04 最终状态（修复波已落地）。** 本轮修复了 IM 审批优先、
-> 飞书官方长连接、DWS 真实契约、异步命令边界、超级Agent 聊天双态、Ticket 身份、工作区 ID/过滤、设置事务与 secret 脱敏、
-> 工具信任边界。**未完成的是产品面**：打包只有 tar/zip（无 `.dmg`/deb/安装器）、系统钥匙串未做（API Key 明文存库）、
-> 设置页规则/admission/Source 实例仍只读、飞书 webhook/IM 媒体下载、`steer/inject` 与 `domain.Thread`/`UserError`。
+> 飞书官方长连接、DWS 真实契约、异步命令边界、超级Agent 聊天双态、Ticket 身份、项目 ID/过滤、设置事务与 secret 脱敏、
+> 工具信任边界。**2026-11-04 UI/UX 优化轮**把首跑、输入、收件箱、模型设置、路径真相、连接向导、可访问性
+> 按交互审计重做（见下）。**未完成的是产品面**：打包只有 tar/zip（无 `.dmg`/deb/安装器）、系统钥匙串未做（API Key 明文存库）、
+> 设置页规则/admission/Source 实例仍只读、飞书 webhook/IM 媒体下载、`steer/inject` 与 `domain.Thread`/`UserError`；
+> 系统 TextScale/ReduceMotion/高对比、原生 app 菜单、多窗口、自动更新仍未做（见「已知限制」）。
 > 全量闸门由 Lead 合并前统一跑（本文不预称全绿）。`VERSION` 是否升 1.0.0 由发布负责人按 [RELEASE.md](RELEASE.md) F 组决定。
 > 渠道契约见 [design/im-channels.md](design/im-channels.md)，变更见 [CHANGELOG](CHANGELOG.md)。
 
@@ -17,39 +19,55 @@
 | 领域与授权 | Deterministic gate（Strength/Basis）、admission table、bot list、团队规则、accept mode、Mandate/Policy version、Proposal 审批、两阶段 Eval、Input/Delivery、PR/Issue 生命周期（`follow` + `CloseThread → ThreadClosed`）、followup owners、hand-back、revalidate、pause/resume/stop/retry、`AnswerAttention`、投递三段式；**IM 入站审批优先**：每条飞书/钉钉消息（含操作员自己的）先变成一个 `DecPropose` 待批准项，Approve 才建 Ticket，Reject 什么都不留；来源页显示「待审批 N」 | 领域仍未搬 `Thread`/`UserError`；Eval 的 deadline/暂停细节仍在演进；审批逃生阀 `AutoApproveIM` 默认关闭 |
 | 执行 | 每 Ticket 一个 Worker 会话 + inbox；eino `filesystem`/`backgroundtask`/`patchtoolcalls`/`reduction`/`summarization`/`subagent`；skills/MCP/定时/目标；崩溃恢复；`execution.prepare`（`sh -c`、10m、scrub 后 `ZEOKEEL_*`、失败不自动重试）；30 分钟后台作业规则；**UI 命令异步边界**：发送/新建会话/保存设置都提交到 runtime 后台命令队列，面板显示「发送中/保存中/渠道重启中」，主线程不等 DB/模型/渠道 | `Runner.Resume` 已删除；无 steer/inject；跨工作区自动路由仍只靠 Router |
 | 来源 | GitHub（notifications + Issue/PR 评论；receive-all/CI 仅配置结构）；IM：**飞书官方 SDK 长连接（ws：新装默认/推荐；旧凭据迁移时 pin longpoll）与 HTTP 长轮询（longpoll，显式 fallback）**，**钉钉默认 DWS 个人 OAuth CLI（长驻 NDJSON consumer，无 poll/cursor）**，官方 Stream SDK 为 bot 模式可选 transport；按渠道三态启停（显式开关优先，缺省按凭据/flag 推导）、设置变更只重启变化渠道、失败批不推进 cursor、DWS 断线 1s→30s 重连并按 event id 去重；本地面板；定时任务 | 无 Source 实例表/面板“添加来源”：GitHub 仍需 `-repo/-gh-login`；飞书 webhook 未实现、无 IM 媒体下载；检查只验证凭据/订阅，不代替真实消息 E2E |
-| 面板 | 侧边栏：超级Agent / 工作区（树）/ 监控（消息·来源·触发·评估·执行）/ 设置；**超级Agent 是聊天 + 派活双态**：提问用模型回答（未配模型则确定性回答），派活回「已派发 #N」，待批回「需要你确认」；回答内联在输入框上方（所有页面）与总览对话里，非失败不标红；工作区过滤作用于「消息/执行」（可一键「全部」）；工作区可重命名/删除（仅空工作区）；Ticket 身份=domain ID + `#number`；界面字号可调 90/100/110%（`ui.font_scale`，设置›部署，立即生效）；启动窗口下限 1100×720；OS/arch·时区在侧栏 footer 与设置›部署 | 会话不能重命名/删除；设置页评估组只读；删除有工单的工作区会被拒绝（不是假删） |
-| 工作区与会话 | 面板注册工作区（名称/根目录/用途/类型 + mygo 原生目录选择器；根目录归一为绝对路径，重复 root 拒绝；opaque `ws_*` ID，名字可改且历史不断）；工作区→会话（Ticket）投影按操作员/超级Agent 创建分组，最近 50 条；选中工作区后「消息/执行」默认只看该工作区 | 删除仅限“没有工单”的工作区；会话列表每工作区 50 条上限 |
+| 面板 | 日常导航：超级Agent / 收件箱 / 项目 / 执行 / 设置，外加折叠的「诊断」组（对话记录·消息·连接·触发·评估）；**收件箱统一「待你决定 N」**，含 IM 批准与任务回答/重试/停止；输入条多行、Enter 换行、⌘/Ctrl+Enter 发送、target chip 明确聊天/项目（派活）；回答可展开/复制/看全部（对话记录）；模型设置在设置›模型，可测试连接；项目树/执行行内动作/`#number`；窗口记忆尺寸/位置、最小 1100×720；界面字号 90/100/110%（`ui.font_scale`） | 会话不能重命名/删除；评估组只读；删除有工单的项目会被拒绝；系统级 TextScale/ReduceMotion/高对比、原生菜单、多窗口、自动更新未做 |
+| 项目与会话 | UI 把工作区叫**项目**：注册项目（名称/根目录/用途/类型 + 原生目录选择器；根目录归一为绝对路径，重复 root 拒绝；opaque `ws_*` ID，名字可改且历史不断）；项目→会话（Ticket）按操作员/超级Agent 创建分组，最近 50 条；选中项目后「消息/执行」默认只看该项目；详情分开显示「项目目录 / 执行副本」 | 删除仅限“没有工单”的项目；会话列表每项目 50 条上限；Agent 只在执行副本工作 |
 | 内置工具 | eino `plantask`（TaskCreate/Get/Update/List，任务 JSON 存 `.zeokeel/plan`）、**AGENTS.md 作为不可信仓库内容信封注入（≤64KB，带显式 untrusted 标记）**、`web_fetch`（仅 http(s)、DNS 解析后 pin IP、拒绝私网、显式 `Proxy:nil`、10s、2MiB、返回 untrusted-content 信封）、`web_search`（前 5 条，端点可用 `execution.web_search_url` 覆盖）；设置›执行有 `plan_tasks/agents_md/web_tools` 开关（默认开） | 无浏览器渲染/JS；web 检索仍是 HTML 解析，受站点反爬/限流影响；工具能力在工单里的可视化仍有限 |
 | 运维 | `status/check/setup/login/backup/archive/stop`（退出码 0/1/2/3；stop 写 STOPPED）；`-headless` 服务；slog JSON 日志按天轮转 14 天；supervisor；单实例锁；systemd/launchd；watchdog；**settings 保存说明真实生效方式**（来源=重启相关渠道几秒、执行=下次新工单、提示词=热更新、部署=重启后生效）；`status --json`/Inspect 对 secret 做 redaction | 无开机自启/休眠唤醒/自动更新；无设置页 Source 实例/规则编辑；真实 IM 凭据 E2E 仍待环境 |
 
-## 界面结构（2026-11-04 最终）
+## 界面结构（2026-11-04 UI/UX 优化轮后）
 
-侧边栏按 DSH 的组织方式收敛（`internal/ui/chrome.go`）：
+**日常导航只有五项 + 诊断组**（`internal/ui/chrome.go`、`internal/view/vm.go:486-520`）：
 
-- **超级Agent**：顶部唯一大项，打开总览（待办/健康/对话/用量）和全局输入条。**它可以聊天，也可以派活**：
-  提问得到模型回答（未配置模型时给确定性回答并明说）；工作派发后显示「已派发 #N」；需要你批准时显示「需要你确认」。
-  最近一条回答固定显示在输入框上方，不再要求切到「消息」页找（`internal/ui/chat.go`、`internal/runtime/chat.go`）。
-- **工作区**：一棵树。工作区行展开看会话，点会话打开「执行」中的该 Ticket；底部「＋ 新建工作区」。
-- **监控**：消息 / 来源 / 触发 / 评估 / 执行（执行带运行中计数）。
-- **设置**：唯一配置入口；侧栏底部一行显示当前机器 `OS/arch · 时区 (UTC±h)`。
+- **超级Agent**：总览 + 全局输入（聊天/派活）。
+- **收件箱**：所有「待你决定」——IM 请求批准，以及需要回答/重试/停止的任务。
+- **项目**（旧称工作区）：树；展开看会话，点会话打开执行详情；新建/重命名/删除。
+- **执行**：任务列表与行内动作。
+- **设置**：来源（连接）/评估/执行/提示词/允许名单/模型/部署。
+- **诊断（高级，默认折叠）**：对话记录 / 消息 / 连接 / 触发 / 评估——工程排障用，不在日常路径。
 
-**工作区与会话**（`internal/ui/workspace.go`、`internal/runtime/workspaces.go`）：
+**首跑**（`internal/ui/onboarding.go`、`internal/runtime/ux.go`）：四步向导，必填/可选有标记；
+模型步骤可「保存并测试」，可「稍后设置（演示模式）」；项目根目录有**原生目录选择器**「浏览…」；
+开始使用后落总览，未配模型时显示「去配置模型」和「任务会先停在待你决定」的停车卡。
 
-- 「＋ 新建工作区」：名称 / 根目录 / 用途 / 类型；根目录用 **mygo 原生目录选择器**（Linux GTK/portal、Windows、macOS，
-  后台 goroutine，选完回填，不卡帧）。工作区 ID 是 opaque `ws_*`，名字可改（重命名不改变历史/引用）；
-  根目录统一为绝对路径，重复根目录与重复名字都会被拒绝。
-- 「删除工作区」会真正删除工作区行、默认策略与 engine 路由；**有工单时拒绝**并说明数量（不是假删）。
-- 会话=工单；按「我创建的 / 超级Agent 创建的」分组（身份来自 Trigger.Self/Mandate，不只看来源名），每工作区最近 50 条。
-- 点工作区/会话后，顶部出现「工作区 X / 全部」过滤条，**消息、执行两页默认只显示该工作区**；点「全部」恢复。
-- **Ticket 身份**：行 ID / 详情查找键是 domain ID，界面显示 `#number`；同一 Ticket 在消息流、执行列表、工作区会话里
-  指向同一对象。
-- **界面字号**：设置›部署可调 90/100/110%（`ui.font_scale`，经 `fs()` 统一缩放，保存后立即生效）；启动窗口最小 1100×720。
+**输入条**（`internal/ui/composer.go`）：多行输入，**Enter 换行、⌘/Ctrl+Enter 发送**（IME 合成回车不会误发）；
+上方 target chip 明确「发给 超级Agent（聊天）」或「项目 X（派活）」，切换后提交到该目标；
+发送失败保留草稿并给「再次发送」；最新回答内联可**展开/复制/查看全部**，完整对话在「诊断›对话记录」。
 
-**面板消息一定有结果，且不误报红**：
+**收件箱**（`internal/ui/inbox.go`、`internal/runtime/ux.go:316`）：统一「待你决定 N」一个数；
+请求批准卡片（谁/哪条消息/要做什么/敏感项）可批准/拒绝；任务卡可回答/重试/停止/打开；
+`j/k` 选择、`Enter` 打开；切换有 pending 与就地错误；窗口隐藏时新待办发**系统通知**。
 
-- 输入异步提交：发送中显示「发送中…」并禁用按钮；失败只在真实失败时标红；「已回答/需确认/已派发」是结果，不是错误。
-- 派活成功 → 「已派发 #N」；需要批准 → 「需要你确认」；无工作 → 模型回答（未配模型时确定性回答并说明）。
-- 长回答在总览「超级Agent」面板保留最近 8 条，输入框上方固定显示最新一条。
+**消息与派活**：提问先走超级Agent 回答（无模型时确定性回答）；「派活」由 target chip 指定项目，
+结果「已派发到 项目：#N」；不指定时由路由器判断。**回答是聊天，不等于任务**。
+Ticket 行/详情 ID 都是 domain ID，显示 `#N`。
+
+**项目与会话**（`internal/ui/workspace.go`、`internal/runtime/workspaces.go`）：名称/根目录/用途/类型；
+原生选择器、绝对路径、重复 root/名字拒绝；opaque `ws_*` ID，改名不改历史；删除空项目（有工单拒绝）。
+会话=工单，按「我创建的 / 超级Agent 创建的」分组，每项目最近 50 条。**路径真相**：
+详情「位置」分别列出「项目目录」与「执行副本」，可打开/复制；Agent 只在执行副本里工作，项目目录不会被自动修改；
+交付物可打开/复制，提示词也明确这一点（`internal/ui/ticketdetail.go:250-286`、`internal/runtime/ux.go:279`、`worker.go:570-582`）。
+
+**执行**（`internal/ui/execution.go:150-210`）：行内直接给「回答/重试/停止」，各自 pending 与就地错误，
+不用跳总览；`#N` 标签与筛选 tabs（全部/待开工/排队/执行中/等你处理/已结束）。
+
+**设置**：来源（连接流）、评估、执行、提示词、允许名单、**模型**、部署。
+模型组可填端点/API Key/模型名并「测试连接」（测试**已保存**配置；401/403 会直接说鉴权失败），保存后立即生效；
+模型响应超时在「执行›模型响应超时」。来源页的连接向导见下文「IM 渠道」。
+
+**视觉/可访问性**（`internal/ui/tokens.go:100-145`、`internal/ui/uxsupport.go`）：提高次要文字对比度、
+统一 focus token；可点击行用 `Focusable/Role/Label/Tooltip`；主要目标 28px、图标 16px；
+状态栏去掉版本/rev/Go/SQLite 调试串；窗口用 `StateKey:"main"` 记忆尺寸/位置，最小 1100×720；
+快捷键 ⌘K 搜索、⌘/ 名词表、⌘N 新会话、⌘, 设置。
 
 ## 内置工具（2026-11-04 最终）
 
@@ -64,12 +82,15 @@ Worker 默认拿到这些内置工具；设置›执行可逐个关闭（`plan_t
 
 工具名与 eino 注册名一致（PascalCase），提示词宣传同一组名字；工具调用作为 observation，不因工具错误崩轮。
 
-## IM 渠道（2026-11-04 最终）
+## IM 渠道（2026-11-04 UX 轮后）
 
 完整契约、DWS 命令格式、审批优先与运维步骤见 **[design/im-channels.md](design/im-channels.md)**；要点：
 
-- **审批优先**：飞书/钉钉的每条消息（包括操作员自己的）先变成**一个**待批准项；总览「待你批准」与来源页「待审批 N」
-  指向它。Approve 才建 Ticket 并唤醒；Reject 什么都不留；重复投递只产生一个待批项。
+- **审批优先**：飞书/钉钉的每条消息（包括操作员自己的）先变成**一个**待批准项；**收件箱「待你决定 N」**与来源页
+  「待审批 N」指向它。Approve 才建 Ticket 并唤醒；Reject 什么都不留；重复投递只产生一个待批项。
+- **连接向导**：来源页每渠道「连接」打开向导；只显示所选 transport 的字段；先校验必填、再**用填写值测试（不保存）**，
+  通过后才保存并启用；也可显式「仍然保存（未验证）」。DWS 显示本机版本、登录命令（可复制）与授权链接；
+  飞书 401/403 给开放平台授权入口；钉钉有「发送时暂停监听」开关。飞书 `feishu_chats`：ws 可选，longpoll 必填。
 - **飞书**：新装默认官方 SDK 长连接（`larksuite/oapi-sdk-go/v3` 的 `larkws`，推荐）；HTTP 长轮询是显式 fallback（带 cursor）。
   旧版本只有凭据、没有 transport 键的配置在升级时会被 pin 到 longpoll，保持原有接收路径不变。
   检查用 app id/secret 换 tenant token，401/403 给 `open.feishu.cn/app` 授权入口。
@@ -105,7 +126,7 @@ unzip zeokeel-<VERSION>-windows-x86_64.zip       # Windows（zip + install.ps1�
 ./zeokeel
 ```
 
-空数据库会进入**初次设置**向导（模型 / 工作区 / 来源 / 允许名单），设置会写入 SQLite，
+空数据库会进入**初次设置**向导（模型 / 项目 / 来源 / 允许名单；均可稍后改或跳过），设置会写入 SQLite，
 重启不丢。无显示器的机器可以非交互配置：
 
 ```sh
@@ -185,7 +206,7 @@ sh scripts/verify-fixes.sh   # 唯一的机械闸门：零 cgo build/test/vet + 
 sh scripts/release-check.sh  # 发布闸门：版本/产物/文档 + 上面的闸门
 ```
 
-**代码最终状态：2026-11-04（P0/P1 修复已落地）。** 本轮文档按最终代码同步；**全量闸门由 Lead 在合并前统一跑**
+**代码最终状态：2026-11-04（P0/P1 修复 + UI/UX 优化轮已落地）。** 本轮文档按最终代码同步；**全量闸门由 Lead 在合并前统一跑**
 （`sh scripts/verify-fixes.sh` + `sh scripts/release-check.sh`），本文不预称"已全绿"。
 上一轮 2026-11-03 的 2×非 race + 1×-race 全绿是历史快照，P0/P1 修复后必须重跑；`VERSION` 仍 `1.0.0-rc.1`，无新 tag。
 
@@ -226,22 +247,34 @@ make release   # verify + package + release-check
 ## 常见问题（FAQ）
 
 **我发了一句话，为什么没有工单？**
-超级Agent 是聊天+派活双态：提问会直接回答（配置模型时用模型，未配置模型时用本机确定性回答并明说）；
-真活才建 Ticket 并回「已派发 #N」。回答固定显示在输入框上方（所有页面）和总览的「超级Agent」对话里，
-不需要切到「消息」页。想强制在某工作区派活，用该工作区的「＋ 新建会话」或先选中工作区再用输入框。
+超级Agent 是聊天+派活双态。输入条上方的 target chip 决定目标：「发给 超级Agent（聊天）」会回答；
+「项目 X（派活）」会作为该项目的工单派发并回「已派发到 项目：#N」。不指定项目时由路由器判断。
+提问不是任务；要强制派活就先在 chip 里选项目（或进项目页「＋ 新建会话」）。回答内联在输入条上方，
+可展开/复制/「查看全部」；完整对话在「诊断›对话记录」。
+
+**收件箱是什么？为什么顶栏一直显示「待你决定 N」？**
+收件箱把所有等你的事收在一个地方：IM 请求批准，以及需要回答/重试/停止的任务。`待你决定 N` 是唯一计数
+（顶栏/侧栏/收件箱同源）。`j/k` 选择、`Enter` 打开；批准才开工，拒绝不建任务。窗口关着时新待办会发系统通知。
 
 **IM 收到消息后为什么只显示「待审批」？**
-这是 release policy：飞书/钉钉的每条消息（包括你自己的）都先变成**一个**待批准项，防止 IM 消息自动开工。
-到总览「待你批准」逐条批准/拒绝；批准才建 Ticket 并执行，拒绝什么都不留。来源页会显示「待审批 N」。
-重复投递只产生一个待批项。
+这是 release policy：飞书/钉钉每条消息（包括你自己的）先变成**一个**待批准项，防止自动开工。
+到收件箱批准/拒绝；批准才建 Ticket 并执行，拒绝什么都不留。来源页仍显示「待审批 N」。重复投递只产生一个待批项。
 
 **IM 显示「未启用」/检查失败怎么办？**
-先看启用状态：显式开关优先；没写过开关时由凭据/命令行 flag 推导，旧配置升级不会静默停摆。
-飞书：填 app id/secret，transport 选 **ws（官方长连接，推荐）** 或 longpoll（fallback），点「检查通道」；
-401/403 按提示去 `open.feishu.cn/app` 修应用权限。
-钉钉：默认 DWS（个人 OAuth，不是 bot）：安装 `dws`，`dws auth login`（headless 用 `--device`），
-`dws auth status --format json` 应为 `loggedIn:true`；点「检查通道」。想用官方机器人能力则选 transport=stream
-并填 app key/secret/robot code。禁用=未监听，不会假装在线。
+来源页每渠道点「连接」进向导：只填所选连接方式的字段 → 校验 →「检查连接」（测试填写值，不保存）→
+通过后「保存并启用」。飞书：选 ws（官方长连接，推荐；会话 ID 可留空）或 longpoll（会话 ID 必填）；
+401/403 按提示去 `open.feishu.cn/app` 修权限。钉钉 DWS：向导会显示本机 `dws` 版本和可复制的登录命令；
+未安装/未登录时先安装并 `dws auth login`（headless `--device`），再回来检查。Stream 是 bot 模式（app key/secret/robot）。
+禁用=未监听，不会假装在线。
+
+**模型怎么配、怎么知道配对了？**
+设置›模型填端点（如 `https://api.deepseek.com/v1`）、API Key、模型名，保存后立即生效；点「测试连接」探测
+**已保存**配置——401/403 会明确说鉴权失败，404 会提示检查 `/v1` 和模型名。模型响应超时在设置›执行。
+未配模型时总览显示「去配置模型」，任务会停在待你决定，不会假装执行。
+
+**为什么任务说改了、项目目录却没变？**
+Agent 在**执行副本**里工作，项目目录不会被自动修改。执行详情「位置」分别列出项目目录与执行副本，
+可打开/复制；交付物也在副本里，可打开/复制。要合并回项目由你决定。这是当前的真实语义，不是 bug。
 
 **web 工具会不会访问内网/被网页内容带跑？**
 `web_fetch` 只允许 http(s)，先用 DNS 解析校验并**pin 住 IP 拨号**（防 DNS rebinding），`Proxy:nil`（不受环境代理影响），
@@ -250,31 +283,39 @@ make release   # verify + package + release-check
 设置›执行可关闭 `plan_tasks/agents_md/web_tools`。
 
 **界面字太小/窗口裁切怎么办？**
-设置›部署有界面字号 90/100/110%（`ui.font_scale`，保存后立即生效）；启动窗口最小 1100×720。
+设置›部署有界面字号 90/100/110%（`ui.font_scale`，保存后立即生效）；窗口会记住尺寸/位置，
+最小 1100×720。系统级 TextScale/ReduceMotion/高对比尚未接入（见已知限制）。
 
-**为什么「删除工作区」被拒绝？**
-只有当工作区没有工单时才会真正删除（工作区行+默认策略）；有工单时会拒绝并说明数量。可以重命名工作区，历史不受影响。
+**为什么「删除项目」被拒绝？**
+只有当项目没有工单时才会真正删除（项目行+默认策略+路由）；有工单时会拒绝并说明数量。可以重命名项目，历史不受影响。
 
 **Ticket 的 #number 和列表里的 ID 是什么关系？**
-行/详情查找键是内部 domain ID；界面显示 `#number` 方便人读。同一 Ticket 在消息流、执行列表、工作区会话中指向同一对象。
+行/详情查找键是内部 domain ID；界面显示 `#number` 方便人读。同一 Ticket 在消息流、执行列表、项目会话中指向同一对象。
+
+**快捷键有哪些？**
+⌘K 搜索、⌘/ 名词表、⌘N 新会话、⌘, 设置；收件箱 `j/k` 选择、`Enter` 打开；输入条 Enter 换行、⌘/Ctrl+Enter 发送；
+Esc 关闭弹层。
 
 ## 已知限制（诚实清单）
 
 - macOS 包**未签名/未公证**，首次打开需右键 → 打开；`.dmg`、Debian 包、PKGBUILD、自动更新均未实现。
 - Windows 只有 zip + `install.ps1`，没有 MSI/NSIS 安装器；CI 只交叉编译与查体积，不产包。
-- **工作区**：可新建、重命名、删除（仅空工作区；有工单拒绝）；会话不能重命名/删除；每工作区会话列表只投影最近 50 条；
-  根目录创建时归一为绝对路径并拒绝重复，创建后不能改根目录。
+- **项目**：可新建、重命名、删除（仅空项目；有工单拒绝）；会话不能重命名/删除；每项目会话列表只投影最近 50 条；
+  根目录创建时归一为绝对路径并拒绝重复，创建后不能改根目录/类型。
+- **执行语义**：Agent 只在**执行副本**里工作，项目目录不会被自动修改；目前没有“真正在原项目里执行”的同步/合并。
 - **IM**：飞书 webhook/媒体下载未实现；DWS 依赖外部 `dws` CLI，真实 CLI 版本/登录流程与真实租户 E2E 未在本机验证；
   Stream 是 bot 模式（需 app key/secret/robot code）；两者都不下载图片/文件。
-- **设置页**：**来源组**可三态启停/transport/凭据/检查/授权；**评估组**只读（规则/admission/accept mode 不可编辑）；
+- **设置页**：**来源组**用连接向导配置 IM；**评估组**只读（规则/admission/accept mode 不可编辑）；
   没有 Source 实例表，GitHub 仓库/登录仍只能 `-repo/-gh-login`（改设置需重启）。
 - **系统钥匙串未实现**：API Key 明文存 SQLite（0600）；读取侧已做 redaction（`status --json`/Inspect/health detail 不泄密），
   worker 的 shell 环境已剥离凭证变量。复制/备份数据库时仍请按密钥保管。
+- **可访问性**：已提高对比度、加 focus/标签/工具提示，但**没有**系统 TextScale、ReduceMotion、高对比模式接入。
+- **平台集成**：没有 mygo 原生 app 菜单项（只有窗口内快捷键/托盘「打开/退出」）；没有多窗口；没有自动更新/About 版本检查。
+- **计划/任务可见性**：Worker 有 TaskCreate/Get/Update/List，但面板还没有显示计划/待办的可视化页面。
 - 提示词：保存时校验未知变量/占位符/超长，历史每层最近 20 版已记录；面板展示"内置默认值已更新"，但还没有历史列表页。
 - 领域类型 `domain.Thread`/`domain.UserError` 未落地；无 `steer/inject`；`Runner.Resume` 已删除。
 - 没有开机自启/休眠唤醒（交给 systemd/launchd）。
-- **工具策略是全局开关**（`plan_tasks/agents_md/web_tools`），没有按工作区的 allowlist；web 默认开启，需要时在设置›执行关闭。
-- **窗口最小尺寸只在启动时钳制**（1100×720），拖动缩小仍可能让内容拥挤。
+- **工具策略是全局开关**（`plan_tasks/agents_md/web_tools`），没有按项目的 allowlist；web 默认开启，需要时在设置›执行关闭。
 - `execution.prepare` 在 **execution root（工单目录的父目录）** 执行，工作区根由 `$ZEOKEEL_WORKDIR` 提供；失败不自动重试。
 - **shell 工具不是安全边界**：它能执行的命令可以读取本机任何可读文件（包括其它工单的工作树）。
   单机单人使用没问题；多人共机或处理他人数据时，请用独立系统账号或容器隔离（设计 §5.5）。

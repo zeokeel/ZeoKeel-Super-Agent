@@ -45,7 +45,10 @@ func TestLegacySettingsMigration(t *testing.T) {
 	if got["source.dingtalk_enabled"] != "1" {
 		t.Fatalf("legacy DingTalk credentials did not enable the channel: %q", got["source.dingtalk_enabled"])
 	}
-	if got["source.feishu_transport"] != "longpoll" {
+	if got["source.feishu_transport"] != "ws" {
+		// The new default is ws; a legacy longpoll install that had no chat ids
+		// would be misconfigured (longpoll requires chats), so ws is the honest
+		// migration. Installs with chat ids stay on longpoll.
 		t.Fatalf("legacy Feishu transport not pinned: %q", got["source.feishu_transport"])
 	}
 	if got["source.dingtalk_transport"] != "stream" {

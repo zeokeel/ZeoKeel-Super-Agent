@@ -178,6 +178,20 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 - 待 conf-arch：Feishu ws transport 接受/启动（我已发布 ws 选项；`channelReadiness` 在其 im.go）、IM Stop 注销 sender、三态 explicit/derived 字段。待 nih-integrations：none（go.sum 已由 Lead 修）。
 - 说明：DWS 已按 Lead 更正为外部 CLI 语义；store 新 API（UpdateAllWorkspacePoliciesAllowed / Chat / SettingsSchema）已接入。plantask BaseDir 与 AGENTS.md 注入在 agent scope（已通知 fix-agent）。
 
+## 4septies. UI/UX 优化轮（interaction audit）
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| P0-A 模型设置 | fixed | SettingsVM 新组（literal `worker`）`base_url`/`api_key`(secret)/`model`；LoadSettings 末尾 `ApplyModelSettings` + SaveSettings("worker") 立即生效；main 在 EnableWorker 后调用一次；`CheckModel(ctx) (ok, detail)`（10s 非流式，401/403/404/网络分类，`httpDoModel` 可注入）；挂起工单文案改为「设置 › 模型」。测试：保存生效、401/200/网络分类、挂起文案。 |
+| P0-1 composer target | fixed | `DispatchTo(workspaceID, text)`：显式工作区派发、空=超级Agent chat；异步/chat 投影同 Dispatch。测试含未知工作区。 |
+| P0-B actions | fixed | runtime `TicketAction{ID,Number,Title,Stage,StageID,CanStop,CanRetry,CanAnswer,Actions}` + `TicketActions()`；`TicketRow.CanStop` 在 overview/needsPerson/recent/execution 全部填充；运行中有 stop、失败/受阻 retry、attention answer。测试。 |
+| P0-C workdir truth | fixed | `ExecutionPaths(ticketID) (WorkspaceRoot,ExecutionDir,Artifacts)`；Worker prompt 明确「项目根目录 X / 执行副本 Y / 不要声称修改项目目录 / present 交付物是副本路径」；`TicketDetailVM.ProjectRoot/ExecutionRoot` 已填。测试 prompt 文案 + paths。 |
+| P0-2 attention inbox | fixed | `AttentionItem{Kind,DecisionID,TicketID,Number,Source,Sender,Text,Workspace,At,Actions}`、`AttentionItems()/AttentionCount()`、`SetAttentionNotify(fn)`（每个新条目一次）；health「待审批 N」、来源行 Fact；proposals+tickets 统一按时间排序。view `AttentionVM` 由 nih-ui 落地后可 `PublishAttention`（缺口已通知）；UndoReject 未实现（engine 无恢复 API，已报告）。 |
+| Onboarding skip/demo | fixed | `SkipOnboarding() (uint64,error)`、`DemoMode()`、`FinishOnboarding` 允许 demo；SaveOnboarding 接受 skip/demo、把向导模型写入 `worker.*` 并让 来源 步骤生效。测试。 |
+| IM setup adapters（Lead 追加） | fixed | 包装 conf-arch API：`ValidateChannelDraft`、`DWSVersionValue`、`DWSLoginArgs`、`IMConnectionState`、`ChannelFieldMetadata`（primitive 行协议）；SettingsVM 从 `IMChannelConfigSpecs()` 补齐缺失字段并按构建标注 transport 可用/未实现。Settings 新增 `dingtalk_pause_listen_on_send`（默认 "0"）。Feishu 传输默认改 ws；迁移：legacy 凭据无 transport 且 chats 空→ws、chats 非空→longpoll（测试已更新）。 |
+| view 落地填充（Lead 轮4） | fixed | `view.AttentionVM` 已 Publish（`PublishAttention`），Count == `AttentionCount` == `OverviewVM.PersonCount`（测试断言）；`TicketRow.CanStop`（running/queued）与 `TicketDetailVM.ProjectRoot/ExecutionRoot` 已填；`view.Artifact.Path` 改绝对路径（execution copy，`absoluteArtifactPath`，测试 `TestArtifactPathsAreAbsoluteInExecutionCopy`）。cmd 编译断言：ModelTester/WorkspaceDispatcher/AttentionCounter/OnboardingSkipper/OnboardingFinisher/DemoModer/ChannelValidator。 |
+| 验证 | — | 最终：`go build ./...` ok；全仓 `go test ./... -skip Live -count=1` → 27 ok / 0 FAIL；`-race ./internal/runtime ./cmd/zeokeel` ok（39.2s/5.5s，无 DATA RACE）；gofmt/vet 干净。 |
+
 ## 5. 跨 scope 待办 / 未完成
 
 1. **engine（conf-domain）**：缺“把 running Assignment 标记 interrupted”的 API。`RecoverAssignments` 目前只能补 note + 新 Assignment，旧 running 记录仍留在 `Ticket.Assignments`（`runtime/recovery.go`；期望 `Engine.InterruptAssignment(ticketID, assignmentID, reason)` 或 `RecoverAssignments` 内建实现）。
@@ -216,3 +230,22 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 `CGO_ENABLED=0 go build ./...`、`go vet ./internal/runtime ./cmd/zeokeel`、`go test ./internal/runtime ./cmd/zeokeel -count=1`、`CGO_ENABLED=1 go test -race ./internal/runtime ./cmd/zeokeel` 均通过（全仓 `go test ./... -skip Live` 在本轮快照亦绿）。
 
 **保留的兼容/偏离**：`IMManagerOptions.DWS`（旧 `DWSClient`）仅保留给已注入 fake 的测试；生产用 `DWSCLI`/`newDWSChannel`。`CheckChannel` 的飞书分支仍走 runtime 的 `httpDo` token 探针（测试依赖该 seam），语义等价于 `feishu.CheckCredentials`；后续可切换。DWS 的 `PauseListenOnSend`（真实 CLI profile 互斥时）尚未在 settings 暴露，需要时加 `dingtalk_pause_listen_on_send`。`main.go` 的 `BootstrapIMFlags` 行属 nih-runtime/Lead 迁移接线，conf-arch 未改。
+
+## 4octies. IM setup usability（UX U-03/A18，conf-arch，2026-11-04）
+
+> scope：`internal/runtime/im.go`、`internal/runtime/dws.go`、`internal/im/**`（新文件 `internal/im/dingtalk/dws_setup.go`、`internal/im/feishu/ws_chats.go` + `ws.go` 一行过滤）。未改 ui/view/agent/store/go.mod/pages.go。与 nih-runtime（settings 投影/迁移）、nih-integrations（internal/im 追加）已对齐。
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| 按 transport 的凭据模型 | fixed | 新增 `ChannelConfigSpec`/`ChannelTransportSpec`/`ChannelFieldSpec` 与 `IMChannelConfigSpecs()`：feishu ws（app_id/app_secret + chats 可选，留空=监听所有可见会话）；feishu longpoll（chats 必填）；dingtalk dws（dws_cmd/profile/listen_kind/chat_query/pause_listen_on_send；不含 app-key/secret）；dingtalk stream（app_key/app_secret/robot + bot_id）。`IMConfig` 新增 `PauseListenOnSend`（settings `source.dingtalk_pause_listen_on_send`），传给 `DWSConfig.PauseListenOnSend`；`channelChanged` 覆盖。 |
+| 未保存值校验 | fixed | `ValidateChannelConfig(name, values) []ChannelValidationIssue` 与 `runtime.CheckChannelDraft(name, values)`：draft 覆盖已保存 settings（只读，不写），feishu 用 draft 凭据 token 探针；dws 用临时 DWSChannel 跑 version+auth（Close，不执行 auth login）；stream 只查必填。`CheckChannel(saved)` 保持不变。 |
+| DWS 安装/版本/授权 UX | fixed | `internal/im/dingtalk/dws_setup.go`：`DWSVersion(ctx)`（`version`→`--version` 回退、首行截断）、`LoginCommand() []string`（command/profile/--device，只报告不执行）、`IsMissingBinary(err)`；runtime 暴露 `DWSVersion(ctx)`/`DWSLoginCommand()`。未登录返回 needs_auth + authUrl + 终端命令；未安装返回 misconfigured + 安装动作。 |
+| 连接状态模型 | fixed | `IMStateReady/NeedsAuth/Misconfigured/Disabled/Connecting/Error` + `ChannelConnection{Detail,NextAction,AuthURL,LoginCommand,Version,Transport}`；`IMManager.Connection(name)`、`Runtime.IMConnection(name)`；启动/半配置/轮询失败/授权/停止都会更新，并在来源行 Facts 发布 `状态`/`下一步`/`版本`。 |
+| Feishu ws chats 语义 | fixed | `ws_chats.go`：WS 空 chats=接收应用可见的全部会话（@/私聊由 addressed 事实决定），非空=只收列出的 chat；`ws.go` deliver 处过滤。longpoll 仍需 chats（`feishuDerivedEnabled`/`configIssues`/readiness 三处一致）。旧 `channelReadiness` 的分散判断收敛到 `configIssues` 单一校验器。 |
+| 测试 | fixed | `internal/runtime/im_setup_test.go`（draft 用未保存值/不写回/覆盖 saved、dws missing/version/needs-auth/登录命令不执行、stream 必填、specs 字段、状态发布到 source row）；`internal/im/dingtalk/dws_setup_test.go`（version/fallback/missing/login cmd）；`internal/im/feishu/ws_chats_test.go`（空/过滤/订阅过滤）。既有 IM 测试补 `FeishuChats`（longpoll 必填）与 fakeDWSChannel 的新 interface 方法。 |
+
+**偏离/跨 scope（需 Lead/UI owner）**：
+- 现有 `view.ChannelSpec` 是静态凭据键列表，表达不了 transport 级 required/secret/options/pause；UI 要渲染 `IMChannelConfigSpecs()` 需 view 增加等价类型（或 SettingsVM 发布字段元数据）。runtime 侧 API 已备好，未改 view。
+- SettingsVM 需要 nih-runtime 加 `dingtalk_pause_listen_on_send`（switch，默认 "0"）才能从面板配置；运行时已读取该键。
+- Feishu 默认 transport 已是 ws；若 nih-runtime 迁移把旧账号 pin 成 longpoll 且 chats 为空，新校验会报 misconfigured（动作提示改用 ws）；建议迁移改为 ws。
+- CheckChannel(saved) 的飞书分支仍是 runtime `httpDo` 探针（既有测试 seam），draft 走 `checkFeishuAuth` 同一实现；未切换 `feishu.CheckCredentials`。

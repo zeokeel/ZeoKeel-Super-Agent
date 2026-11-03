@@ -12,29 +12,30 @@ import mui "github.com/egoist/mygo/ui"
 // design §6.5: derive our token layer from ui.LightTheme()/DarkTheme(), never
 // scatter hard-coded colors.
 type Tokens struct {
-	Bg          mui.Color
-	Surface     mui.Color
-	SurfaceAlt  mui.Color
-	Border      mui.Color
-	BorderSoft  mui.Color
-	Text        mui.Color
-	TextMuted   mui.Color
-	TextFaint   mui.Color
-	Accent      mui.Color
-	AccentSoft  mui.Color
-	Cyan        mui.Color
-	Violet      mui.Color
-	VioletSoft  mui.Color
-	Green       mui.Color
-	GreenSoft   mui.Color
-	Amber       mui.Color
-	AmberSoft   mui.Color
-	Red         mui.Color
-	RedSoft     mui.Color
-	CodeBg      mui.Color
-	CodeText    mui.Color
-	Radius      float32
-	RadiusSmall float32
+	Bg           mui.Color
+	Surface      mui.Color
+	SurfaceAlt   mui.Color
+	SurfaceHover mui.Color
+	Border       mui.Color
+	BorderSoft   mui.Color
+	Text         mui.Color
+	TextMuted    mui.Color
+	TextFaint    mui.Color
+	Accent       mui.Color
+	AccentSoft   mui.Color
+	Cyan         mui.Color
+	Violet       mui.Color
+	VioletSoft   mui.Color
+	Green        mui.Color
+	GreenSoft    mui.Color
+	Amber        mui.Color
+	AmberSoft    mui.Color
+	Red          mui.Color
+	RedSoft      mui.Color
+	CodeBg       mui.Color
+	CodeText     mui.Color
+	Radius       float32
+	RadiusSmall  float32
 }
 
 const (
@@ -102,11 +103,11 @@ func brandFor(dark bool) brand {
 			surfaceHover:   mui.Hex("#1A2336"),
 			surfacePressed: mui.Hex("#222C42"),
 			surfaceAlt:     mui.Hex("#182134"),
-			border:         mui.Hex("#26314A"),
-			borderSoft:     mui.Hex("#1E2740"),
+			border:         mui.Hex("#3A4760"),
+			borderSoft:     mui.Hex("#2B3550"),
 			text:           mui.Hex("#E7ECF5"),
-			textMuted:      mui.Hex("#98A3B8"),
-			textFaint:      mui.Hex("#6B7891"),
+			textMuted:      mui.Hex("#AAB4C6"),
+			textFaint:      mui.Hex("#94A0B8"),
 			accent:         mui.Hex("#4D74FF"),
 			accentHover:    mui.Hex("#6B8CFF"),
 			accentPressed:  mui.Hex("#3A5FE0"),
@@ -132,12 +133,12 @@ func brandFor(dark bool) brand {
 		surface:        mui.Hex("#FFFFFF"),
 		surfaceHover:   mui.Hex("#F0F2F5"),
 		surfacePressed: mui.Hex("#E8EBEF"),
-		surfaceAlt:     mui.Hex("#FAFBFC"),
-		border:         mui.Hex("#E4E7EC"),
-		borderSoft:     mui.Hex("#EEF1F4"),
+		surfaceAlt:     mui.Hex("#F7F8FA"),
+		border:         mui.Hex("#C9D0DA"),
+		borderSoft:     mui.Hex("#E2E6EB"),
 		text:           mui.Hex("#101828"),
-		textMuted:      mui.Hex("#667085"),
-		textFaint:      mui.Hex("#98A2B3"),
+		textMuted:      mui.Hex("#5B6472"),
+		textFaint:      mui.Hex("#5B6472"),
 		accent:         mui.Hex("#2F5BFF"),
 		accentHover:    mui.Hex("#1D45E8"),
 		accentPressed:  mui.Hex("#1736C4"),
@@ -198,28 +199,29 @@ func tokensFrom(t *mui.Theme) Tokens {
 	}
 	b := brandFor(t.Dark)
 	return Tokens{
-		Bg:          t.Background,
-		Surface:     t.Surface,
-		SurfaceAlt:  b.surfaceAlt,
-		Border:      t.Border,
-		BorderSoft:  b.borderSoft,
-		Text:        t.Text,
-		TextMuted:   t.TextMuted,
-		TextFaint:   b.textFaint,
-		Accent:      t.Accent,
-		AccentSoft:  b.accentSoft,
-		Cyan:        b.cyan,
-		Violet:      b.violet,
-		VioletSoft:  b.violetSoft,
-		Green:       t.Success,
-		GreenSoft:   b.greenSoft,
-		Amber:       t.Warning,
-		AmberSoft:   b.amberSoft,
-		Red:         t.Danger,
-		RedSoft:     b.redSoft,
-		CodeBg:      b.codeBg,
-		CodeText:    b.codeText,
-		Radius:      cardRadius,
-		RadiusSmall: t.Radius,
+		Bg:           t.Background,
+		Surface:      t.Surface,
+		SurfaceAlt:   b.surfaceAlt,
+		SurfaceHover: t.SurfaceHover,
+		Border:       t.Border,
+		BorderSoft:   b.borderSoft,
+		Text:         t.Text,
+		TextMuted:    t.TextMuted,
+		TextFaint:    b.textFaint,
+		Accent:       t.Accent,
+		AccentSoft:   b.accentSoft,
+		Cyan:         b.cyan,
+		Violet:       b.violet,
+		VioletSoft:   b.violetSoft,
+		Green:        t.Success,
+		GreenSoft:    b.greenSoft,
+		Amber:        t.Warning,
+		AmberSoft:    b.amberSoft,
+		Red:          t.Danger,
+		RedSoft:      b.redSoft,
+		CodeBg:       b.codeBg,
+		CodeText:     b.codeText,
+		Radius:       cardRadius,
+		RadiusSmall:  t.Radius,
 	}
 }

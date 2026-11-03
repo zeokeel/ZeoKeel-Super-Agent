@@ -463,6 +463,9 @@ const (
 	SettingsPeople    SettingsGroupID = "people"
 	SettingsPrompt    SettingsGroupID = "prompt"
 	SettingsDeploy    SettingsGroupID = "deploy"
+	// SettingsWorker is the 模型 group: endpoint, model name, API key. The runtime
+	// publishes it; ModelGroup() is the panel's fallback shape when it does not.
+	SettingsWorker SettingsGroupID = "worker"
 )
 
 // SettingKind is the control a field draws. "fact" is a read-only fact inside
@@ -540,6 +543,24 @@ func (vm *SettingsVM) FieldValue(key string) (string, bool) {
 	return "", false
 }
 
+// ModelGroup is the 模型 settings group's panel-side shape: the fields the
+// runtime reads (worker.base_url/model/api_key). A runtime that does not publish
+// the group yet still gets a usable form, saved through the same protocol, and
+// the save's result is what tells the truth about whether it took.
+func ModelGroup() SettingsGroup {
+	return SettingsGroup{
+		ID: SettingsWorker, Label: "模型",
+		Note:   "研判与执行都用这个 OpenAI 兼容端点。保存后立即生效。",
+		Effect: "保存后立即生效（下一次模型调用）",
+		Fields: []SettingField{
+			{Key: "base_url", Label: "端点 base URL", Kind: SettingText,
+				Help: "例如 https://api.deepseek.com/v1（不要漏 /v1）"},
+			{Key: "api_key", Label: "API Key", Kind: SettingSecret},
+			{Key: "model", Label: "模型名", Kind: SettingText, Help: "例如 deepseek-chat"},
+		},
+	}
+}
+
 // SaveEffect is when a group's save takes effect, in a person's words, when the
 // projection does not say (SettingsGroup.Effect). Only a group whose changes are
 // really live says 热更新; boot-only and channel-restart groups say so plainly.
@@ -547,6 +568,8 @@ func SaveEffect(id SettingsGroupID) string {
 	switch id {
 	case SettingsSource:
 		return "保存后重启相关渠道（几秒；正在跑的工单不受影响）"
+	case SettingsWorker:
+		return "保存后立即生效（下一次模型调用）"
 	case SettingsEval:
 		return "保存后对下一次评估生效"
 	case SettingsExecution:
@@ -582,10 +605,13 @@ func (vm *SettingsVM) Group(id SettingsGroupID) *SettingsGroup {
 // looks complete because a group is missing. A group the runtime publishes keeps
 // its own Note/Fields; these Notes are the fallback.
 func RequiredSettingsGroups() []SettingsGroup {
+	model := ModelGroup()
+	model.Pending = []string{"模型端点与密钥"}
 	return []SettingsGroup{
+		model,
 		{
-			ID: SettingsSource, Label: "来源",
-			Note: "每个来源的启用、凭据与订阅",
+			ID: SettingsSource, Label: "连接",
+			Note: "飞书、钉钉与 GitHub：启用、凭据与订阅",
 			Pending: []string{
 				"来源实例与启用状态",
 				"允许名单 / bot 名单",

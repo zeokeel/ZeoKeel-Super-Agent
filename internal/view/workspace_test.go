@@ -121,7 +121,7 @@ func TestSectionsAndLabels(t *testing.T) {
 	if SecWorkspace == "" || SecWorkspace == SecOverview {
 		t.Fatal("SecWorkspace is not a distinct section")
 	}
-	if got := SectionLabel(SecWorkspace); got != "工作区" {
+	if got := SectionLabel(SecWorkspace); got != "项目" {
 		t.Fatalf("SectionLabel(SecWorkspace) = %q", got)
 	}
 	for _, tc := range []struct {
@@ -130,7 +130,7 @@ func TestSectionsAndLabels(t *testing.T) {
 	}{
 		{SecOverview, "超级Agent"},
 		{SecMessages, "消息"},
-		{SecSource, "来源"},
+		{SecSource, "连接"},
 		{SecTrigger, "触发"},
 		{SecEval, "评估"},
 		{SecExecution, "执行"},
@@ -140,18 +140,25 @@ func TestSectionsAndLabels(t *testing.T) {
 			t.Fatalf("SectionLabel(%q) = %q, want %q", tc.sec, got, tc.want)
 		}
 	}
-	// The monitoring rail keeps its order and does not carry 工作区: that is
-	// reached through a workspace row.
+	// The daily rail is five places; the engineering pages live in the
+	// diagnostics group (NavAdvanced) below it.
 	nav := Nav(nil)
-	if len(nav) != 7 {
+	if len(nav) != 5 {
 		t.Fatalf("Nav has %d items: %+v", len(nav), nav)
 	}
 	if nav[0].Section != SecOverview || nav[0].Label != "超级Agent" {
 		t.Fatalf("Nav[0] = %+v", nav[0])
 	}
-	for _, it := range nav {
-		if it.Section == SecWorkspace {
-			t.Fatal("Nav carries 工作区, which the sidebar draws as a tree")
+	if nav[1].Section != SecInbox || nav[1].Label != "收件箱" {
+		t.Fatalf("Nav[1] = %+v", nav[1])
+	}
+	adv := NavAdvanced()
+	if len(adv) == 0 {
+		t.Fatal("the diagnostics group is empty")
+	}
+	for _, it := range adv {
+		if it.Section == SecInbox || it.Section == SecWorkspace || it.Section == SecSettings {
+			t.Fatalf("NavAdvanced carries a daily section: %+v", it)
 		}
 	}
 }

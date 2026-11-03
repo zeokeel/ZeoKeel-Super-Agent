@@ -196,29 +196,34 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 完整契约、DWS 命令形状与故障矩阵见 **[im-channels.md](im-channels.md)**；这里只列运维动作：
 
 1. **审批优先（首要注意）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**一个待批准项**；
-   总览「待你批准」逐条 Approve/Reject。**批准才建 Ticket 并启动 Worker；拒绝什么都不留**；
+   到**收件箱**（或总览旧「待你批准」）逐条 Approve/Reject；收件箱是唯一「待你决定 N」。**批准才建 Ticket 并启动 Worker；拒绝什么都不留**；
    来源页显示「待审批 N」。重复投递只产生一个待批项。没有"IM 消息自动开工"的路径（除非部署显式打开
    Policy 的 `AutoApproveIM`，默认关闭）。
 2. **启用/停用（三态）**：设置›来源每渠道有开关。显式 1/0 优先；没写过开关时按凭据/flags 推导；
    flag-only 部署由启动 bootstrap 补写启用。禁用=停止监听、来源"未启用"、health 不假装在线。
    保存后只重启 enable/transport/凭据/self/profile 变化的渠道（`internal/runtime/im.go:345-470`）。
-3. **飞书**：**新装默认 ws（官方 SDK 长连接，推荐）**；旧凭据-only 配置在迁移时被 pin 到 longpoll，保持原接收路径；longpoll 是显式 fallback（需要 `feishu_chats`）。面板 Options 只有 `ws`/`longpoll`，没有 webhook。
-   填 app id/secret 后点「检查通道」（换 tenant token）；401/403 时按提示打开 `https://open.feishu.cn/app`
+3. **连接向导（UI 主路径）**：设置›来源›「连接」打开向导；只填所选 transport 字段 →「检查连接」（测试填写值，不保存）
+   → 通过后「保存并启用」（也可显式「仍然保存（未验证）」）。向导显示 DWS 版本/登录命令/授权链接；
+   未安装/未登录/401 会给出对应提示。禁用/保存后只重启变化渠道，保存显示「保存中…」。
+4. **飞书**：**新装默认 ws（官方 SDK 长连接，推荐）**；旧凭据-only 配置在迁移时被 pin 到 longpoll，保持原接收路径。
+   ws 的 `feishu_chats` 可留空（监听应用可见会话）；longpoll 必须填会话 ID。401/403 按提示打开 `https://open.feishu.cn/app`
    修应用权限/发布版本。没有 webhook，不下载媒体。WS 由 SDK 自带重连；longpoll 的 cursor 存 kv
    （`im.cursor.<channel>.<transport>`），整批接受后才推进，切换 transport 会清 cursor。
-4. **钉钉（默认 DWS，个人 OAuth，不是 bot/app）**：本机安装并登录 DWS：
+5. **钉钉（默认 DWS，个人 OAuth，不是 bot/app）**：本机安装并登录 DWS：
    - `dws auth status --format json` → `loggedIn:true`；未登录 `dws auth login`（headless 用 `--device`）；
+   - 向导显示本机 `dws` 版本与可复制的登录命令；未安装时先安装再回来检查；
    - 接收是**长驻进程**：`dws event +listen-im --kind at-me|group|all-direct|all-group [--chat-query q] [--profile p] --flatten -f ndjson`
      （无 poll/cursor；断线 1s→30s 重连，event id 去重）；
    - 发送：`dws chat +messages-send --as user --group <cid> --text <t> --format json`（单聊用 `--open-dingtalk-id`；
      **没有 idempotency-key**，靠文本尾部隐藏 marker；可 `--as bot --robot-code` 用 bot 身份）；
    - 短命令串行、30s 超时、不经 shell、stderr 脱敏；检查复用运行中的 DWS 后端；
-   - **未安装/未登录** → 来源 error/auth + 可操作提示；不会自动 fallback 到 Stream。
-   - **DWS 不用 app key/secret**；`dingtalk_app_key/app_secret/robot` 只属于 Stream（bot）模式。
-5. **钉钉 Stream（bot）**：`dingtalk_transport=stream` + app key/secret/robot code；检查只验凭据齐全。
-6. **排障**：`zeokeel status --json` 看 `im:feishu`/`im:dingtalk` 的 health（secret 已 redaction）；
+   - **未安装/未登录** → 来源 error/auth + 可操作提示；不会自动 fallback 到 Stream；
+   - DWS 不用 app key/secret；`dingtalk_app_key/app_secret/robot` 只属于 Stream（bot）模式；
+   - 「发送时暂停监听」（`dingtalk_pause_listen_on_send`，默认关）仅本机 CLI 要求 profile 独占时打开。
+6. **钉钉 Stream（bot）**：`dingtalk_transport=stream` + app key/secret/robot code；向导检查只验凭据齐全。
+7. **排障**：`zeokeel status --json` 看 `im:feishu`/`im:dingtalk` 的 health（secret 已 redaction）；
    日志搜 `IM channel started` / `IM poll failed` / `IM driver failed` / `dws`；DWS 自身用
-   `dws auth status --format json`。审批类问题看「待审批 N」与总览批准列表。
+   `dws auth status --format json`。审批类问题看**收件箱**「待你决定 N」；窗口关着时新待办会发系统通知。
 
 ## 6.11 升级与迁移（IM / settings）
 
@@ -255,6 +260,7 @@ ZEOKEEL_BIN=/usr/local/bin/zeokeel scripts/watchdog-check.sh --restart-cmd "syst
   官方 Stream 是 bot 模式（app key/secret/robot）。
 - 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
 - `ui.font_scale` 已投影并可在设置›部署编辑（0.9/1.0/1.1，保存立即生效）。
+- UX 未做：mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划/任务可视化、真正原项目执行、多窗口、自动更新。
 - 升级迁移已接线（`LoadSettings` 的 `migrateSettings` + schema stamp）；历史旧文件仍按读取层兼容。
 - 监控指标导出（Prometheus 等）：没有；只有 `status --json` 与日志。
 - 设置页规则/admission/accept mode 与 GitHub Source 实例：不可编辑（只读事实或 CLI flag）。

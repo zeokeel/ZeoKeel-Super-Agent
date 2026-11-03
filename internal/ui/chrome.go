@@ -45,55 +45,62 @@ func (a *App) topbar(c *mui.Context) {
 		mui.Text(c, fmt.Sprintf("%d/%d 执行中 · 队列 %d", running, maxJobs, queued)).
 			FontSize(11).TextColor(tk.TextMuted)
 
-		if n := ov.PersonCount(); n > 0 {
-			chip(c, tk, fmt.Sprintf("%d 待处理", n), tk.Amber, tk.AmberSoft)
+		if n := a.attentionCount(); n > 0 {
+			inbox := mui.Row(c).Height(28).Padding(0, 10).Radius(6).Background(tk.AmberSoft).
+				Focusable().Role(mui.RoleButton).Label(view.AttentionLabel(n)).
+				Tooltip("打开收件箱：待你决定的请求").
+				OnClick(func() { a.sec = view.SecInbox; a.locate = nil })
+			inbox.Children(func() {
+				mui.Text(c, view.AttentionLabel(n)).FontSize(fs(12)).TextColor(tk.Amber)
+			})
 		}
 	})
 }
 
-// sidebar is the panel's left column, DSH-like: 超级Agent above, then the
-// workspaces with their conversations, then the monitoring pages and 设置 at the
-// bottom, and the machine's OS/timezone in the footer.
-//
-// 工作区 is a tree, not a list: a workspace row expands to its conversations, and
-// a conversation opens its Ticket on 执行. The monitoring pages stay where they
-// were so nothing a person learned moves.
+// sidebar is the panel's left column. The daily rail is five places: 超级Agent,
+// 收件箱, 项目 (the workspace tree), 执行 and 设置. The engineering pages stay
+// reachable in a collapsed 诊断 group below, so the daily path stays short
+// (interaction audit §III).
 func (a *App) sidebar(c *mui.Context) {
 	tk := a.tk
 	items := view.Nav(a.snap.Overview())
 
 	mui.Column(c).Width(232).AlignItems(mui.Stretch).Background(tk.Surface).Children(func() {
-		// 超级Agent: the one entry above the workspaces. It is the overview page,
-		// the place a person reads when no workspace is on screen.
-		mui.Column(c).Padding(8, 8, 6, 8).Children(func() {
+		// 超级Agent + 收件箱: the two places a conversation lives.
+		mui.Column(c).Padding(8, 8, 6, 8).Gap(2).Children(func() {
 			a.railItem(c, items[0], 16, 17, true)
+			a.railItem(c, items[1], 14, 15, false)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 
-		// 工作区: the group grows so a long list scrolls, and the monitoring
-		// group stays at the bottom where a person expects it.
+		// 项目: the workspace tree grows, so a long list scrolls.
 		mui.Scroll(c).Grow(1).Children(func() { a.workspaceSection(c) })
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 
-		// 监控: the inspection pages, unchanged in order and meaning.
-		mui.Column(c).Padding(6, 8).Gap(2).Children(func() {
-			mui.Row(c).Padding(2, 8, 2, 8).Children(func() {
-				mui.Text(c, "监控").FontSize(fs(13)).Bold().TextColor(tk.TextFaint)
-			})
-			for _, it := range items[1 : len(items)-1] {
-				a.railItem(c, it, 14, 15, false)
-			}
+		// 执行 and 设置, then 诊断 (collapsed by default).
+		mui.Column(c).Padding(6, 8, 2, 8).Gap(2).Children(func() {
+			a.railItem(c, items[3], 14, 15, false)
+			a.railItem(c, items[4], 14, 15, false)
 		})
-		// 设置: configuration, one place (design §6.3).
-		mui.Column(c).Padding(2, 8, 6, 8).Children(func() {
-			a.railItem(c, items[len(items)-1], 14, 15, false)
+		mui.Column(c).Padding(2, 8, 6, 8).Gap(2).Children(func() {
+			header := mui.Row(c).Height(30).Radius(7).Padding(0, 8).Gap(6).
+				AlignItems(mui.Center).Label("诊断（高级）").Focusable().Role(mui.RoleButton).
+				Tooltip("触发、评估、消息流、连接等技术页").OnClick(func() { a.advancedOpen = !a.advancedOpen })
+			header.Children(func() {
+				mui.Icon(c, ifIcon(a.advancedOpen, icChevD, icChevR)).FontSize(fs(10)).
+					TextColor(tk.TextFaint)
+				mui.Text(c, "诊断").FontSize(fs(12)).Bold().TextColor(tk.TextFaint)
+			})
+			if a.advancedOpen {
+				for _, it := range view.NavAdvanced() {
+					a.railItem(c, it, 13, 13, false)
+				}
+			}
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 
-		// The machine this window runs on, as the runtime reports it. It is the
-		// smallest line in the panel on purpose: the whole "OS/arch · timezone
-		// (UTC±h)" fits the rail's width, and wraps instead of being cut when a
-		// timezone name is long.
+		// The machine this window runs on. The smallest line in the panel on
+		// purpose; it wraps instead of being cut when a timezone name is long.
 		mui.Column(c).Padding(4, 10).Children(func() {
 			mui.Text(c, a.systemLabel()).FontSize(fs(10)).TextColor(tk.TextFaint)
 		})
@@ -104,9 +111,12 @@ func (a *App) sidebar(c *mui.Context) {
 func (a *App) railItem(c *mui.Context, it view.NavItem, iconSize, textSize float32, big bool) {
 	tk := a.tk
 	on := it.Section == a.sec
-	row := mui.Row(c).Height(36).Radius(8).Padding(0, 10).Gap(9).AlignItems(mui.Center)
+	row := mui.Row(c).Height(36).Radius(8).Padding(0, 10).Gap(9).AlignItems(mui.Center).
+		Focusable().Role(mui.RoleButton).Label(it.Label).Tooltip(it.Label)
 	if on {
 		row.Background(tk.AccentSoft)
+	} else if row.Hovered() {
+		row.Background(tk.SurfaceAlt)
 	}
 	clicked := row.Clicked()
 	row.Children(func() {
@@ -128,31 +138,25 @@ func (a *App) railItem(c *mui.Context, it view.NavItem, iconSize, textSize float
 	}
 }
 
-// statusbar is the one line that must never lie.
+// statusbar is the one line that must never lie: what needs you, and how to get
+// help. Build/version/Go/CGO facts belong to 关于/诊断, not to the main chrome.
 func (a *App) statusbar(c *mui.Context) {
 	tk := a.tk
-	ov := a.snap.Overview()
-	db, rev := "—", a.snap.Revision()
-	if ov != nil {
-		db = ov.Storage.DB
-	}
-	mui.Row(c).Height(24).Padding(0, 14).AlignItems(mui.Center).
+	mui.Row(c).Height(26).Padding(0, 14).AlignItems(mui.Center).
 		Background(tk.Surface).Children(func() {
 		left := "一条连续的上下文 · 满了自动压缩"
 		if a.draining {
-			// Say what is happening: a window that seems to ignore 退出 is worse
-			// than one that explains why it is waiting.
 			left = "正在等执行器收尾，完成后自动退出…"
 		}
-		mui.Text(c, left).FontSize(fs(12)).TextColor(tk.TextFaint)
+		mui.Text(c, left).FontSize(fs(12)).TextColor(tk.TextMuted)
 		mui.Spacer(c)
-		// The glossary's discoverable entry: the shortcut opens it, and this says
-		// so in the platform's own words.
-		mui.Text(c, "帮助 "+helpKeyHint()).FontSize(fs(12)).SingleLine().TextColor(tk.TextMuted).
+		if n := a.attentionCount(); n > 0 {
+			mui.Text(c, view.AttentionLabel(n)).FontSize(fs(12)).TextColor(tk.Amber)
+			mui.Text(c, "·").FontSize(fs(12)).TextColor(tk.TextFaint)
+		}
+		help := mui.Text(c, "帮助 "+helpKeyHint()).FontSize(fs(12)).TextColor(tk.TextMuted).
 			OnClick(func() { a.openHelp() })
-		mui.Text(c, "·").FontSize(fs(12)).TextColor(tk.TextFaint)
-		mui.Text(c, fmt.Sprintf("v%s · rev %d · Go 1.27.3 · CGO=0 · SQLite %s", Version, rev, db)).
-			FontSize(10).SingleLine().TextColor(tk.TextFaint)
+		_ = help
 	})
 }
 
@@ -213,6 +217,9 @@ func helpKeyHint() string {
 	}
 	return "Ctrl+/"
 }
+
+// runtimeGOOS names the platform for key hints (one place, like searchKeyHint).
+var runtimeGOOS = runtime.GOOS
 
 func ifColor(cond bool, yes, no mui.Color) mui.Color {
 	if cond {

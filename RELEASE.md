@@ -35,7 +35,7 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
       Approve 建单/Reject 无痕；三态启用 + bool 兼容 + flag-only bootstrap；per-channel generation/Close/sender 注销；
       secret 不回显、status/Inspect redaction（`cmd/zeokeel/imwiring.go`、`internal/runtime/im.go`、`design/im-channels.md`）
       **未验证**：真实凭据/真实 DWS 租户端到端（需要环境）
-- [ ] **面板可配置 Source 实例 / 规则 / admission / accept mode**：设置页来源组可编辑 IM 凭据，评估组只读事实；
+- [ ] **面板可配置 Source 实例 / 规则 / admission / accept mode**：设置页来源组用连接向导配置 IM（凭据/transport/检查/授权），评估组只读事实；
       GitHub 仓库/CLI、规则、admission 表、accept mode 仍不可编辑（owner: fix-ui2）
 - [x] 提示词历史与 "Default updated"：`recordPromptMeta` 已在保存路径调用（`internal/runtime/pages.go:557`），
       base-hash 与每层最近 20 版历史写入 kv；面板显示"内置默认值已更新"（无历史列表页）
@@ -94,16 +94,18 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
    （`store/redact.go`、`inspect.go`），worker 环境已剥离凭证。真实 IM 凭据 E2E 仍需环境。
 5. **分发**：`.dmg`/deb/PKGBUILD/NSIS/自动更新；CI 出包与签名公证。
 6. **运维**：开机自启/休眠唤醒（委托 systemd/launchd）；`--respect-stop` 由 stop 标记 + 巡检承担（无独立 flag）。
+7. **平台/UX 收尾**：mygo 原生 app 菜单项；系统 TextScale / ReduceMotion / 高对比；计划/任务在面板的可视化；
+   真正在原项目执行（当前为执行副本，已在 UI/提示词披露）；多窗口；自动更新/About 版本检查。
 ## G. rc.1 的签发语义（不要误读）
 
 `VERSION=1.0.0-rc.1` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
 但 F 组的产品面缺口未完成。F 组全部完成、E 组最后一项通过后，才由发布负责人把 `VERSION` 改为 `1.0.0`。
 
-## H. Round 2/3 + 修复波增量（2026-11-04，不新增 release tag）
+## H. Round 2/3 + 修复波 + UI/UX 优化轮增量（2026-11-04，不新增 release tag）
 
 > 同一 rc.1 内的用户可见增量；不改变"rc.1 仍是候选"的结论。证据见 `design/im-channels.md` 与设计 §13。
 
-- [x] 侧栏：超级Agent / 工作区树 / 监控（消息·来源·触发·评估·执行）/ 设置；footer OS/arch + 时区
+- [x] 侧栏（UX 轮后）：超级Agent / 收件箱 / 项目 / 执行 / 设置 + 折叠「诊断」；footer OS/arch + 时区
 - [x] 工作区：原生目录选择器、opaque ID、重命名、删除（仅空工作区，有工单拒绝）、绝对路径/重复 root 拒绝、
   工作区过滤（消息/执行可切「全部」）
 - [x] 超级Agent 聊天 + 派活双态：模型回答（未配模型则确定性回答并说明）、「已派发 #N」、「需要你确认」；
@@ -124,5 +126,26 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 - [x] 工具：TaskCreate/Get/Update/List 与注册名一致、任务 JSON 在 `.zeokeel/plan`；AGENTS.md 不可信仓库信封 ≤64KB；
   web_fetch DNS pin/`Proxy:nil`/拒私网/2MiB/`<untrusted-web-content>`；`plan_tasks/agents_md/web_tools` 开关
 - [x] 界面：`ui.font_scale` 在设置›部署投影并可编辑（90/100/110%），经 `fs()` 统一缩放；启动窗口最小 1100×720
+- [x] **导航/IA**：日常 超级Agent / 收件箱 / 项目 / 执行 / 设置 + 折叠「诊断」组（对话记录·消息·连接·触发·评估）；
+  UI 以「项目」称呼原工作区（`internal/view/vm.go:486-520`、`internal/ui/chrome.go:60-110`）
+- [x] **模型设置**：设置›模型（端点/API Key/模型名）+「测试连接」探测已保存配置；保存后即时生效；
+  未配模型时总览「去配置模型」、任务停在待你决定（`runtime/ux.go:36-125`、`runtime/pages.go:543-558`）
+- [x] **首跑**：必填/可选标记、模型「保存并测试」、「稍后设置（演示模式）」、项目根目录原生选择器、
+  完成后落点提示（`internal/ui/onboarding.go:60-180`、`internal/runtime/ux.go:445-452`）
+- [x] **输入条**：多行 Enter 换行/⌘Ctrl+Enter 发送（IME 安全）、target chip 聊天/项目派活、失败保留草稿+再次发送、
+  回答展开/复制/查看全部到「对话记录」（`internal/ui/composer.go:19-220`、`internal/ui/commands.go:137-188`）
+- [x] **收件箱**：统一「待你决定 N」（runtime 单源）、批准/拒绝/回答/重试/停止、j/k/Enter、pending/就地错误、
+  隐藏窗口系统通知（`internal/ui/inbox.go:1-350`、`internal/runtime/ux.go:279-440`、`view/attention.go`）
+- [x] **执行页行内动作**：回答/重试/停止 + pending/错误、`#N`（`internal/ui/execution.go:150-210`、`view/ticket.go:69-88`）
+- [x] **路径真相**：详情「项目目录 / 执行副本」可打开/复制，交付物可打开/复制；提示词不再声称修改项目
+  （`internal/ui/ticketdetail.go:250-286`、`internal/runtime/ux.go:279-303`、`internal/runtime/worker.go:570-582`）
+- [x] **IM 连接向导**：按 transport 字段、draft 校验+检查不保存、通过才保存/显式仍保存、DWS 版本/登录命令/授权链接、
+  Feishu chats（ws 可选/longpoll 必填）、暂停监听（`internal/ui/channelwizard.go:1-520`、`internal/runtime/ux_im.go`、
+  `internal/runtime/im.go:1392-1505`、`internal/im/dingtalk/dws_setup.go`、`internal/im/feishu/ws_chats.go`）
+- [x] **视觉/可访问性**：对比度 token、focus token、Focusable/Role/Label/Tooltip、28px 目标/16px 图标、
+  状态栏去 debug、`StateKey:"main"`+最小 1100×720、⌘N/⌘, 快捷键（`internal/ui/tokens.go:100-145`、
+  `internal/ui/chrome.go:143-160`、`internal/ui/app.go:320-330,441-455`）
+- [ ] **明确未做（F-7）**：mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划/任务可视化、真正原项目执行、
+  多窗口、自动更新/About（见 README「已知限制」与 F 组第 7 条）
 - [ ] **最终全量闸门未在本轮代码上运行**：由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` 与
   `sh scripts/release-check.sh`；本文不预称全绿。`VERSION` 仍 `1.0.0-rc.1`，无新 tag。

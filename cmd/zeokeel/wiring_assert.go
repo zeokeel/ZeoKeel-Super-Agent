@@ -31,3 +31,13 @@ var (
 	_ ui.WorkspaceRenamer = (*runtime.Runtime)(nil)
 	_ ui.WorkspaceDeleter = (*runtime.Runtime)(nil)
 )
+
+// UI/UX optional capabilities (interaction audit): model probe, composer target,
+// attention count, onboarding skip/demo.
+var (
+	_ ui.ModelTester         = (*runtime.Runtime)(nil)
+	_ ui.WorkspaceDispatcher = (*runtime.Runtime)(nil)
+	_ ui.AttentionCounter    = (*runtime.Runtime)(nil)
+	_ ui.OnboardingSkipper   = (*runtime.Runtime)(nil)
+	_ ui.DemoModer           = (*runtime.Runtime)(nil)
+)

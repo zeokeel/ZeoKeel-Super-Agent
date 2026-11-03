@@ -97,9 +97,41 @@ type App struct {
 	draining  bool
 	drainDone chan struct{}
 
-	// Composer state, main thread only.
-	draft       string
-	composerErr string
+	// Composer state, main thread only. targetWS is the visible target: "" = the
+	// super-agent chat, a workspace id = dispatch to that project.
+	draft           string
+	composerErr     string
+	composerNote    string
+	dispatchEcho    string
+	dispatchPending bool
+	targetWS        string
+	sendFailedText  string
+	sendFailedErr   string
+	answerExpanded  bool
+	// toasts are the transient success/failure/undo lines above the composer.
+	toasts []toast
+	// hidden is true while the window is hidden (close = hide): notifications for
+	// new attention items only fire then.
+	hidden        bool
+	lastAttention int
+	// modelTest* is 设置 › 模型's 测试连接 result.
+	modelTestPending bool
+	modelTestOK      bool
+	modelTestDetail  string
+	// onboarding pending flags.
+	onbSkipping  bool
+	onbFinishing bool
+	// 收件箱 state: chosen row, per-item pending/error, so an action's outcome is
+	// shown where it was taken.
+	inboxSel     int
+	inboxPending map[string]bool
+	inboxErr     map[string]string
+	// Execution row actions: per-ticket pending action and its local error.
+	rowPending map[string]string
+	rowErr     map[string]string
+	// advancedOpen shows the 诊断 group in the sidebar (engineering pages). It
+	// starts open so the pages stay discoverable, and a person can collapse it.
+	advancedOpen bool
 
 	// Page state, main thread only. A list keeps its choice and its place in the
 	// app's state, never in an element stored across frames (design §6.1).
@@ -179,7 +211,7 @@ type App struct {
 	// workspace rows are open; workspaceSel is the workspace 工作区 shows.
 	wsExpanded   map[string]bool
 	workspaceSel string
-	// The 新建工作区 dialog and its draft. pickingFolder is true while the native
+	// The 新建项目 dialog and its draft. pickingFolder is true while the native
 	// directory picker is open, so a second click cannot open a second dialog.
 	wsModal       bool
 	wsDraft       workspaceDraft
@@ -192,18 +224,29 @@ type App struct {
 	convDraft string
 	convErr   string
 
+	// 连接向导 state (IM channels): the open channel/transport, its per-field draft,
+	// and the last check's pending/answer, all main-thread only.
+	connOpen      bool
+	connChannel   string
+	connTransport string
+	connDrafts    map[string]*string
+	connChecking  bool
+	connChecked   bool
+	connState     string
+	connDetail    string
+	connAuthURL   string
+	connLogin     string
+	connVersion   string
+	connValidErrs []string
+	connCheckErr  string
+	connForce     bool
+	connSaving    bool
+
 	// 设置 › 来源's channel cards. channelChecks holds the last check of each
 	// channel (by name) and whether one is running; the runtime's projection
 	// supplies the configuration, so editing keeps the settings save protocol.
 	channelChecks map[string]channelCheck
 	channelErr    string
-
-	// Composer commands are asynchronous (P0-2): dispatchPending covers "sending",
-	// dispatchEcho is the line being sent, composerNote is the agent's neutral
-	// answer when it did not become work.
-	dispatchPending bool
-	dispatchEcho    string
-	composerNote    string
 
 	// Workspace dialogs' pending state (creating is off-frame too).
 	wsCreating   bool
@@ -276,9 +319,14 @@ func Run(o Options) error {
 
 	mygo.App.WhenReady(func() {
 		a.win = mygo.NewWindow(mygo.WindowOptions{
-			Title:  o.Title,
-			Width:  int(o.Width),
-			Height: int(o.Height),
+			Title:     o.Title,
+			Width:     int(o.Width),
+			Height:    int(o.Height),
+			MinWidth:  minWindowWidth,
+			MinHeight: minWindowHeight,
+			// The window remembers its bounds and maximized state across launches
+			// (mygo keeps window-state.json in PathUserData unless a store is set).
+			StateKey: "main",
 			Content: mui.View(func(c *mui.Context) {
 				a.now = time.Now()
 				a.view(c)
@@ -292,6 +340,7 @@ func Run(o Options) error {
 				return
 			}
 			e.PreventDefault()
+			a.hidden = true
 			a.win.Hide()
 		})
 
@@ -307,6 +356,7 @@ func Run(o Options) error {
 	// A second launch focuses this one instead of starting a second runtime.
 	mygo.App.OnSecondInstance(func([]string, string) {
 		if a.win != nil {
+			a.hidden = false
 			a.win.Show()
 			a.win.Focus()
 		}
@@ -368,6 +418,8 @@ func (a *App) view(c *mui.Context) {
 	// One text scale for the whole panel, from the ui.font_scale setting (P2:
 	// it replaces the magic +2 that was applied once at the numbers).
 	viewScale = a.viewScale()
+	// The one attention number: notify when it grows while the window is hidden.
+	a.watchAttention()
 
 	// The frame's theme follows the system's appearance (mygo does that on its
 	// own); the brand derives from it every frame, so dark mode and a change of
@@ -393,6 +445,17 @@ func (a *App) view(c *mui.Context) {
 	if c.Shortcut(mui.Cmd, mui.KeySlash) {
 		a.openHelp()
 	}
+	// ⌘N: a new conversation in the selected/first project (or a new project when
+	// there is none). ⌘, opens 设置, as desktop apps do.
+	if c.Shortcut(mui.Cmd, mui.KeyN) {
+		a.newConversationShortcut()
+	}
+	if c.Shortcut(mui.Cmd, mui.KeyComma) {
+		a.sec = view.SecSettings
+		a.locate = nil
+	}
+
+	a.inboxKeys(c)
 
 	// A fresh install opens on the wizard, not on a dashboard that says "0 things
 	// to do": the agent has to be told what it is for first (design §6.7).
@@ -423,9 +486,10 @@ func (a *App) view(c *mui.Context) {
 		// dashboard was missing.
 		mui.Column(c).Padding(10, 16).AlignItems(mui.Center).Background(tk.Surface).
 			Children(func() {
-				mui.Column(c).Width(maxStreamWidth).Children(func() {
+				mui.Column(c).Width(maxStreamWidth).Gap(6).Children(func() {
 					// The latest 超级Agent answer (or 发送中…) above the composer on
 					// every page: a message never disappears into another page.
+					a.toastsView(c)
 					a.composerContext(c)
 					a.inputBar(c)
 				})
@@ -442,6 +506,7 @@ func (a *App) view(c *mui.Context) {
 	a.conversationDialog(c)
 	a.renameDialog(c)
 	a.deleteDialog(c)
+	a.connectionWizard(c)
 	a.answerDialog(c)
 	a.stopDialog(c)
 	a.helpDialog(c)
@@ -460,6 +525,12 @@ func newApp(snap *view.Snapshot, cmd Commander) *App {
 		promptEdits:   map[string]*string{},
 		wsExpanded:    map[string]bool{},
 		channelChecks: map[string]channelCheck{},
+		connDrafts:    map[string]*string{},
+		advancedOpen:  true,
+		inboxPending:  map[string]bool{},
+		inboxErr:      map[string]string{},
+		rowPending:    map[string]string{},
+		rowErr:        map[string]string{},
 	}
 	a.threadList.Selected = &a.threadSel
 	a.ticketList.Selected = &a.ticketSel
@@ -473,6 +544,10 @@ func (a *App) page(c *mui.Context, ov *view.OverviewVM) {
 	case view.SecOverview:
 		// The overview is one long column; it scrolls as a whole.
 		mui.Scroll(c).Grow(1).Children(func() { a.overview(c, ov) })
+	case view.SecInbox:
+		a.inboxPage(c)
+	case view.SecChat:
+		a.chatPage(c)
 	case view.SecWorkspace:
 		a.workspacePage(c)
 	case view.SecSource:

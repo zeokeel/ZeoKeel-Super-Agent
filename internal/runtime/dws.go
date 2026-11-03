@@ -57,6 +57,10 @@ type dwsChannel interface {
 	im.Receiver
 	im.Sender
 	AuthStatus(ctx context.Context) (dwsAuth, error)
+	// DWSVersion/LoginCommand are the setup facts: install/version detection and
+	// the exact terminal login a person must run (never executed by the panel).
+	DWSVersion(ctx context.Context) (string, error)
+	LoginCommand() []string
 	SetStatus(fn func(im.HealthState, string))
 	ioCloser
 }
@@ -97,19 +101,22 @@ func (a *dwsAdapter) AuthStatus(ctx context.Context) (dwsAuth, error) {
 	return dwsAuth{LoggedIn: st.LoggedIn, Account: st.Account, Profile: st.Profile,
 		AuthURL: st.AuthURL, LoginCmd: st.LoginCommand}, nil
 }
-func (a *dwsAdapter) SetStatus(fn func(im.HealthState, string)) { a.ch.SetStatus(fn) }
-func (a *dwsAdapter) Close() error                              { return a.ch.Close() }
+func (a *dwsAdapter) DWSVersion(ctx context.Context) (string, error) { return a.ch.DWSVersion(ctx) }
+func (a *dwsAdapter) LoginCommand() []string                         { return a.ch.LoginCommand() }
+func (a *dwsAdapter) SetStatus(fn func(im.HealthState, string))      { a.ch.SetStatus(fn) }
+func (a *dwsAdapter) Close() error                                   { return a.ch.Close() }
 
 // newDWSChannel is the one wiring point to nih-integrations' DWS adapter. It is a
 // variable so the manager is testable; the default builds the real long-lived
 // consumer over the CLI (injectable for fake CLI tests).
 var newDWSChannel = func(cfg IMConfig, cli dingtalk.DWSCLI) (dwsChannel, error) {
 	ch, err := dingtalk.NewDWSChannel(dingtalk.DWSConfig{
-		Command:    cfg.DWSCmd,
-		Profile:    cfg.Profile,
-		ListenKind: effectiveListenKind(cfg),
-		ChatQuery:  cfg.ChatQuery,
-		Secrets:    dwsSecrets(cfg),
+		Command:           cfg.DWSCmd,
+		Profile:           cfg.Profile,
+		ListenKind:        effectiveListenKind(cfg),
+		ChatQuery:         cfg.ChatQuery,
+		PauseListenOnSend: cfg.PauseListenOnSend,
+		Secrets:           dwsSecrets(cfg),
 	}, cli)
 	if err != nil {
 		return nil, err
@@ -122,6 +129,7 @@ var newDWSChannel = func(cfg IMConfig, cli dingtalk.DWSCLI) (dwsChannel, error) 
 // long-lived consumer replaces it; it exists so a fake CLI can be injected
 // before that adapter lands.
 type dwsAuthOnly struct {
+	cfg    IMConfig
 	client dingtalk.DWSClient
 	status func(im.HealthState, string)
 }
@@ -156,6 +164,10 @@ func (a *dwsAuthOnly) AuthStatus(ctx context.Context) (dwsAuth, error) {
 	}
 	return dwsAuth{LoggedIn: st.LoggedIn, Account: st.Account, AuthURL: st.AuthURL}, nil
 }
+func (a *dwsAuthOnly) DWSVersion(context.Context) (string, error) {
+	return "", fmt.Errorf("%w: 旧 DWSClient 注入没有版本检测", im.ErrUnsupported)
+}
+func (a *dwsAuthOnly) LoginCommand() []string                    { return dwsLoginArgs(a.cfg) }
 func (a *dwsAuthOnly) SetStatus(fn func(im.HealthState, string)) { a.status = fn }
 func (*dwsAuthOnly) Close() error                                { return nil }
 

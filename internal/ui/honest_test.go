@@ -25,8 +25,8 @@ func TestPersonCountAgreesAcrossTheSurfaces(t *testing.T) {
 	tt := mui.NewTester(a.view, 1440, 900)
 	// Two Tickets wait for a person and one request waits for approval: three on
 	// the chip, three in the heading, and the nav badge that links to this page.
-	wantTexts(t, tt, "3 待处理", "需要你关注的只有 3 件事")
-	if got := view.Nav(a.snap.Overview())[0].Count; got != 3 {
+	wantTexts(t, tt, "待你决定 3", "需要你关注的只有 3 件事")
+	if got := view.Nav(a.snap.Overview())[1].Count; got != 3 {
 		t.Fatalf("the sidebar badge says %d, the chip says 3", got)
 	}
 }
@@ -61,7 +61,7 @@ func TestNilOverviewPersonCount(t *testing.T) {
 	if got := ov.PersonCount(); got != 0 {
 		t.Fatalf("nil overview counts %d people items", got)
 	}
-	if got := view.Nav(nil)[0].Count; got != 0 {
+	if got := view.Nav(nil)[1].Count; got != 0 {
 		t.Fatalf("nil overview gave the nav a count of %d", got)
 	}
 }

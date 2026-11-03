@@ -151,7 +151,7 @@ func TestVerifyMissingActionChannelsAreHonest(t *testing.T) {
 	a := verifyApp(t, &fakeCmd{}, snap)
 	tt := mui.NewTester(a.view, 1440, 900)
 	click(t, tt, "超级Agent")
-	wantTexts(t, tt, "动作未接线")
+	wantTexts(t, tt, "暂时不可用")
 	// A disabled button cannot open the answer dialog.
 	if err := tt.Click("回答"); err == nil {
 		// Some mygo versions report a click on a disabled button as a no-op click.

@@ -67,7 +67,7 @@ func (a *App) settingsPage(c *mui.Context) {
 
 // settingsGroups merges what the runtime published with the five groups the page
 // always shows (view.RequiredSettingsGroups). A group that has not been projected
-// yet appears with its skeleton and its "等待运行时投影" facts, so a missing group
+// yet appears with its skeleton and its "还没有数据" facts, so a missing group
 // cannot look like a page with nothing to configure.
 func settingsGroups(vm *view.SettingsVM) []view.SettingsGroup {
 	required := view.RequiredSettingsGroups()
@@ -162,6 +162,9 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 			// the CLI, and the health rows are the live ones.
 			a.deploymentSection(c, *g)
 		}
+		if g.ID == view.SettingsWorker {
+			a.modelTestRow(c)
+		}
 		if g.ID == view.SettingsSource {
 			// The IM channels get a card each: enable, transport, credentials and
 			// the runtime's check. Their fields are drawn inside the cards, not
@@ -202,7 +205,7 @@ func (a *App) pendingBlock(c *mui.Context, g view.SettingsGroup) {
 	mui.Row(c).Padding(9, 12).Radius(8).Background(tk.SurfaceAlt).Gap(8).
 		AlignItems(mui.Start).Children(func() {
 		mui.Icon(c, icClock).FontSize(fs(12)).TextColor(tk.TextMuted)
-		mui.Text(c, "等待运行时投影："+strings.Join(g.Pending, " · ")).
+		mui.Text(c, "还没有数据："+strings.Join(g.Pending, " · ")).
 			FontSize(11).Grow(1).TextColor(tk.TextMuted)
 	})
 }
@@ -230,7 +233,7 @@ func (a *App) deploymentSection(c *mui.Context, g view.SettingsGroup) {
 	ov := a.snap.Overview()
 	mui.Text(c, "运行环境").FontSize(fs(14)).Bold().TextColor(tk.Text)
 	if ov == nil || !ov.System.Known() {
-		mui.Text(c, "等待运行时投影操作系统与时区（Runtime.System）").
+		mui.Text(c, "还没有数据操作系统与时区（Runtime.System）").
 			FontSize(11).TextColor(tk.TextMuted)
 	} else {
 		kv(c, tk, "操作系统", strings.TrimSuffix(ov.System.OS+"/"+ov.System.Arch, "/"))
@@ -281,7 +284,7 @@ func (a *App) fontScaleControl(c *mui.Context, g view.SettingsGroup) {
 			mui.Text(c, "界面字号").FontSize(fs(12)).TextColor(tk.Text)
 			mui.Text(c, fmt.Sprintf("当前 %d%%", int(a.viewScale()*100))).
 				FontSize(12).TextColor(tk.TextMuted)
-			mui.Text(c, "等待运行时投影：ui.font_scale（0.9 / 1.0 / 1.1）").
+			mui.Text(c, "还没有数据：ui.font_scale（0.9 / 1.0 / 1.1）").
 				FontSize(10).TextColor(tk.Amber)
 		})
 		return
@@ -474,12 +477,12 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 					mui.Text(c, "保存").FontSize(fs(14)).TextColor(tk.TextFaint)
 				})
 				if btn.Clicked() {
-					a.settingsErr = "当前运行时不能保存设置：没有保存通道。"
+					a.settingsErr = "暂时不可用：运行时还没有接入保存设置：没有保存通道。"
 				}
 			}
 		})
 		if !wired {
-			mui.Text(c, "当前运行时不能保存设置").FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, "暂时不可用：运行时还没有接入保存设置").FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 		if a.settingsConflict(vm) {
 			mui.Text(c, fmt.Sprintf(
@@ -490,6 +493,46 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 			mui.Text(c, a.settingsErr).FontSize(fs(12)).TextColor(tk.Red)
 		}
 	})
+}
+
+// modelTestRow is 设置 › 模型's 测试连接: it probes the SAVED configuration (the
+// runtime reads its store), so the copy says to save first. The probe runs off the
+// frame and its result stays here; no fake "已连接".
+func (a *App) modelTestRow(c *mui.Context) {
+	tk := a.tk
+	_, wired := a.cmd.(ModelTester)
+	mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
+		label := "测试连接"
+		if a.modelTestPending {
+			label = "测试中…"
+		}
+		btn := mui.Button(c, label).Label(label).Height(28).FontSize(fs(12))
+		if !wired || a.modelTestPending {
+			btn.Disabled(true)
+		} else if btn.Clicked() {
+			a.modelTestPending = true
+			a.modelTestOK = false
+			a.modelTestDetail = ""
+			startModelProbe(a)
+		}
+		mui.Text(c, "测试使用已保存的配置；改完先保存").FontSize(fs(10)).TextColor(tk.TextFaint)
+		if a.modelTestPending {
+			spinner(c, tk, "正在连接模型…")
+		}
+	})
+	if a.modelTestDetail != "" {
+		fg := tk.Red
+		if a.modelTestOK {
+			fg = tk.Green
+		}
+		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+			dot(c, fg, 6)
+			mui.Text(c, a.modelTestDetail).FontSize(fs(12)).TextColor(fg)
+		})
+	}
+	if !wired {
+		mui.Text(c, "暂时不可用：运行时还没有接入模型检查").FontSize(fs(11)).TextColor(tk.Amber)
+	}
 }
 
 // settingsPtr returns the live edit of one field. The pointer belongs to the app,
@@ -551,7 +594,7 @@ func (a *App) settingsConflict(vm *view.SettingsVM) bool {
 func (a *App) saveSettings(vm *view.SettingsVM, g *view.SettingsGroup) {
 	saver, ok := a.cmd.(SettingsSaver)
 	if !ok || saver == nil {
-		a.settingsErr = "当前运行时不能保存设置：没有保存通道。"
+		a.settingsErr = "暂时不可用：运行时还没有接入保存设置：没有保存通道。"
 		return
 	}
 	values := make(map[string]string, len(g.Fields))

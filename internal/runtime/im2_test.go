@@ -69,12 +69,14 @@ func (f *fakePoller) Close() error { f.closed.Add(1); return nil }
 // auth/status and Close. It proves the manager runs DWS as a subscription, not a
 // poll-with-cursor channel.
 type fakeDWSChannel struct {
-	events    chan im.RawEvent
-	subs      atomic.Int32
-	authCalls atomic.Int32
-	closed    atomic.Int32
-	auth      dwsAuth
-	authErr   error
+	events     chan im.RawEvent
+	subs       atomic.Int32
+	authCalls  atomic.Int32
+	closed     atomic.Int32
+	auth       dwsAuth
+	authErr    error
+	version    string
+	versionErr error
 }
 
 func (f *fakeDWSChannel) Name() string { return "dingtalk" }
@@ -111,6 +113,12 @@ func (f *fakeDWSChannel) ReadThread(context.Context, domain.Conversation, string
 func (f *fakeDWSChannel) AuthStatus(context.Context) (dwsAuth, error) {
 	f.authCalls.Add(1)
 	return f.auth, f.authErr
+}
+func (f *fakeDWSChannel) DWSVersion(context.Context) (string, error) {
+	return f.version, f.versionErr
+}
+func (f *fakeDWSChannel) LoginCommand() []string {
+	return []string{"dws", "auth", "login"}
 }
 func (f *fakeDWSChannel) SetStatus(func(im.HealthState, string)) {}
 func (f *fakeDWSChannel) Close() error                           { f.closed.Add(1); return nil }
@@ -290,7 +298,7 @@ func TestIMConcurrentApplyNoDoubleStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	base := IMConfig{FeishuEnabled: true, FeishuExplicit: true, FeishuTransport: "longpoll",
-		FeishuAppID: "a", FeishuAppSecret: "b"}
+		FeishuAppID: "a", FeishuAppSecret: "b", FeishuChats: "oc_1"}
 	m.Start(ctx, base)
 	defer m.Stop()
 
@@ -361,7 +369,7 @@ func TestIMStartDoesNotBlockOnSelf(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	m.Start(ctx, IMConfig{FeishuEnabled: true, FeishuExplicit: true, FeishuTransport: "longpoll",
-		FeishuAppID: "a", FeishuAppSecret: "b"})
+		FeishuAppID: "a", FeishuAppSecret: "b", FeishuChats: "oc_1"})
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		close(release)
 		t.Fatalf("Start blocked on Self for %s; it must be asynchronous (got %s)", elapsed, elapsed)
@@ -405,9 +413,26 @@ func TestIMEnabledTriState(t *testing.T) {
 		"source.feishu_app_id":     "a",
 		"source.feishu_app_secret": "b",
 	}
+	// Default transport is ws: credentials are enough, chats are an optional filter.
 	cfg := IMConfigFromSettings(creds)
 	if !cfg.FeishuEnabled || cfg.FeishuExplicit {
-		t.Fatalf("derived enabled = %+v", cfg)
+		t.Fatalf("ws credentials did not derive enabled: %+v", cfg)
+	}
+	// Explicit long polling needs a chat list to be usable.
+	noChatsLongpoll := map[string]string{
+		"source.feishu_transport": "longpoll",
+		"source.feishu_app_id":    "a", "source.feishu_app_secret": "b",
+	}
+	if derived := IMConfigFromSettings(noChatsLongpoll); derived.FeishuEnabled || derived.FeishuExplicit {
+		t.Fatalf("longpoll without a chat list must not derive enabled: %+v", derived)
+	}
+	withChats := map[string]string{
+		"source.feishu_transport": "longpoll",
+		"source.feishu_app_id":    "a", "source.feishu_app_secret": "b",
+		"source.feishu_chats": "oc_1",
+	}
+	if derived := IMConfigFromSettings(withChats); !derived.FeishuEnabled || derived.FeishuExplicit {
+		t.Fatalf("longpoll with chats did not derive enabled: %+v", derived)
 	}
 
 	off := map[string]string{
@@ -483,7 +508,7 @@ func TestIMPollFailureBacksOff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m.Start(ctx, IMConfig{FeishuEnabled: true, FeishuExplicit: true, FeishuTransport: "longpoll",
-		FeishuAppID: "a", FeishuAppSecret: "b"})
+		FeishuAppID: "a", FeishuAppSecret: "b", FeishuChats: "oc_1"})
 	defer m.Stop()
 	time.Sleep(250 * time.Millisecond)
 	if n := drv.polls.Load(); n > 4 {
@@ -506,7 +531,7 @@ func TestIMCursorNamespacedAndLegacyMigrated(t *testing.T) {
 	}
 	_ = st.Set("im.cursor.feishu", "legacy-1")
 	cfg := IMConfig{FeishuEnabled: true, FeishuExplicit: true, FeishuTransport: "longpoll",
-		FeishuAppID: "a", FeishuAppSecret: "b"}
+		FeishuAppID: "a", FeishuAppSecret: "b", FeishuChats: "oc_1"}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m.Start(ctx, cfg)

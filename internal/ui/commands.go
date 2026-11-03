@@ -104,59 +104,87 @@ var (
 type errNoWorkspaceCreator struct{}
 
 func (errNoWorkspaceCreator) Error() string {
-	return "动作未接线：运行时未实现 WorkspaceCreator"
+	return "暂时不可用：运行时还没有接入 WorkspaceCreator"
 }
 
 type errNoConversationCreator struct{}
 
 func (errNoConversationCreator) Error() string {
-	return "动作未接线：运行时未实现 ConversationCreator"
+	return "暂时不可用：运行时还没有接入 ConversationCreator"
 }
 
 type errNoWorkspaceRenamer struct{}
 
 func (errNoWorkspaceRenamer) Error() string {
-	return "动作未接线：运行时未实现 WorkspaceRenamer"
+	return "暂时不可用：运行时还没有接入 WorkspaceRenamer"
 }
 
 type errNoWorkspaceDeleter struct{}
 
 func (errNoWorkspaceDeleter) Error() string {
-	return "动作未接线：运行时未实现 WorkspaceDeleter"
+	return "暂时不可用：运行时还没有接入 WorkspaceDeleter"
 }
 
 type errNoSettingsSaver struct{}
 
 func (errNoSettingsSaver) Error() string {
-	return "动作未接线：运行时未实现 SettingsSaver"
+	return "暂时不可用：运行时还没有接入 SettingsSaver"
 }
 
-// submit sends the composer's line, clearing the draft at once: taken, not lost.
-// A dispatch refusal is usually "no work: answered or asked back" — the answer is
-// the outcome — so it is shown as a neutral note, never as a red failure (P0-7).
+// submit sends the composer's line to the visible target. On a send failure the
+// text is kept (draft restored) and 再次发送 is offered; on success the chat
+// projection supplies the answer.
 func (a *App) submit() {
 	text := strings.TrimSpace(a.draft)
 	if text == "" || a.cmd == nil || a.dispatchPending {
 		return
 	}
+	target := a.targetWS
 	a.draft = ""
 	a.composerErr = ""
 	a.composerNote = ""
+	a.sendFailedText = ""
+	a.sendFailedErr = ""
 	a.dispatchEcho = text
 	a.dispatchPending = true
+	if target != "" {
+		startDispatchTo(a, target, text)
+		return
+	}
 	startDispatch(a, text)
 }
 
-// dispatchDone applies the runtime's answer to a submitted line.
+// resend sends the text of a failed send again.
+func (a *App) resend() {
+	if strings.TrimSpace(a.sendFailedText) == "" {
+		return
+	}
+	a.draft = a.sendFailedText
+	a.submit()
+}
+
+// dispatchDone applies the runtime's answer to a submitted line. A refusal is the
+// agent's answer (neutral); a transport failure keeps the text and says so.
 func (a *App) dispatchDone(text string, err error) {
 	a.dispatchPending = false
 	if err == nil {
 		a.composerNote = ""
+		a.sendFailedErr = ""
 		return
 	}
-	// The agent answered the message even if it did not become work. Show that
-	// neutrally; a genuine failure stays visible without being painted red.
-	a.composerNote = strings.TrimSpace(err.Error())
+	msg := strings.TrimSpace(err.Error())
+	if strings.HasPrefix(msg, "暂时不可用") || strings.Contains(msg, "没有发出去") {
+		// A capability gap is not the person's text being wrong: keep the draft
+		// and let them retry after the runtime is ready.
+		if strings.TrimSpace(a.draft) == "" {
+			a.draft = text
+		}
+		a.sendFailedText = text
+		a.sendFailedErr = msg
+		return
+	}
+	// The agent answered the message even if it did not become work.
+	a.composerNote = msg
 }
 
 // Creating a workspace or a conversation keeps the dialog open while pending and

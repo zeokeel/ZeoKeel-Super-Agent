@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	mui "github.com/egoist/mygo/ui"
 
 	"github.com/zeokeel/super-agent/internal/humanfmt"
@@ -13,68 +11,6 @@ import (
 // the composer on every page. Chat answers, outcomes and notes are neutral; only
 // a genuine failure (ChatKind error / a red error note) is red — "没有派发工单"
 // is an answer, not a failure (P0-7).
-
-// composerContext is the one line above the composer: what the agent last said,
-// or that the line is still being sent. It is the fix for "回答只出现在消息页":
-// the result of the input appears where the input is, on every page.
-func (a *App) composerContext(c *mui.Context) {
-	tk := a.tk
-	if a.dispatchPending {
-		mui.Row(c).Gap(8).AlignItems(mui.Center).Padding(0, 2, 6, 2).Children(func() {
-			dot(c, tk.Accent, 6)
-			mui.Text(c, "发送中…").FontSize(fs(12)).TextColor(tk.Accent)
-			if a.dispatchEcho != "" {
-				mui.Text(c, humanfmt.Clip(a.dispatchEcho, 80)).FontSize(fs(12)).SingleLine().
-					Grow(1).TextColor(tk.TextMuted)
-			}
-		})
-		return
-	}
-	// The chat's newest agent line is the result: an answer, a dispatched
-	// outcome, or a note. It is neutral unless it is a real failure.
-	if chat := a.snap.Chat(); chat != nil {
-		if m, ok := chat.LastAnswer(); ok {
-			a.chatContextLine(c, m)
-			return
-		}
-	}
-	if a.composerNote != "" {
-		mui.Row(c).Padding(0, 2, 6, 2).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Icon(c, icBell).FontSize(fs(12)).TextColor(tk.TextMuted)
-			mui.Text(c, humanfmt.Clip(a.composerNote, 140)).FontSize(fs(12)).SingleLine().
-				Grow(1).TextColor(tk.TextMuted)
-		})
-		return
-	}
-	if a.composerErr != "" {
-		mui.Row(c).Padding(0, 2, 6, 2).Children(func() {
-			mui.Text(c, a.composerErr).FontSize(fs(12)).TextColor(tk.Red)
-		})
-	}
-}
-
-// chatContextLine is one chat line as the composer's context line.
-func (a *App) chatContextLine(c *mui.Context, m view.ChatMessage) {
-	tk := a.tk
-	fg := tk.TextMuted
-	icon := icSpark
-	if m.IsFailure() {
-		fg = tk.Red
-		icon = icBell
-	}
-	who := "超级Agent："
-	if m.Role == view.ChatSystem {
-		who = ""
-	}
-	mui.Row(c).Padding(0, 2, 6, 2).Gap(8).AlignItems(mui.Center).Children(func() {
-		mui.Icon(c, icon).FontSize(fs(12)).TextColor(ifColor(m.IsFailure(), tk.Red, tk.Accent))
-		mui.Text(c, who+humanfmt.Clip(strings.TrimSpace(m.Text), 140)).FontSize(fs(12)).SingleLine().
-			Grow(1).TextColor(fg)
-		if !m.At.IsZero() {
-			mui.Text(c, humanfmt.Ago(a.age(m.At))).FontSize(fs(10)).TextColor(tk.TextFaint)
-		}
-	})
-}
 
 // chatPanel is 超级Agent's own conversation on the overview: the last few turns,
 // oldest first, so a question and its answer are read where the person is

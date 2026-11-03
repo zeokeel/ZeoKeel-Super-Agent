@@ -53,7 +53,7 @@ func verifyIMInbound(t *testing.T, drv im.Provider, tr *im.Transport, actor, con
 	}
 	if drv.Name() == "feishu" {
 		cfg.FeishuEnabled = true
-		cfg.FeishuAppID, cfg.FeishuAppSecret = "cli_x", "sec"
+		cfg.FeishuAppID, cfg.FeishuAppSecret, cfg.FeishuChats = "cli_x", "sec", "oc_1"
 	} else {
 		cfg.DingEnabled = true
 		cfg.DingAppKey, cfg.DingAppSecret, cfg.DingRobot = "key", "sec", "robot"

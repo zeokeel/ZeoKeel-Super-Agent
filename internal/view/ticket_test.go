@@ -140,12 +140,12 @@ func TestGlossaryIsComplete(t *testing.T) {
 	}
 }
 
-// The settings page always has its five groups: a runtime that publishes only
+// The settings page always has its six groups (model first): a runtime that publishes only
 // some of them still gets the others as a projection gap, never as a hidden
 // group.
 func TestRequiredSettingsGroups(t *testing.T) {
 	groups := RequiredSettingsGroups()
-	wantIDs := []SettingsGroupID{SettingsSource, SettingsEval, SettingsExecution, SettingsPrompt, SettingsDeploy}
+	wantIDs := []SettingsGroupID{SettingsWorker, SettingsSource, SettingsEval, SettingsExecution, SettingsPrompt, SettingsDeploy}
 	if len(groups) != len(wantIDs) {
 		t.Fatalf("%d required groups, want %d", len(groups), len(wantIDs))
 	}

@@ -99,8 +99,8 @@ func (a *App) ticketListPage(c *mui.Context, vm *view.TicketListVM) {
 		lst.Changed()
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		mui.Row(c).Height(28).Padding(0, 16).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, fmt.Sprintf("共 %d 个任务 · 当前筛选 %d 个 · 按最近活动排序",
-				vm.Total, len(rows))).FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, fmt.Sprintf("共 %d 个任务 · 当前筛选 %d 个 · 点一行展开", vm.Total, len(rows))).
+				FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 	})
 }
@@ -133,6 +133,7 @@ func (a *App) ticketRow(c *mui.Context, vm *view.TicketListVM, r view.TicketRow,
 				mui.Text(c, r.Activity).FontSize(fs(12)).SingleLine().
 					TextColor(ifColor(opened, tk.AccentSoft, tk.TextFaint))
 			})
+			a.rowActions(c, r, opened)
 			mui.Icon(c, ifIcon(opened, icChevD, icChevR)).FontSize(fs(12)).
 				TextColor(ifColor(opened, tk.Surface, tk.TextFaint))
 		})
@@ -140,6 +141,65 @@ func (a *App) ticketRow(c *mui.Context, vm *view.TicketListVM, r view.TicketRow,
 			return
 		}
 		a.ticketDetail(c, vm, r)
+	})
+}
+
+// rowActions are the actions a row offers where the row is: 停止 while it runs,
+// 重试 when it may run again, 回答 when it waits for a person. Each has its own
+// pending state (`rowPending`) and its error is shown under the row (`rowErr`).
+func (a *App) rowActions(c *mui.Context, r view.TicketRow, opened bool) {
+	tk := a.tk
+	pending := a.rowPending[r.ID]
+	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
+		if pending != "" {
+			spinner(c, tk, pending)
+			return
+		}
+		if r.Attention != nil {
+			if b := mui.Button(c, "回答").Label("回答").Height(24).FontSize(fs(11)); b.Clicked() {
+				a.openAnswer(r)
+			}
+		}
+		if r.CanRetry {
+			if b := mui.Button(c, "重试").Label("重试").Height(24).FontSize(fs(11)); b.Clicked() {
+				a.retryRow(r)
+			}
+		}
+		if r.CanStop || r.StageID == view.StageWorking || r.StageID == view.StageWorkingQueued {
+			if b := mui.Button(c, "停止").Label("停止").Height(24).FontSize(fs(11)); b.Clicked() {
+				a.openStop(r)
+			}
+		}
+	})
+	if e := a.rowErr[r.ID]; e != "" {
+		mui.Text(c, e).FontSize(fs(11)).TextColor(tk.Red)
+	}
+	_ = opened
+}
+
+// retryRow retries one row and keeps the outcome local to it.
+func (a *App) retryRow(r view.TicketRow) {
+	if a.cmd == nil {
+		return
+	}
+	delete(a.rowErr, r.ID)
+	a.rowPending[r.ID] = "重试中…"
+	a.runOffMain(func() {
+		retrier, ok := a.cmd.(TicketRetrier)
+		var err error
+		if !ok || retrier == nil {
+			err = errNoTicketRetrier{}
+		} else {
+			err = retrier.RetryTicket(r.ID)
+		}
+		a.postToUI(func() {
+			delete(a.rowPending, r.ID)
+			if err != nil {
+				a.rowErr[r.ID] = err.Error()
+				return
+			}
+			a.toast("已重试："+r.Title, toastOK)
+		})
 	})
 }
 

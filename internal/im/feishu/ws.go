@@ -101,6 +101,9 @@ func (d *Driver) subscribeWS(ctx context.Context, out chan<- im.RawEvent) error 
 		if !ok {
 			return nil
 		}
+		if !d.wsChatAllowed(raw.Conv.ID) {
+			return nil // outside the configured chat scope
+		}
 		mu.Lock()
 		if seen[raw.ID] {
 			mu.Unlock()

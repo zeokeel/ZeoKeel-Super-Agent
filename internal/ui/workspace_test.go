@@ -57,8 +57,8 @@ func TestSidebarStructure(t *testing.T) {
 	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	wantTexts(t, tt, "超级Agent", "工作区", "＋ 新建工作区", "监控",
-		"消息", "来源", "触发", "评估", "执行", "设置",
+	wantTexts(t, tt, "超级Agent", "收件箱", "项目", "＋ 新建项目", "执行", "设置",
+		"诊断", "对话记录", "消息", "连接", "触发", "评估",
 		"linux/amd64 · Asia/Shanghai (UTC+08:00)")
 	if a.sec != view.SecOverview {
 		t.Fatalf("home section %q, want overview", a.sec)
@@ -79,14 +79,14 @@ func TestSidebarWorkspaceTreeExpands(t *testing.T) {
 		t.Fatalf("collapsed workspace shows %d conversation titles", got)
 	}
 
-	click(t, tt, "展开工作区 acme/webapp")
+	click(t, tt, "展开项目 acme/webapp")
 	wantTexts(t, tt, "我创建的", "超级Agent 创建的", "＋ 新建会话",
 		"把登录超时改成可配置", "修改登录超时配置")
 	if got := exactTexts(tt, "修改登录超时配置"); got != 1 {
 		t.Fatalf("%d conversation titles, want 1; texts: %q", got, tt.Texts())
 	}
 
-	click(t, tt, "展开工作区 acme/webapp")
+	click(t, tt, "展开项目 acme/webapp")
 	if got := exactTexts(tt, "修改登录超时配置"); got != 0 {
 		t.Fatalf("collapsing left %d conversation titles", got)
 	}
@@ -97,7 +97,7 @@ func TestSidebarWorkspaceTreeExpands(t *testing.T) {
 func TestWorkspaceRowOpensTheWorkspacePage(t *testing.T) {
 	a := workspaceApp(t, &fakeCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "工作区 acme/webapp")
+	click(t, tt, "项目 acme/webapp")
 	if a.sec != view.SecWorkspace {
 		t.Fatalf("section %q, want workspace", a.sec)
 	}
@@ -112,7 +112,7 @@ func TestWorkspaceRowOpensTheWorkspacePage(t *testing.T) {
 func TestConversationOpensItsTicket(t *testing.T) {
 	a := workspaceApp(t, &fakeCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "工作区 acme/webapp")
+	click(t, tt, "项目 acme/webapp")
 	click(t, tt, "会话 修改登录超时配置")
 
 	if a.sec != view.SecExecution {
@@ -128,14 +128,14 @@ func TestConversationOpensItsTicket(t *testing.T) {
 	wantTexts(t, tt, "step 7 · 正在补 SessionTimeout 默认值")
 }
 
-// 新建工作区 asks for name, root, purpose and kind, and hands them to the runtime.
+// 新建项目 asks for name, root, purpose and kind, and hands them to the runtime.
 func TestNewWorkspaceDialogWithCreator(t *testing.T) {
 	creator := &fakeWorkspaceCmd{}
 	a := workspaceApp(t, creator)
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	click(t, tt, "＋ 新建工作区")
-	wantTexts(t, tt, "新建工作区", "名称", "根目录", "用途", "类型",
+	click(t, tt, "＋ 新建项目")
+	wantTexts(t, tt, "新建项目", "名称", "根目录", "用途", "类型",
 		"仓库", "数据", "文档", "混合")
 	if a.wsModal != true {
 		t.Fatal("the dialog did not open")
@@ -170,7 +170,7 @@ func TestNewWorkspaceDialogKeepsTheError(t *testing.T) {
 	creator := &fakeWorkspaceCmd{err: errFake("根目录不存在")}
 	a := workspaceApp(t, creator)
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "＋ 新建工作区")
+	click(t, tt, "＋ 新建项目")
 	click(t, tt, "输入名称")
 	tt.Type("acme/x")
 	click(t, tt, "输入根目录")
@@ -188,7 +188,7 @@ func TestNewConversationDialogWithCreator(t *testing.T) {
 	a := workspaceApp(t, creator)
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	click(t, tt, "展开工作区 acme/webapp")
+	click(t, tt, "展开项目 acme/webapp")
 	click(t, tt, "＋ 新建会话")
 	wantTexts(t, tt, "新建会话", "acme/webapp", "会话内容")
 	click(t, tt, "输入会话内容")
@@ -209,17 +209,17 @@ func TestWorkspaceActionsUnwired(t *testing.T) {
 	a := workspaceApp(t, &fakeCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	click(t, tt, "＋ 新建工作区")
-	wantTexts(t, tt, "动作未接线：运行时未实现 WorkspaceCreator")
+	click(t, tt, "＋ 新建项目")
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入 WorkspaceCreator")
 	click(t, tt, "创建")
 	if !a.wsModal {
 		t.Fatal("an unwired 创建 closed the dialog")
 	}
 	click(t, tt, "取消")
 
-	click(t, tt, "展开工作区 acme/webapp")
+	click(t, tt, "展开项目 acme/webapp")
 	click(t, tt, "＋ 新建会话")
-	wantTexts(t, tt, "动作未接线：运行时未实现 ConversationCreator")
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入 ConversationCreator")
 	click(t, tt, "创建会话")
 	if !a.convModal {
 		t.Fatal("an unwired 创建会话 closed the dialog")
@@ -255,7 +255,7 @@ func TestSystemFacts(t *testing.T) {
 	click(t, tt, "设置")
 	a.settingsGroup = view.SettingsDeploy
 	tt.Frame()
-	wantTexts(t, tt, "等待运行时投影操作系统与时区（Runtime.System）")
+	wantTexts(t, tt, "还没有数据操作系统与时区（Runtime.System）")
 }
 
 // The font scale is one token: +2 on the panel's 13, and a theme derived from it.
@@ -373,7 +373,7 @@ func TestWorkspaceFolderPickerFillsRoot(t *testing.T) {
 	}
 	a := workspaceApp(t, &fakeWorkspaceCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "＋ 新建工作区")
+	click(t, tt, "＋ 新建项目")
 	click(t, tt, "浏览…")
 
 	if calls != 1 {
@@ -399,7 +399,7 @@ func TestWorkspaceFolderPickerCancel(t *testing.T) {
 
 	a := workspaceApp(t, &fakeWorkspaceCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "＋ 新建工作区")
+	click(t, tt, "＋ 新建项目")
 	a.wsDraft.root = "/already/typed"
 	click(t, tt, "浏览…")
 	if a.wsDraft.root != "/already/typed" {
@@ -418,7 +418,7 @@ func TestWorkspaceFolderPickerError(t *testing.T) {
 
 	a := workspaceApp(t, &fakeWorkspaceCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "＋ 新建工作区")
+	click(t, tt, "＋ 新建项目")
 	click(t, tt, "浏览…")
 	if a.pickingFolder {
 		t.Fatal("a failed picker stayed open")
@@ -435,7 +435,7 @@ func TestWorkspaceFolderPickerIsSingle(t *testing.T) {
 
 	a := workspaceApp(t, &fakeWorkspaceCmd{})
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "＋ 新建工作区")
+	click(t, tt, "＋ 新建项目")
 	click(t, tt, "浏览…")
 	tt.Frame()
 	click(t, tt, "选择中…")

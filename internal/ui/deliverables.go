@@ -71,6 +71,14 @@ func (a *App) artifactsPanel(c *mui.Context) {
 							mui.Text(c, meta).FontSize(fs(12)).SingleLine().TextColor(tk.TextFaint)
 						})
 						textChip(c, tk, r.Kind)
+						if r.Path != "" {
+							if b := mui.Button(c, "打开").Label("打开 " + r.Title).Height(24).FontSize(fs(10)); b.Clicked() {
+								a.openPath(r.Path)
+							}
+							if b := mui.Button(c, "复制").Label("复制 " + r.Title + " 的路径").Height(24).FontSize(fs(10)); b.Clicked() {
+								a.copyValue(r.Path, "路径")
+							}
+						}
 					})
 				}
 			})

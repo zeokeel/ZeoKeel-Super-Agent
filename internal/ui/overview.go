@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dustin/go-humanize"
 	mui "github.com/egoist/mygo/ui"
@@ -23,6 +24,7 @@ func (a *App) overview(c *mui.Context, ov *view.OverviewVM) {
 
 	mui.Column(c).Fill().Padding(24).Gap(16).Children(func() {
 		heading(c, tk, "总览", fmt.Sprintf("需要你关注的只有 %d 件事，其余都在后台运行", ov.PersonCount()))
+		a.modelParkedCard(c)
 		a.chatPanel(c)
 		a.approvals(c, ov)
 		a.needsPerson(c, ov)
@@ -41,6 +43,54 @@ func (a *App) overview(c *mui.Context, ov *view.OverviewVM) {
 				a.artifacts(c, ov)
 				a.storage(c, ov)
 			})
+		})
+	})
+}
+
+// modelConfigured reports whether the 模型 group has an endpoint and a model name.
+// A snapshot that has not published settings yet is not "not configured": the
+// panel stays quiet until the runtime says something.
+func (a *App) modelConfigured() bool {
+	vm := a.snap.Settings()
+	if vm == nil {
+		return true
+	}
+	g := vm.Group(view.SettingsWorker)
+	if g == nil {
+		return false
+	}
+	base, model := "", ""
+	for _, f := range g.Fields {
+		switch f.Key {
+		case "base_url":
+			base = strings.TrimSpace(f.Value)
+		case "model":
+			model = strings.TrimSpace(f.Value)
+		}
+	}
+	return base != "" && model != ""
+}
+
+// modelParkedCard is the honest "no model yet" state: the agent cannot think, so
+// the overview says how to fix it instead of showing a chat that cannot answer.
+func (a *App) modelParkedCard(c *mui.Context) {
+	if a.modelConfigured() {
+		return
+	}
+	tk := a.tk
+	card(c, tk, 12, func() {
+		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
+			mui.Icon(c, icSpark).FontSize(fs(18)).TextColor(tk.Amber)
+			mui.Column(c).Grow(1).Gap(3).Children(func() {
+				mui.Text(c, "还没有配置模型").FontSize(fs(16)).Bold().TextColor(tk.Text)
+				mui.Text(c, "超级Agent 需要模型才能回答和执行；配置后立即生效。任务会先停在待你决定。").
+					FontSize(fs(12)).TextColor(tk.TextMuted)
+			})
+			if btn := mui.PrimaryButton(c, "去配置模型").Label("去配置模型").Height(28); btn.Clicked() {
+				a.sec = view.SecSettings
+				a.settingsGroup = view.SettingsWorker
+				a.locate = nil
+			}
 		})
 	})
 }
@@ -309,8 +359,9 @@ func (a *App) artifacts(c *mui.Context, ov *view.OverviewVM) {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Text(c, "最近交付物").FontSize(fs(16)).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, "全部").FontSize(fs(13)).TextColor(tk.Accent).
-				OnClick(func() { a.artifactsOpen = true })
+			if mui.Button(c, "全部").Label("全部交付物").Height(28).FontSize(fs(12)).Clicked() {
+				a.artifactsOpen = true
+			}
 		})
 		if len(ov.Artifacts) == 0 {
 			mui.Text(c, "还没有交付物。工单产出后会出现在这里。").FontSize(fs(13)).
@@ -323,7 +374,16 @@ func (a *App) artifacts(c *mui.Context, ov *view.OverviewVM) {
 					mui.Text(c, art.Title).FontSize(fs(14)).TextColor(tk.Text)
 					mui.Text(c, art.Detail).FontSize(fs(13)).TextColor(tk.TextFaint)
 				})
-				mui.Icon(c, icChevR).FontSize(fs(13)).TextColor(tk.TextFaint)
+				if art.Path != "" {
+					if b := mui.Button(c, "打开").Label("打开 " + art.Title).Height(24).FontSize(fs(10)); b.Clicked() {
+						a.openPath(art.Path)
+					}
+					if b := mui.Button(c, "复制").Label("复制 " + art.Title + " 的路径").Height(24).FontSize(fs(10)); b.Clicked() {
+						a.copyValue(art.Path, "路径")
+					}
+				} else {
+					mui.Icon(c, icChevR).FontSize(fs(13)).TextColor(tk.TextFaint)
+				}
 			})
 		}
 	})
@@ -406,28 +466,4 @@ func toneBg(tk Tokens, tone view.Tone) mui.Color {
 		return tk.GreenSoft
 	}
 	return tk.SurfaceAlt
-}
-
-// approve accepts a proposal. This is the only place the action exists: the
-// message stream records it, the dashboard decides it (005 Panel, "one place per
-// concept").
-func (a *App) approve(decisionID string) {
-	if a.cmd == nil || decisionID == "" {
-		return
-	}
-	a.composerErr = ""
-	if err := a.cmd.Approve(decisionID); err != nil {
-		a.composerErr = err.Error()
-	}
-}
-
-// reject turns a proposal down.
-func (a *App) reject(decisionID string) {
-	if a.cmd == nil || decisionID == "" {
-		return
-	}
-	a.composerErr = ""
-	if err := a.cmd.Reject(decisionID); err != nil {
-		a.composerErr = err.Error()
-	}
 }

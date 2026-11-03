@@ -463,6 +463,13 @@ func DemoTickets(now time.Time) *TicketListVM {
 func DemoSettings(now time.Time) *SettingsVM {
 	return &SettingsVM{
 		Groups: []SettingsGroup{
+			{ID: SettingsWorker, Label: "模型",
+				Note: "研判与执行都用这个 OpenAI 兼容端点。",
+				Fields: []SettingField{
+					{Key: "base_url", Label: "端点 base URL", Value: "https://api.deepseek.com/v1", Kind: SettingText},
+					{Key: "api_key", Label: "API Key", Value: "", Kind: SettingSecret},
+					{Key: "model", Label: "模型名", Value: "deepseek-chat", Kind: SettingText},
+				}},
 			{
 				ID: SettingsSource, Label: "来源",
 				Note: "每个 Source 的账号与轮询；凭据只写不读。",
@@ -479,6 +486,8 @@ func DemoSettings(now time.Time) *SettingsVM {
 					{Key: "dingtalk_enabled", Label: "钉钉：启用", Value: "0", Kind: SettingSwitch},
 					{Key: "dingtalk_transport", Label: "钉钉：传输方式", Value: "dws",
 						Kind: SettingSelect, Options: []string{"dws", "stream"}},
+					{Key: "dingtalk_pause_listen_on_send", Label: "钉钉：发送时暂停监听", Value: "0",
+						Kind: SettingSwitch, Help: "防止机器人读到自己刚发的消息"},
 					{Key: "dingtalk_app_key", Label: "钉钉 AppKey", Value: "ding_key", Kind: SettingText},
 					{Key: "dingtalk_app_secret", Label: "钉钉 AppSecret", Value: "••••••••", Kind: SettingSecret},
 					{Key: "dingtalk_robot", Label: "钉钉机器人 RobotCode", Value: "ding_robot", Kind: SettingText},

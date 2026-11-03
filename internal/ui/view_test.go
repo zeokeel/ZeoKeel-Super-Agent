@@ -167,7 +167,7 @@ func TestDashboardIsHomeAndSidebarNavigates(t *testing.T) {
 	if !tt.HasText("需要我处理") {
 		t.Fatalf("the dashboard did not render; texts: %q", tt.Texts())
 	}
-	if err := tt.Click("来源"); err != nil {
+	if err := tt.Click("连接"); err != nil {
 		t.Fatalf("click 来源: %v", err)
 	}
 	if a.sec != view.SecSource {

@@ -29,7 +29,7 @@ func TestArtifactsPanelOpensFromTheOverview(t *testing.T) {
 		view.ArtifactRow{Title: "usage.md", Kind: "report", Workspace: "ws_acme_data",
 			Ticket: "#2", At: time.Now()},
 	), &fakeCmd{})
-	tt := mui.NewTester(app.view, 1440, 900)
+	tt := mui.NewTester(app.view, 1440, 1400)
 
 	click(t, tt, "全部")
 	wantTexts(t, tt, "交付物", "2 个", "hello.txt", "usage.md", "ws_web")
@@ -38,7 +38,7 @@ func TestArtifactsPanelOpensFromTheOverview(t *testing.T) {
 // With nothing produced yet the panel says so rather than showing an empty box.
 func TestArtifactsPanelEmptyState(t *testing.T) {
 	app := newApp(artifactsSnap(), &fakeCmd{})
-	tt := mui.NewTester(app.view, 1440, 900)
+	tt := mui.NewTester(app.view, 1440, 1400)
 	click(t, tt, "全部")
 	wantTexts(t, tt, "交付物", "还没有交付物。工单产出后会出现在这里。")
 }
@@ -51,7 +51,7 @@ func TestArtifactsPanelFiltersByWorkspace(t *testing.T) {
 		view.ArtifactRow{Title: "usage.md", Kind: "report", Workspace: "ws_acme_data",
 			Ticket: "#2", At: time.Now()},
 	), &fakeCmd{})
-	tt := mui.NewTester(app.view, 1440, 900)
+	tt := mui.NewTester(app.view, 1440, 1400)
 	click(t, tt, "全部")
 	wantTexts(t, tt, "hello.txt", "usage.md")
 

@@ -160,7 +160,7 @@ func TestIMChannelPollsAndPersistsCursor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m.Start(ctx, IMConfig{FeishuEnabled: true, FeishuTransport: "longpoll",
-		FeishuAppID: "cli_x", FeishuAppSecret: "sec", DingTransport: "dws"})
+		FeishuAppID: "cli_x", FeishuAppSecret: "sec", FeishuChats: "oc_1", DingTransport: "dws"})
 	defer m.Stop()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -187,7 +187,7 @@ func TestIMCursorNotAdvancedOnFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m.Start(ctx, IMConfig{FeishuEnabled: true, FeishuTransport: "longpoll",
-		FeishuAppID: "a", FeishuAppSecret: "b", DingTransport: "dws"})
+		FeishuAppID: "a", FeishuAppSecret: "b", FeishuChats: "oc_1", DingTransport: "dws"})
 	defer m.Stop()
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -220,7 +220,7 @@ func TestApplyIMSettingsRestartsChangedChannels(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	base := IMConfig{FeishuEnabled: true, FeishuTransport: "longpoll",
-		FeishuAppID: "a", FeishuAppSecret: "b", DingTransport: "dws"}
+		FeishuAppID: "a", FeishuAppSecret: "b", FeishuChats: "oc_1", DingTransport: "dws"}
 	m.Start(ctx, base)
 	defer m.Stop()
 	waitBuilt := func(want int) {

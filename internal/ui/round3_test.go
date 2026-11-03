@@ -30,7 +30,7 @@ func round3App(t *testing.T, cmd Commander) (*App, *mui.Tester) {
 	snap.PublishChat(viewtest.DemoChat(now))
 	a := newApp(snap, cmd)
 	a.now = now
-	return a, mui.NewTester(a.view, 1440, 900)
+	return a, mui.NewTester(a.view, 1440, 1600)
 }
 
 // fakeWorkspaceAdmin is a runtime that implements the P1-6 management actions.
@@ -70,7 +70,7 @@ func TestDispatchShowsPendingAndGuardsDoubleSubmit(t *testing.T) {
 	cmd := &fakeCmd{}
 	a.cmd = cmd
 	a.draft = "把登录超时改成可配置"
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 	click(t, tt, "发送")
 
 	if !a.dispatchPending {
@@ -109,7 +109,7 @@ func TestDispatchClearsDraftOptimistically(t *testing.T) {
 	a := newTestApp(t, false)
 	a.cmd = &fakeCmd{}
 	a.draft = "今天中午吃什么"
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 	click(t, tt, "发送")
 	if a.draft != "" {
 		t.Fatalf("draft %q, want it taken", a.draft)
@@ -127,8 +127,8 @@ func TestCreateWorkspaceShowsPending(t *testing.T) {
 
 	cmd := &fakeWorkspaceCmd{}
 	a := workspaceApp(t, cmd)
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "＋ 新建工作区")
+	tt := mui.NewTester(a.view, 1440, 1600)
+	click(t, tt, "＋ 新建项目")
 	a.wsDraft.name, a.wsDraft.root = "acme/new", "/tmp/acme-new"
 	tt.Frame()
 	click(t, tt, "创建")
@@ -162,8 +162,8 @@ func TestNewConversationShowsPending(t *testing.T) {
 	startNewConversation = func(a *App, wsID, text string) { gotWS, gotText = wsID, text }
 
 	a := workspaceApp(t, &fakeWorkspaceCmd{})
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "工作区 acme/webapp")
+	tt := mui.NewTester(a.view, 1440, 1600)
+	click(t, tt, "项目 acme/webapp")
 	click(t, tt, "＋ 新建会话")
 	a.convDraft = "把登录超时改成可配置"
 	tt.Frame()
@@ -243,7 +243,7 @@ func TestChatAnswerIsNotAnError(t *testing.T) {
 	}, UpdatedAt: now})
 	a := newApp(snap, &fakeCmd{})
 	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 	wantTexts(t, tt, "连不上模型")
 	if a.composerErr != "" {
 		t.Fatalf("a chat line set the composer's red error: %q", a.composerErr)
@@ -262,7 +262,7 @@ func TestChatPanelIsBounded(t *testing.T) {
 	snap.PublishChat(&view.ChatVM{Messages: msgs, UpdatedAt: now})
 	a := newApp(snap, &fakeCmd{})
 	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 	wantTexts(t, tt, "第11句")
 	for _, hidden := range []string{"第0句", "第3句"} {
 		if exactTexts(tt, hidden) != 0 {
@@ -291,7 +291,7 @@ func TestRowsShowNumberAndLookUpByDomainID(t *testing.T) {
 // id (P0-3 for conversations: they already carry domain ids).
 func TestConversationOpensTicketByDomainID(t *testing.T) {
 	a, tt := round3App(t, &fakeCmd{})
-	click(t, tt, "工作区 acme/webapp")
+	click(t, tt, "项目 acme/webapp")
 	click(t, tt, "会话 修改登录超时配置")
 	if a.sec != view.SecExecution {
 		t.Fatalf("section %q, want execution", a.sec)
@@ -308,7 +308,7 @@ func TestConversationOpensTicketByDomainID(t *testing.T) {
 // Selecting a workspace filters 执行, says so, and 全部 restores every workspace.
 func TestWorkspaceFilterOnExecution(t *testing.T) {
 	a, tt := round3App(t, &fakeCmd{})
-	click(t, tt, "工作区 acme/webapp") // selects it as the context (P1-7)
+	click(t, tt, "项目 acme/webapp") // selects it as the context (P1-7)
 	click(t, tt, "执行")
 
 	wantTexts(t, tt, "下面的列表只显示这个工作区；点「全部」恢复")
@@ -331,7 +331,7 @@ func TestWorkspaceFilterOnExecution(t *testing.T) {
 // 消息 filters too, with an honest empty state when the workspace has no thread.
 func TestWorkspaceFilterOnMessages(t *testing.T) {
 	a, tt := round3App(t, &fakeCmd{})
-	click(t, tt, "工作区 acme/data")
+	click(t, tt, "项目 acme/data")
 	click(t, tt, "消息")
 	wantTexts(t, tt, "整理 acme 上月用量摘要")
 	if tt.HasText("登录超时应可配置，默认 30 分钟") {
@@ -350,7 +350,7 @@ func TestWorkspaceFilterOnMessages(t *testing.T) {
 func TestWorkspaceRenameWired(t *testing.T) {
 	cmd := &fakeWorkspaceAdmin{}
 	a, tt := round3App(t, cmd)
-	click(t, tt, "工作区 acme/webapp")
+	click(t, tt, "项目 acme/webapp")
 	click(t, tt, "重命名")
 	a.renameDraft = "acme/webapp-renamed"
 	tt.Frame()
@@ -369,7 +369,7 @@ func TestWorkspaceRenameWired(t *testing.T) {
 func TestWorkspaceDeleteAsksThenApplies(t *testing.T) {
 	cmd := &fakeWorkspaceAdmin{}
 	a, tt := round3App(t, cmd)
-	click(t, tt, "工作区 acme/webapp")
+	click(t, tt, "项目 acme/webapp")
 	click(t, tt, "删除")
 	wantTexts(t, tt, "删除工作区“acme/webapp”？", "磁盘上的目录不会被删除")
 	if len(cmd.deleted) != 0 {
@@ -396,8 +396,8 @@ func TestWorkspaceDeleteAsksThenApplies(t *testing.T) {
 // success.
 func TestWorkspaceManagementUnwired(t *testing.T) {
 	a, tt := round3App(t, &fakeCmd{})
-	click(t, tt, "工作区 acme/webapp")
-	wantTexts(t, tt, "动作未接线：运行时未实现 WorkspaceRenamer / WorkspaceDeleter")
+	click(t, tt, "项目 acme/webapp")
+	wantTexts(t, tt, "暂时不可用：运行时还没有接入 WorkspaceRenamer / WorkspaceDeleter")
 	// The tester can reach a disabled button; what matters is that it does not open
 	// anything (no fake success).
 	_ = tt.Click("重命名")
@@ -418,7 +418,7 @@ func TestTransportOptionsFollowTheBuild(t *testing.T) {
 	snap.PublishSettings(&view.SettingsVM{
 		Source: "mygo.json", Revision: 2, UpdatedAt: now,
 		Groups: []view.SettingsGroup{{
-			ID: view.SettingsSource, Label: "来源", Note: "n",
+			ID: view.SettingsSource, Label: "连接", Note: "n",
 			Fields: []view.SettingField{
 				{Key: "feishu_enabled", Label: "飞书：启用", Value: "1", Kind: view.SettingSwitch},
 				{Key: "feishu_transport", Label: "飞书：传输方式", Value: "longpoll",
@@ -434,18 +434,18 @@ func TestTransportOptionsFollowTheBuild(t *testing.T) {
 	a.now = now
 	a.sec = view.SecSettings
 	a.settingsGroup = view.SettingsSource
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 
-	wantTexts(t, tt, "HTTP 长轮询", "官方长连接", "DWS 长连接", "官方 Stream")
+	wantTexts(t, tt, "传输方式 HTTP 长轮询", "传输方式 官方长连接", "传输方式 DWS 长连接", "传输方式 官方 Stream")
 	// Feishu's official larkws long connection is a real transport now, not a
 	// placeholder: selecting it writes the stored id.
-	click(t, tt, "官方长连接")
+	click(t, tt, "传输方式 官方长连接")
 	ptr := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "feishu_transport"})
 	if *ptr != "ws" {
 		t.Fatalf("official long connection wrote %q", *ptr)
 	}
 	// A known transport is selectable and writes the stored id.
-	click(t, tt, "官方 Stream")
+	click(t, tt, "传输方式 官方 Stream")
 	dt := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "dingtalk_transport"})
 	if *dt != "stream" {
 		t.Fatalf("dingtalk stream wrote %q", *dt)
@@ -484,7 +484,7 @@ func TestFontScaleSetting(t *testing.T) {
 	a.now = now
 	a.sec = view.SecSettings
 	a.settingsGroup = view.SettingsDeploy
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1600)
 
 	if got := ViewScale(); got != 1.1 {
 		t.Fatalf("ViewScale %v, want 1.1", got)

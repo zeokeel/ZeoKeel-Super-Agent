@@ -304,7 +304,9 @@ func (r *Runtime) ticketsVM(now time.Time) *view.TicketListVM {
 				Stage: stageWordOfTicket(st), StageID: st,
 				Detail: humanAge(now.Sub(t.CreatedAt)) + "前派发",
 				Bucket: bucket, Activity: activity,
-				Tone: toneOfStage(st), Age: now.Sub(t.CreatedAt),
+				CanRetry: t.CanRetry(),
+				CanStop:  st == string(domain.StageWorking) || st == string(domain.StageWorkingQueued),
+				Tone:     toneOfStage(st), Age: now.Sub(t.CreatedAt),
 			},
 		})
 		vm.DetailVMs[string(t.ID)] = r.ticketDetailVM(t, now)
@@ -383,6 +385,9 @@ func (r *Runtime) ticketDetailVM(t domain.Ticket, now time.Time) *view.TicketDet
 	_, activity := ticketActivity(t, now)
 	d := &view.TicketDetailVM{
 		ID: string(t.ID), Number: t.Number, Title: t.Title, Workspace: string(t.Workspace),
+		// P0-C: the panel shows the project directory and the execution copy, so
+		// "打开/复制路径" never pretends the project was modified.
+		ProjectRoot: workspaceRootOf(r, t), ExecutionRoot: executionRootOf(r, t),
 		Stage: string(domain.StageOf(&t, now)), StageLabel: stageWordOfTicket(string(domain.StageOf(&t, now))),
 		Tone:   toneOfStage(string(domain.StageOf(&t, now))),
 		Source: t.Mandate.Basis.Source, Actor: t.Mandate.Actor.ID,
@@ -431,6 +436,7 @@ func (r *Runtime) ticketDetailVM(t domain.Ticket, now time.Time) *view.TicketDet
 	for _, a := range t.Artifacts {
 		d.Artifacts = append(d.Artifacts, view.Artifact{
 			Kind: string(a.Kind), Title: a.Title, Detail: a.Detail,
+			Path: r.absoluteArtifactPath(a),
 		})
 	}
 	if t.Delivery != nil {
@@ -492,6 +498,8 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 						Help:    "默认只接 @我 的消息（at-me）；放宽监听范围会增加误派单。"},
 					{Key: "dingtalk_chat_query", Label: "DWS 群过滤", Value: values["source.dingtalk_chat_query"], Kind: view.SettingText,
 						Help: "只在指定群监听时填写；留空表示不按群过滤。"},
+					{Key: "dingtalk_pause_listen_on_send", Label: "发送时暂停监听（DWS）", Value: orDefault(values["source.dingtalk_pause_listen_on_send"], "0"), Kind: view.SettingSwitch,
+						Help: "仅本机 dws 要求 profile 独占时打开；默认关闭。"},
 					{Key: "dingtalk_bot_id", Label: "钉钉机器人自身 ID（stream 的 @ 判定）", Value: values["source.dingtalk_bot_id"], Kind: view.SettingText},
 					{Key: "dingtalk_app_key", Label: "钉钉 AppKey（stream）", Value: values["source.dingtalk_app_key"], Kind: view.SettingText},
 					{Key: "dingtalk_app_secret", Label: "钉钉 AppSecret（stream）", Value: values["source.dingtalk_app_secret"], Kind: view.SettingSecret},
@@ -532,6 +540,15 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 				Note:   "只有这里列出的人可以让它干活；你自己不受限制。改完立即生效。",
 				Fields: pick("people", "allowlist")},
 			{ID: view.SettingsEval, Label: "评估", Note: "只读事实；规则与受理档位的编辑在下一次 UI 迭代接入。", Fields: r.evalFacts()},
+			{ID: view.SettingsGroupID("worker"), Label: "模型",
+				Note: "研判与执行都用这个 OpenAI 兼容端点。保存后立即生效；可用「测试」按钮探测。",
+				Fields: []view.SettingField{
+					{Key: "base_url", Label: "端点 base URL", Value: values[settingWorkerBaseURL], Kind: view.SettingText,
+						Help: "例如 https://api.deepseek.com/v1（不要漏 /v1）"},
+					{Key: "api_key", Label: "API Key", Value: values[settingWorkerAPIKey], Kind: view.SettingSecret},
+					{Key: "model", Label: "模型名", Value: values[settingWorkerModel], Kind: view.SettingText,
+						Help: "例如 deepseek-chat"},
+				}},
 			{ID: view.SettingsPrompt, Label: "提示词", Placeholder: "提示词编辑在「提示词」页；这里保留入口。"},
 			{ID: view.SettingsDeploy, Label: "部署", Note: "界面字号可编辑；日志、备份与 schema 只读，由运行时维护。",
 				Fields: append([]view.SettingField{{Key: "font_scale", Label: "界面字号", Value: orDefault(values["ui.font_scale"], "1.0"),
@@ -539,6 +556,61 @@ func (r *Runtime) settingsVM(now time.Time) *view.SettingsVM {
 					Help: "0.9 紧凑 / 1.0 标准 / 1.1 放大；保存后立即生效。"}}, r.deployFacts()...)},
 		},
 	}
+	// UX U-03: complete the Sources form from the IM manager's transport model
+	// (fields the runtime reads but the static list above does not know about),
+	// and tell the person which transports actually work in this build.
+	for gi := range vm.Groups {
+		if vm.Groups[gi].ID != view.SettingsSource {
+			continue
+		}
+		have := map[string]bool{}
+		for _, f := range vm.Groups[gi].Fields {
+			have[f.Key] = true
+		}
+		transportNotes := map[string][]string{}
+		for _, spec := range IMChannelConfigSpecs() {
+			var usable, unimplemented []string
+			for _, tr := range spec.Transports {
+				if tr.Implemented {
+					usable = append(usable, tr.ID)
+				} else {
+					unimplemented = append(unimplemented, tr.ID)
+				}
+				for _, f := range tr.Fields {
+					if have[f.Key] {
+						continue
+					}
+					have[f.Key] = true
+					field := view.SettingField{
+						Key: f.Key, Label: f.Label, Kind: settingsKind(f.Kind),
+						Value: orDefault(values["source."+f.Key], f.Default),
+						Help:  f.Help, Options: f.Options,
+					}
+					if f.Required {
+						field.Help = strings.TrimSpace(field.Help + "（必填）")
+					}
+					vm.Groups[gi].Fields = append(vm.Groups[gi].Fields, field)
+				}
+			}
+			transportNotes[spec.Name] = []string{strings.Join(usable, ", "), strings.Join(unimplemented, ", ")}
+		}
+		for fi := range vm.Groups[gi].Fields {
+			f := &vm.Groups[gi].Fields[fi]
+			name := "feishu"
+			if strings.Contains(f.Key, "dingtalk") {
+				name = "dingtalk"
+			}
+			if note, ok := transportNotes[name]; ok && f.Key == name+"_transport" {
+				if note[0] != "" {
+					f.Help = strings.TrimSpace(f.Help + " 本构建可用：" + note[0] + "。")
+				}
+				if note[1] != "" {
+					f.Help = strings.TrimSpace(f.Help + "未实现：" + note[1] + "。")
+				}
+			}
+		}
+	}
+
 	// P1-9/P0-1: never echo credentials back to the panel; a masked field with
 	// "已保存" help tells the person it is stored without exposing it. Empty on
 	// save means "keep the stored value".
@@ -657,6 +729,10 @@ func (r *Runtime) SaveSettings(group string, values map[string]string) (uint64, 
 	if group == string(view.SettingsSource) {
 		r.imAfterSettingsSave(group, beforeSource)
 	}
+	if group == "worker" || group == string(view.SettingsExecution) {
+		// P0-A: model settings take effect without restart.
+		r.ApplyModelSettings()
+	}
 	if group == string(view.SettingsPeople) {
 		if err := r.applyAllowlist(values["allowlist"]); err != nil {
 			return rev, fmt.Errorf("允许名单已保存，但应用到工作区策略失败：%w", err)
@@ -735,6 +811,7 @@ func (r *Runtime) LoadSettings(st *store.Store) error {
 		r.chat = chat
 		r.mu.Unlock()
 	}
+	r.ApplyModelSettings()
 	r.Publish()
 	return nil
 }
@@ -1133,4 +1210,18 @@ func defaultSwitchValue(key string) bool {
 		return true
 	}
 	return false
+}
+
+// settingsKind maps the IM spec's kind names to view controls.
+func settingsKind(kind string) view.SettingKind {
+	switch strings.ToLower(kind) {
+	case "secret":
+		return view.SettingSecret
+	case "switch":
+		return view.SettingSwitch
+	case "select":
+		return view.SettingSelect
+	default:
+		return view.SettingText
+	}
 }

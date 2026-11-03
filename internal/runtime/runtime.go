@@ -84,6 +84,10 @@ type Runtime struct {
 	commandMu sync.Mutex
 	// chat is the bounded Super-Agent conversation (P0-7).
 	chat []view.ChatMessage
+	// attentionNotify/seen drive the OS-notification hook (P0-2): one callback
+	// per newly appeared attention item, never repeated.
+	attentionNotify func(AttentionItem)
+	attentionSeen   map[string]bool
 	// bgKilled marks jobs the timeout rule killed, so their late Wait result can
 	// never wake the session. bgLimit overrides the 30m setting (tests).
 	bgKilled map[string]bool
@@ -280,6 +284,8 @@ func (r *Runtime) Publish() {
 				SourceIcon:  "local",
 				Stage:       stageWord(st),
 				Detail:      "由你派发 · " + string(t.Workspace),
+				CanRetry:    t.CanRetry(),
+				CanStop:     st == domain.StageWorking || st == domain.StageWorkingQueued,
 				Tone:        toneOf(st),
 				Age:         now.Sub(t.CreatedAt),
 			})
@@ -291,6 +297,7 @@ func (r *Runtime) Publish() {
 		}
 		ov.Artifacts = append(ov.Artifacts, view.Artifact{
 			Kind: string(a.Kind), Title: a.Title, Detail: a.Detail,
+			Path: r.absoluteArtifactPath(a),
 		})
 	}
 	r.snap.PublishOverview(ov)
@@ -302,6 +309,8 @@ func (r *Runtime) Publish() {
 	r.snap.PublishTickets(r.ticketsVM(now))
 	r.snap.PublishWorkspaces(r.workspacesVM(now, all))
 	r.snap.PublishChat(r.chatVM())
+	r.snap.PublishAttention(r.attentionVM())
+	r.notifyAttention()
 	r.snap.PublishSettings(r.settingsVM(now))
 	r.snap.PublishPrompts(r.promptsVM())
 	r.snap.PublishOnboarding(r.onboardingVM())

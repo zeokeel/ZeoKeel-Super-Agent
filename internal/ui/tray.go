@@ -21,6 +21,7 @@ func (a *App) newTray() *mygo.Tray {
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "打开面板", Click: func(*mygo.MenuItem, *mygo.Window) {
 				if a.win != nil {
+					a.hidden = false
 					a.win.Show()
 					a.win.Focus()
 				}

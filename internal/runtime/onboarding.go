@@ -142,6 +142,23 @@ func (r *Runtime) SaveOnboarding(values map[string]string) (uint64, error) {
 	// settings nobody reads (design §6.7: setup must leave a working agent).
 	if model := merged["model"]; model != "" {
 		r.SetWorkerModel(merged["base_url"], merged["api_key"], model)
+		// Persist the same facts in the panel's 模型 group, so the settings page
+		// shows them and CheckModel can use them without onboarding state.
+		if _, err := r.SaveSettings("worker", map[string]string{
+			"base_url": merged["base_url"], "api_key": merged["api_key"], "model": model,
+		}); err != nil {
+			return rev, err
+		}
+	}
+	// P1-15: 来源 step configures the real channel and starts it.
+	if err := r.applyOnboardSource(values); err != nil {
+		return rev, err
+	}
+	// Demo/skip installs finish without a model; the overview says what is missing.
+	if values["skip"] == "1" || values["demo"] == "1" {
+		if _, err := r.SaveSettings("onboard", map[string]string{"demo": "1", "skip": "1"}); err != nil {
+			return rev, err
+		}
 	}
 	r.Publish()
 	return rev, nil
@@ -178,6 +195,12 @@ func (r *Runtime) persistSettings(base uint64, checkBase bool) (uint64, error) {
 // FinishOnboarding marks setup complete. It refuses while a required step is
 // missing: an agent with no workspace would accept work it cannot do.
 func (r *Runtime) FinishOnboarding() error {
+	if r.DemoMode() {
+		// Demo/skip installs are complete by definition; the missing model is
+		// reported on the overview, not hidden behind a wizard that never ends.
+		r.SetNeedsOnboarding(false)
+		return r.MarkSetupComplete()
+	}
 	vm := r.onboardingVM()
 	if !vm.Ready {
 		missing := vm.Incomplete()

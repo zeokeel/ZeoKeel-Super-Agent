@@ -17,7 +17,7 @@ func TestSettingsPageShowsTheFiveGroups(t *testing.T) {
 	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
 	click(t, tt, "设置")
-	wantTexts(t, tt, "来源", "评估", "执行", "提示词", "部署")
+	wantTexts(t, tt, "连接", "评估", "执行", "提示词", "部署")
 }
 
 // 部署 is the operator's console: the CLI's fixed paths and exit codes, and the
@@ -51,7 +51,7 @@ func TestSettingsGroupSaysWhatItWaitsFor(t *testing.T) {
 	click(t, tt, "设置")
 	a.settingsGroup = view.SettingsEval
 	tt.Frame()
-	wantTexts(t, tt, "等待运行时投影：",
+	wantTexts(t, tt, "还没有数据：",
 		"规则列表（id / 是否启用 / instruction / proactive）", "受理档位 accept mode")
 }
 
@@ -74,10 +74,10 @@ func TestMissingSettingsGroupAppearsAsProjectionGap(t *testing.T) {
 	click(t, tt, "设置")
 
 	// The rail carries all five, and 评估 says what it is missing.
-	wantTexts(t, tt, "来源", "评估", "执行", "提示词", "部署")
+	wantTexts(t, tt, "连接", "评估", "执行", "提示词", "部署")
 	a.settingsGroup = view.SettingsEval
 	tt.Frame()
-	wantTexts(t, tt, "等待运行时投影：", "规则列表（id / 是否启用 / instruction / proactive）")
+	wantTexts(t, tt, "还没有数据：", "规则列表（id / 是否启用 / instruction / proactive）")
 
 	// The published group keeps its own form: no fake fields were invented.
 	a.settingsGroup = view.SettingsExecution

@@ -259,7 +259,7 @@ func (r *Runtime) runTicket(t domain.Ticket) error {
 		// than showing a Worker that silently does nothing.
 		r.slogger().Warn("ticket parked: no model configured", "ticket", t.Number)
 		_ = r.reportTicket(t.ID, domain.ReportBlocked,
-			"还没有配置模型：在设置 › 提示词旁边的模型配置里填一个 OpenAI 兼容端点")
+			"还没有配置模型：请在「设置 › 模型」里填写端点、API Key 与模型名（保存后立即生效）")
 		r.log.append(string(t.ID), workerEvent{kind: agent.EventError,
 			err: "未配置模型，工单已挂起"})
 		r.Publish()
@@ -568,6 +568,13 @@ func (r *Runtime) systemPromptFor(t domain.Ticket, cfg *WorkerConfig) string {
 			system += "\n\n" + injected
 		}
 	}
+	// P0-C: state the truth about directories. Work happens in the execution copy;
+	// claiming the project root was modified would be a lie until sync exists.
+	paths, _ := r.ExecutionPaths(string(t.ID))
+	system += "\n\n目录事实：项目根目录（工作区）是 " + paths.WorkspaceRoot +
+		"；你在执行副本 " + paths.ExecutionDir + " 中工作。" +
+		"\n- 项目目录不会被自动修改；不要说\"已修改项目目录\"。" +
+		"\n- 交付物用 present 记录，面板显示的是副本路径；需要合并回项目由人决定。"
 	// The Ticket's facts, including the ZEOKEEL_* values a prepare script receives.
 	system += "\n\n" + r.promptVars(t, ticketWorkdir(cfg, t))
 	// Framework tools enabled for every Worker (ui2-spec §4/§5): the model needs

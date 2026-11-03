@@ -89,18 +89,47 @@ sh scripts/release-check.sh   # 版本/产物/文档 + 上面的闸门
 - **界面**：字号从 magic +2 改为 `ui.font_scale`（设置›部署可编辑，90/100/110%）经 `fs()` 统一缩放；启动窗口最小 1100×720；
   OS/arch·时区仍在 footer 与设置›部署；保存条按组写真实生效方式（来源=重启渠道几秒/执行=下次工单/提示词=热更新/部署=重启后生效）。
 
+### UI/UX 优化轮（2026-11-04，同一 rc.1，不新增 tag）
+
+按交互审计（novice/journeys）把日常路径从“工程可用”改为“运营可用”：
+
+- **导航/IA**：日常只留 超级Agent / 收件箱 / 项目 / 执行 / 设置；工程页（对话记录、消息、连接、触发、评估）收进
+  默认折叠的「诊断（高级）」组；UI 用「项目」称呼原工作区（`internal/view/vm.go:486-520`、`internal/ui/chrome.go:60-110`）。
+- **模型设置**：设置›模型（端点/API Key/模型名）+「测试连接」探测已保存配置（401/403/404 分类提示），保存后即时生效
+  （`runtime/ux.go:36-125`、`runtime/pages.go:543-558`、`ui/settings.go:501-535`）；未配模型时总览「去配置模型」，
+  任务停在待你决定（`ui/overview.go:76-95`）。模型响应超时在设置›执行。
+- **首跑/onboarding**：必填/可选标记、模型步骤「保存并测试」、第 1 步可「稍后设置（演示模式）」跳过、
+  项目根目录原生选择器；完成后给落点提示（`ui/onboarding.go:60-180`、`ui/uxsupport.go:100-170`、`runtime/ux.go:445-452`）。
+- **输入条**：多行 TextArea，Enter 换行、⌘/Ctrl+Enter 发送（IME 安全）；target chip 明确「聊天/项目（派活）」，
+  提交到所选项目；失败保留草稿+「再次发送」；回答内联可展开/复制/「查看全部」到对话记录
+  （`ui/composer.go:19-220`、`ui/commands.go:137-188`、`runtime/ux.go:134-172`）。
+- **收件箱**：统一「待你决定 N」（runtime `AttentionCount` 单源），批准/拒绝卡片 + 任务回答/重试/停止，
+  `j/k`/`Enter`，pending 与就地错误，窗口隐藏时新待办发系统通知（`ui/inbox.go:1-360`、`runtime/ux.go:279-440`、
+  `view/attention.go`、`ui/uxsupport.go:286-300`）。
+- **执行页动作**：行内「回答/重试/停止」+ pending/错误，不再要求去总览；`#N` 标签
+  （`ui/execution.go:150-210`、`view/ticket.go:69-88`、`runtime/ux.go:231-260`）。
+- **路径真相**：执行详情分开「项目目录 / 执行副本」，可打开/复制；交付物可打开/复制；提示词明确“只在副本工作、
+  不声称修改项目”（`ui/ticketdetail.go:257-290`、`runtime/ux.go:279-303`、`runtime/worker.go:570-582`）。
+- **IM 连接向导**：按 transport 只显示该方式字段；先校验、用填写值测试（不保存），通过才保存并启用，或显式“仍然保存”；
+  DWS 显示版本/可复制登录命令/授权链接，飞书 401/403 给授权页；钉钉「发送时暂停监听」；飞书 chats：ws 可选、longpoll 必填
+  （`ui/channelwizard.go:1-520`、`runtime/ux_im.go`、`runtime/im.go:1392-1505`、`im/dingtalk/dws_setup.go`、`im/feishu/ws_chats.go`）。
+- **视觉/可访问性**：对比度 token 提升、focus token；行用 `Focusable/Role/Label/Tooltip`；28px 目标/16px 图标；
+  状态栏只留“上下文/帮助/待你决定”，移除版本/rev/Go/SQLite；`StateKey:"main"` 记忆窗口、最小 1100×720；
+  ⌘N 新会话、⌘, 设置、⌘K/⌘/ 保留（`ui/tokens.go:100-145`、`ui/chrome.go:143-160`、`ui/app.go:320-330,441-455`）。
+
 **仍未完成（RELEASE.md F 组）**：Source 实例/规则/admission/accept mode 的设置 UI；系统钥匙串；
 `.dmg`/deb/PKGBUILD/NSIS/自动更新；`domain.Source`/`domain.Thread`/`domain.UserError`；`steer/inject`；
-飞书 WS 与 IM 媒体下载；开机自启/休眠唤醒（委托 systemd/launchd）。
-**测试状态（最终冻结树）**：非 race 2× 全绿、`-race` 全绿（含 `cmd/zeokeel` 5.2s / `internal/runtime` 25.7s）。
-此前 20:47 的三个 runtime 红与 cmd 的 `TestEndToEndFromChatToReply` 偶发 flake 在冻结后未再复现。
+飞书 webhook 与 IM 媒体下载；mygo 原生 app 菜单、系统 TextScale/ReduceMotion/高对比、多窗口、自动更新；
+计划/任务在面板的可视化、真正在原项目执行（当前为执行副本）；开机自启/休眠唤醒（委托 systemd/launchd）。
+**测试状态**：2026-11-03 的冻结树曾非 race 2× / `-race` 全绿；之后又合入修复波与 UI/UX 优化轮（并发/IM/UI 大量改动），
+**不能拿旧快照当本轮证据**。全量闸门由 Lead 在 push 前重跑 `sh scripts/verify-fixes.sh` 与 `sh scripts/release-check.sh`，本文不预称全绿。
 
 ## [1.0.0] — 未发布
 
 发布清单见 [RELEASE.md](RELEASE.md)。1.0.0 的定义（**目标，当前尚未全部满足**；缺口见 RELEASE.md F 组）：
 
 - 三平台安装包可从 CI 产出并安装（当前 CI 只交叉编译 + 查体积，未出包）
-- 一条请求能从本地面板/GitHub 走到交付物；**IM 入口待接线**
+- 一条请求能从本地面板/GitHub 走到交付物；**IM 入口已接线（审批优先）**
 - 崩溃恢复覆盖运行中的 Assignment（Wave 2 已实现：`RecoverAssignments` + patchtoolcalls）
 - 零 cgo 在全链路成立（已成立）
 - 首次运行向导可完成并落库（Wave 2 已实现）

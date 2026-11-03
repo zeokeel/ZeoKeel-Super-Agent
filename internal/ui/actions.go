@@ -108,7 +108,7 @@ func (a *App) missingActionsNote(rows []view.TicketRow) string {
 	if len(missing) == 0 {
 		return ""
 	}
-	return "动作未接线：运行时未提供 " + strings.Join(missing, "、")
+	return "暂时不可用：运行时还没有接入 " + strings.Join(missing, "、")
 }
 
 // overviewActions draws one row's actions. They are the only place a work-item
@@ -159,7 +159,7 @@ func (a *App) answerDialog(c *mui.Context) {
 	open := true
 	mui.Modal(c, &open, func() {
 		mui.Column(c).Width(560).Gap(10).Children(func() {
-			mui.Text(c, "回答 #"+r.ID).FontSize(fs(17)).Bold().TextColor(tk.Text)
+			mui.Text(c, "回答 "+view.TicketLabel(r.ID, r.Number)).FontSize(fs(17)).Bold().TextColor(tk.Text)
 			question := r.Detail
 			if r.Attention != nil && r.Attention.Question != "" {
 				question = r.Attention.Question
@@ -221,7 +221,7 @@ func (a *App) submitAnswer(text string) {
 	}
 	answerer, ok := a.cmd.(AttentionAnswerer)
 	if !ok || answerer == nil {
-		a.answerErr = "回答通道未接线：运行时未实现 AttentionAnswerer"
+		a.answerErr = "暂时不可用：运行时还没有接入回答"
 		return
 	}
 	if err := answerer.AnswerAttention(a.answerRow.ID, text); err != nil {
@@ -236,7 +236,7 @@ func (a *App) submitAnswer(text string) {
 func (a *App) retryTicket(r view.TicketRow) {
 	retrier, ok := a.cmd.(TicketRetrier)
 	if !ok || retrier == nil {
-		a.actionErr = "重试通道未接线：运行时未实现 TicketRetrier"
+		a.actionErr = "暂时不可用：运行时还没有接入重试"
 		return
 	}
 	if err := retrier.RetryTicket(r.ID); err != nil {
@@ -263,7 +263,7 @@ func (a *App) stopDialog(c *mui.Context) {
 	open := true
 	mui.Modal(c, &open, func() {
 		mui.Column(c).Width(520).Gap(10).Children(func() {
-			mui.Text(c, "停止 #"+r.ID+"？").FontSize(fs(17)).Bold().TextColor(tk.Text)
+			mui.Text(c, "停止 "+view.TicketLabel(r.ID, r.Number)+"？").FontSize(fs(17)).Bold().TextColor(tk.Text)
 			mui.Text(c, r.Title).FontSize(fs(14)).TextColor(tk.TextMuted)
 			mui.Text(c, "停止会结束这张工单并撤销它的 Mandate；执行器会停下，之后只能由新的请求重新开始。").
 				FontSize(11).TextColor(tk.TextMuted)
@@ -290,7 +290,7 @@ func (a *App) stopDialog(c *mui.Context) {
 func (a *App) confirmStop(r view.TicketRow) {
 	stopper, ok := a.cmd.(TicketStopper)
 	if !ok || stopper == nil {
-		a.actionErr = "停止通道未接线：运行时未实现 TicketStopper"
+		a.actionErr = "暂时不可用：运行时还没有接入停止"
 		return
 	}
 	if err := stopper.StopTicket(r.ID, stopReason); err != nil {

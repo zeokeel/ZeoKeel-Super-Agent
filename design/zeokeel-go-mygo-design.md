@@ -1895,7 +1895,7 @@ echo "check-nocgo: PASS (zero cgo)"
 
 ---
 
-## 13. 实现状态对照（2026-11-04 修复波后，按代码重写）
+## 13. 实现状态对照（2026-11-04 UI/UX 优化轮后，按代码重写）
 
 > 规则：**✅ 必须能在代码里指到证据行**；指不到就降级 🟡/❌ 并写原因。有冲突以代码为准，
 > 同一提交内改这里。Wave 1 的高报（§4.3/§4.4/§4.8/§5.2/§5.8/§5.10/§7）已在 Wave 2 大部分关闭，
@@ -1929,17 +1929,23 @@ echo "check-nocgo: PASS (zero cgo)"
 | §5.8 崩溃恢复 | `RecoverAssignments` + patchtoolcalls | ✅ | `internal/runtime/recovery.go:21`；`cmd/zeokeel/main.go:265`；`internal/agent/engine_adk.go` |
 | §5.10 能力矩阵 | MCP/skill/定时/目标/⌘K/present/ask/子智能体/后台/plantask/AGENTS.md/web | 🟡（仅 plan mode 与 agent workflow） | 工具 `internal/runtime/worker.go:481-483`、`internal/runtime/pages.go:520-525`；仍缺 plan mode 与 agent 可调用 workflow |
 | **内置工具信任边界** | plantask 工具名一致、任务在 `.zeokeel/plan`；AGENTS.md 不可信信封 ≤64KB；web_fetch DNS pin/Proxy:nil/拒私网/2MiB/不可信信封；web_search 前 5 | ✅ | `internal/agent/builtin.go:30-44,67-77,158-270`；`internal/agent/webtools.go:40-44,98-160,226-290`；设置 `internal/runtime/pages.go:520-525` |
-| §6.3 界面结构（DSH 式侧栏） | 超级Agent / 工作区树 / 监控 / 设置；默认超级Agent；消息页只读 | ✅（有意偏离原型单流） | `internal/ui/chrome.go:61-120`；`internal/ui/app.go` 的页面分派；`internal/view/vm.go:467-500`（`Nav`/`SectionLabel`） |
-| **超级Agent 聊天+派活双态 / 内联反馈 / 忙碌态** | 提问→模型/确定性回答；派活→「已派发 #N」；待批→「需要你确认」；回答内联在输入框上方+总览；非失败不标红；发送/保存/重启有 pending | ✅ | `internal/runtime/chat.go:1-116`；`internal/view/chat.go:1-83`；`internal/ui/chat.go:20-140`；`internal/ui/commands.go:1-220`；`internal/ui/input.go:1-36`；`internal/ui/settings.go:436-470` |
+| §6.3 界面结构（UX 轮 IA） | 日常五项：超级Agent / 收件箱 / 项目 / 执行 / 设置；工程页（对话记录·消息·连接·触发·评估）收进默认折叠的「诊断（高级）」；UI 用「项目」称呼工作区 | ✅ | `internal/view/vm.go:486-520`（`Nav`/`NavAdvanced`/`SectionLabel`）；`internal/ui/chrome.go:60-110`（rail + 诊断折叠）；`internal/ui/app.go:441-455`（⌘K/⌘//⌘N/⌘,） |
+| **输入条（聊天/派活双 target）** | 多行 TextArea；Enter 换行、⌘/Ctrl+Enter 发送（IME 安全）；target chip「超级Agent（聊天）/项目 X（派活）」决定提交目标；失败保留草稿+再次发送；回答可展开/复制/查看全部 | ✅ | `internal/ui/composer.go:19-220`（target bar/inputBar/context/展开复制）；`internal/ui/commands.go:137-188`（submit/resend/失败保留）；`internal/runtime/ux.go:134-172`（`DispatchTo`）；对话记录 `internal/ui/chat.go`/`internal/view/chat.go` |
+| **收件箱（统一注意力）** | 一个「待你决定 N」（runtime `AttentionCount` 单源）；IM 批准/拒绝卡片 + 任务回答/重试/停止；j/k/Enter；pending 与就地错误；窗口隐藏时新待办系统通知 | ✅ | `internal/ui/inbox.go:1-350`；`internal/runtime/ux.go:279-440`（`attentionItems`/`AttentionCount`/`notifyAttention`）；`internal/view/attention.go`；`internal/ui/uxsupport.go:286-300`（hidden notification） |
+| **超级Agent 聊天+派活双态 / 内联反馈 / 忙碌态** | 提问→模型/确定性回答；派活→「已派发到 项目 #N」；待批→「需要你确认」；回答内联在输入条上方+总览；非失败不标红；发送/保存/重启有 pending；有「对话记录」页 | ✅ | `internal/runtime/chat.go:1-116`；`internal/view/chat.go:1-83`；`internal/ui/chat.go:20-98`；`internal/ui/composer.go:163-220`；`internal/ui/commands.go:1-220`；`internal/ui/settings.go:436-470` |
 | **Ticket 身份（domain ID + Number）** | 行/详情查找键=domain ID；详情 VM 的 ID 也是 domain ID、Number 单独展示 `#number`；工作区会话点击同一 Ticket | ✅ | `internal/runtime/pages.go:302,310`（行/详情 key）、`:385`（`ID`=domain ID、`Number` 单独）；`internal/view/pages.go:377-401`；`internal/view/vm.go:87-95`；`internal/ui/execution.go:95,114-120,150` |
-| **工作区 opaque ID / 重命名 / 删除 / 过滤** | `ws_*` 随机 ID、名字可改、根目录绝对化/重复拒绝；选中工作区过滤消息/执行；删除空工作区（行+策略+engine 路由），有工单拒绝 | ✅ | `internal/runtime/workspaces.go:23-95`（创建/ID/root）、`:111-150`（Rename）、`:155-190`（Delete，`:182` `Unregister`）；`internal/store/store.go:390`（删除行）；`internal/engine/engine.go:157`（路由注销）；过滤 `internal/ui/workspace.go:346-400`、`internal/view/pages.go:419-430`、`internal/view/vm.go:566-580` |
+| **项目（工作区）opaque ID / 重命名 / 删除 / 过滤** | UI 称「项目」；`ws_*` 随机 ID、名字可改、根目录绝对化/重复拒绝；选中项目过滤消息/执行；删除空项目（行+策略+engine 路由），有工单拒绝 | ✅ | `internal/runtime/workspaces.go:23-95`（创建/ID/root）、`:111-150`（Rename）、`:155-190`（Delete，`:182` `Unregister`）；`internal/store/store.go:390`（删除行）；`internal/engine/engine.go:157`（路由注销）；过滤 `internal/ui/workspace.go:346-400`、`internal/view/pages.go:419-430`、`internal/view/vm.go:566-580` |
 | **设置 codec / 一次性迁移 / 事务保存 / secret** | UI 开关读写 `1/0`（读兼容旧 true/false）；`LoadSettings` 一次性迁移（bool 归一、IM 启用/transport、`im_self` 拆分）+ schema stamp；SaveSettings 先快照后提交；secret 不回显、Inspect/status/health redaction | ✅ | `internal/ui/channels.go:381-395`、`internal/ui/settings.go:405-414`；`internal/runtime/settingscodec.go:1-70,76-230`；`internal/runtime/pages.go:678-707`（迁移）、`:567-690`（SaveSettings）、`:539-550`（secret）；`internal/store/settings.go:28-55,106-146`；`internal/store/redact.go`；`internal/store/inspect.go:46-117,231,260` |
-| §6.5 主题 / 深色 / 字号 / 最小窗口 | 品牌 token 随 frame theme；`ui.font_scale` 0.9/1.0/1.1 在设置›部署可编辑、经 `fs()` 缩放、保存立即生效；启动最小 1100×720 | ✅ | `internal/ui/tokens.go:48-78,195`；`internal/ui/app.go:238-264,368`；`internal/ui/settings.go:244-300`；投影 `internal/runtime/pages.go:537-539` |
+| **模型设置与测试连接** | 设置›模型：端点/API Key/模型名；「测试连接」探测已保存配置（401/403/404 分类）；保存后即时生效；未配模型时总览「去配置模型」，任务停在待你决定；模型响应超时在设置›执行 | ✅ | `internal/runtime/pages.go:543-558`（字段）、`:524-526`（超时）；`internal/runtime/ux.go:36-125`（`ApplyModelSettings`/`CheckModel`）；`internal/ui/settings.go:501-535`（测试行）；`internal/ui/overview.go:50-95`（停车卡） |
+| **首跑引导（必填/测试/演示/选择器）** | 四步向导；必填/可选标记；模型「保存并测试」；「稍后设置（演示模式）」；项目根目录原生「浏览…」；完成后落点提示 | ✅ | `internal/ui/onboarding.go:60-180`；`internal/ui/uxsupport.go:100-170`（skip/finish/picker）；`internal/runtime/ux.go:445-452`（`SkipOnboarding`/`DemoMode`）；`internal/runtime/onboarding.go:71-108` |
+| **路径真相（项目 vs 执行副本）** | 详情「位置」分别列项目目录/执行副本，可打开/复制；交付物可打开/复制；提示词明确只在副本工作、不声称改项目 | ✅ | `internal/ui/ticketdetail.go:250-286`；`internal/runtime/ux.go:279-303`（`ExecutionPaths`/`absoluteArtifactPath`）；`internal/runtime/worker.go:570-582`（提示词事实）；`internal/ui/deliverables.go:60-85` |
+| **IM 连接向导** | 按 transport 只显示该方式字段；draft 校验+用填写值检查（不保存）；通过才保存/显式仍保存；DWS 版本/登录命令/授权链接可复制；Feishu chats（ws 可选/longpoll 必填）；暂停监听开关 | ✅ | `internal/ui/channelwizard.go:1-520`；`internal/runtime/ux_im.go:1-95`；`internal/runtime/im.go:1392-1505`（per-transport specs/校验）；`internal/im/dingtalk/dws_setup.go`；`internal/im/feishu/ws_chats.go` |
+| §6.5 主题 / 深色 / 字号 / 最小窗口**与可访问性** | 品牌 token 随 frame theme；`ui.font_scale` 三档可编辑；提高 faint 对比度与 focus token；行 `Focusable/Role/Label/Tooltip`、28px 目标/16px 图标；状态栏去 debug；`StateKey:"main"` 记忆窗口、最小 1100×720 | ✅（系统 TextScale/ReduceMotion/高对比未接） | `internal/ui/tokens.go:100-145,195`；`internal/ui/app.go:238-264,320-330`；`internal/ui/settings.go:244-300`；`internal/ui/chrome.go:143-160`；`internal/ui/uxsupport.go`；投影 `internal/runtime/pages.go:537-539` |
 | §6.7 生命周期（常驻/恢复） | 单实例锁 + 托盘/关窗隐藏 + `-headless` + supervisor + systemd/launchd | ✅（自启/唤醒除外） | `internal/store/lock.go`；`cmd/zeokeel/service.go:20`；`internal/runtime/supervisor.go:105`；`packaging/systemd`、`packaging/launchd` |
 | §7 持久化与 Effects/Outbox | schema v3、Effects、Outbox、会话事件、归档 | ✅ | `internal/store/schema.go:17`（`SchemaVersion=3`）；`internal/effects`；`internal/outbox`；`cmd/zeokeel/ops.go:83` |
 | §7.3 归档 | `archive --before 180d` → archive.db；outbox 保留 | ✅ | `cmd/zeokeel/ops.go:83` |
 | §8.1 模式与 CLI | 桌面 / `-headless` / 演示 / pipeline / 七个子命令 | ✅ | `cmd/zeokeel/cli.go:47`（`cliCommands`）；`cmd/zeokeel/service.go:20` |
-| §8.2 首次配置 | 向导四步落库；`setup` 非交互；面板可新建工作区（原生选择器） | ✅（gh 校验/钥匙串除外） | `internal/runtime/onboarding.go:114`；`cmd/zeokeel/cli.go:216`；工作区 `internal/runtime/workspaces.go:23`、`internal/ui/workspace.go` 选择器 |
+| §8.2 首次配置 | 向导四步落库（必填/测试/演示跳过/原生选择器）；`setup` 非交互；面板可新建项目（原生选择器） | ✅（gh 校验/钥匙串除外） | `internal/runtime/onboarding.go:114`；`cmd/zeokeel/cli.go:216`；`internal/ui/onboarding.go:60-180`；`internal/runtime/ux.go:445-452`；`internal/runtime/workspaces.go:23` |
 | §8.3 打包分发 | tar.gz / 未签名 .app zip / Windows zip + install.ps1 | 🟡 | `scripts/package.sh`；缺 `.dmg`/NSIS/deb/PKGBUILD/updater；CI 不出包 |
 | §8.5 可观测性与运维 CLI | status/check/setup/login/backup/archive/stop、日志、supervisor、退出码 0/1/2/3、secret redaction | ✅（自启/唤醒除外） | `cmd/zeokeel/cli.go:76,143,216,354`；`cmd/zeokeel/ops.go:46,83`；`cmd/zeokeel/logging.go:27`；`internal/runtime/status.go:21-26,137`；`internal/runtime/supervisor.go:105`；`internal/store/inspect.go` |
 | §9 零 cgo | `check-nocgo.sh` + CI gate | ✅ | `scripts/check-nocgo.sh`；`scripts/verify-fixes.sh`；CI `check` job |
@@ -1953,6 +1959,8 @@ echo "check-nocgo: PASS (zero cgo)"
 - Source 实例表/面板“添加来源”：GitHub Source 仍需 `-repo/-gh-login`；评估组只读（规则/admission/accept mode 不可编辑）。
 - 开机自启、休眠唤醒（委托 systemd/launchd）。
 - 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
-- IM 真实凭据/DWS 租户端到端未验证；「检查通道」只验证凭据/订阅。
-- **测试/闸门状态**：2026-11-03 快照曾全绿；2026-11-04 修复波后由 Lead 跑最终 `verify-fixes.sh`/`release-check.sh`，本文不预称全绿。
+- IM 真实凭据/DWS 租户端到端未验证；连接向导只验证凭据/订阅，不代替真实消息 E2E。
+- **UX 收尾未做**：mygo 原生 app 菜单项、系统 TextScale/ReduceMotion/高对比、计划/任务在面板的可视化、
+  真正在原项目执行（当前为执行副本）、多窗口、自动更新/About 版本检查。
+- **测试/闸门状态**：2026-11-03 快照曾全绿；修复波 + UI/UX 优化轮后由 Lead 跑最终 `verify-fixes.sh`/`release-check.sh`，本文不预称全绿。
 **维护规则**：以后每次改代码，同一提交内改这里；新增 ✅ 必须附 `file:line`，否则按 🟡 处理。

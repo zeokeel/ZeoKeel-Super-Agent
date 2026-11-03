@@ -469,3 +469,58 @@ $ sh scripts/check-nocgo.sh → 步骤 4 红在 internal/runtime/im2_test.go（�
 6. 发布 `ui.font_scale` 字段（部署组，值 0.9/1.0/1.1）后，设置页字号控制才可编辑；未发布时面板显示当前比例 + 等待投影说明。
 7. 传输 `Options` 只列真实可用的值（构建已知项才可选；未知项 UI 会灰显"未实现"）。
 8. plan/task 可见性本轮未做（等 runtime 投影 task 列表再上 UI）。
+
+---
+
+# Round 4（交互审计前端：UX 优化）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime/cmd/store 改动，无 `go.mod`，无 commit。依据 `audit/interaction-audit.md` + 三份报告。
+
+## 已完成（P0 前端）
+
+- **P0-A 模型设置**：`view.SettingsWorker`（"worker"）加入 RequiredSettingsGroups，运行时未发布时用 `view.ModelGroup()` 兜底（端点/模型/API Key，保存即生效）；设置›模型增加「测试连接」(`ModelTester.TestModel(ctx)` off-frame，pending/成功/失败 inline，文案说明"测试已保存配置"）；总览在模型未配置时显示「还没有配置模型/去配置模型」停靠卡（运行时设置未发布时不误报）。
+- **P0-1 输入框**：多行 `TextArea`（Enter 换行、⌘/Ctrl+Enter 发送，IME 安全）；可见目标 chip（"发给 超级Agent（聊天）" / "项目 X（派活）"），可切换，选中工作区自动设为派活目标；`WorkspaceDispatcher.DispatchTo` 走 off-frame seam；失败保留草稿 + 「再次发送」；最新回答可展开/收起 + 复制 + 「查看全部」→ 新「对话记录」页（每条可复制、可重发上一条）。
+- **P0-B 执行行动作**：运行中行内「停止」、可重试行「重试」、待回答行「回答」，各自 `rowPending`/`rowErr` 局部状态；删除"动作在总览" dead-end 文案。
+- **P0-2 收件箱**：新导航「收件箱」（统一"待你决定 N"，侧栏/顶栏/收件箱同一计数，顶栏 chip 可点）；页内请求卡（批准/拒绝，pending/局部错误、成功 toast）与任务卡（回答/重试/打开）；j/k/Enter 键盘路径；窗口隐藏且计数增长时发 `mygo.Notification`（UI 侧 diff，不需要 runtime 回调）。
+- **P0-C 路径真相**：`TicketDetailVM.ProjectRoot/ExecutionRoot`、`Artifact.Path`（新增契约）在详情里显示「项目目录 / 执行副本」+ 打开/复制，明确"Agent 在副本里工作，项目目录不会被直接修改"；交付物（总览 + 交付物面板）有路径时可打开/复制。
+- **P0-8 表单/引导**：必填 `*` 标记 + 「必填/可选」chip；向导工作区步骤加原生目录 picker；模型步骤「保存并测试」；`OnboardingSkipper`「稍后设置（演示模式）」、`OnboardingFinisher`「开始使用」off-frame，完成后落总览 + toast。
+- **P0-6/视觉**：token 对比度（TextFaint 亮 `#5B6472`/暗 `#94A0B8`，Border `#C9D0DA`/`#39465F`）；可点行/筛选 chip/导航/传输选项/工作区行加 `Focusable().Role(RoleButton).Label().Tooltip()` + hover；28px 目标；执行行 source 图标 16px 无边框；状态栏移除版本/rev/Go/CGO（保留待决定/帮助）；窗口 MinWidth/MinHeight + `StateKey="main"`（mygo 记忆位置/大小）；⌘N/⌘, 快捷键；`mygo.Shell.OpenPath`/剪贴板/通知 seam 可测试。
+- **P0-7 导航/术语**：日航 5 项（超级Agent/收件箱/项目/执行/设置），技术页进「诊断」分组（默认展开可折叠）；工作区称呼改「项目」；"动作未接线/等待运行时投影/尚未投影"等工程语改为"暂时不可用/还没有数据"；#N 显示（回答/停止标题、错误文案）；状态栏只留人话。
+
+## 契约（供 runtime 填）
+
+- UI 断言：`ModelTester{CheckModel(ctx) (bool,string)}`、`WorkspaceDispatcher{DispatchTo(ws,text) error}`、`OnboardingSkipper{SkipOnboarding()(uint64,error)}`、`OnboardingFinisher{FinishOnboarding() error}`、`DemoModer{DemoMode() bool}`、`AttentionCounter{AttentionCount() int}`。
+- view 新增待填：`TicketRow.CanStop`、`TicketDetailVM.ProjectRoot/ExecutionRoot`、`Artifact.Path`；`view.AttentionVM`（收件箱专用投影）——收件箱当前用 OverviewVM.Approvals/NeedsPerson 兜底，runtime 发布 AttentionVM 后切换（已与 nih-runtime 对齐）。
+- 已接受 conf-arch 的 `ChannelValidator/DWSVersionValue/DWSLoginArgs/IMConnectionState` 契约，**IM 连接向导尚未实现**（下一轮，见下）。
+
+## 未完成（诚实清单）
+
+1. **IM 连接向导**（P0-5）未做：按 transport 分流字段、草稿校验、连接 modal（步骤/等待/成功/失败/DWS 版本与登录命令复制/打开授权 URL）依赖 `ChannelValidator` 适配器；现有渠道卡仍是"开关+传输+凭据+检查"。
+2. `TicketActions()/ExecutionPaths()/AttentionItems()` 的 runtime structs 不能从 ui 引用，需 runtime 填 view 字段（已在其待办）。
+3. 菜单栏应用级命令（⌘N/⌘, 已用窗口快捷键替代，未改 mygo 应用菜单）；字体阶梯/高对比主题/系统 TextScale 仍待做；计划/任务可见性待 runtime 投影。
+4. 部分测试用 1440×1600 视口（渠道卡/交付物在 900 高折叠下点击不可达）；这是 tester 视口限制而非功能缺陷，已加注释说明。
+
+## 结果
+
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/... -count=1  → ok（ui/view 全绿）
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...            → 干净
+$ gofmt -l internal/ui internal/view                                    → 空
+$ CGO_ENABLED=0 go build ./...                                          → OK
+$ sh scripts/check-nocgo.sh                                             → PASS（zero cgo）
+```
+
+## Round 4 addendum（IM 连接向导 + 统一收件箱投影）
+
+- **IM 连接向导**（`internal/ui/channelwizard.go`）：每个渠道卡新增「连接向导…」；modal 内按 transport 分流字段（飞书 ws: app_id/secret + 可选 chats；longpoll: chats 必填；钉钉 dws: dws_cmd/profile/listen_kind/chat_query + 发送时暂停监听；stream: app_key/secret/robot/bot_id），优先使用 `ChannelValidator.ChannelFieldMetadata()` 的运行时字段/标签/必填/选项，缺省时用 `view.ChannelTransports` 静态表兜底。
+  - 「检查连接」用**当前填写的值**调 `CheckChannelDraft`（off-frame，不保存）；`ValidateChannelDraft` 的错误内联显示；needs_auth 显示授权 URL + 打开/复制 + 登录命令复制；DWS 版本显示/缺失安装提示；状态只有运行时返回的 state（从不假装"已连接"）。
+  - 保存：仅当检查 `ok` 才启用「保存并启用」；失败时提供显式的「仍然保存（未验证，可能连不上）」并 toast 警告；保存走既有 `SaveSettings(source, ...)`（enabled=true + transport + 本 transport 字段），成功后关闭向导/清检查、toast。
+  - 无 `ChannelValidator` 时：卡片按钮禁用 + 说明"暂时不可用：运行时还没有接入连接向导"；字段可看，检查不可跑。
+  - `dingtalk_pause_listen_on_send` 开关在钉钉卡片渲染（走 settingsPtr 保存协议），未投影时诚实提示。
+- **统一收件箱投影**：新增 `view.AttentionVM/AttentionItemVM` + `Snapshot.PublishAttention/Attention()`；收件箱页优先渲染 runtime 的 attention items（approve/reject/answer/retry/open 按 Actions；ticket 行动作从已发布列表查行），未发布时回退 OverviewVM.Approvals/NeedsPerson（原行为不变）。
+- 测试：`internal/ui/channelwizard_test.go`（无适配器禁用、per-transport 字段、检查用草稿值不保存、needs_auth URL/复制登录命令、成功后保存、失败后强制保存、metadata 覆盖标签、暂停开关保存）+ 既有 UI/view 测试全部更新为绿。
+- Gates：`CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/...` ok；`go vet` 干净；`gofmt` 空；`go build ./...` OK。
+
+未做（明确推迟）：mygo 应用菜单项（窗口快捷键已有）、系统 TextScale/ReduceMotion/高对比主题（mygo Preferences 已可见，UI 尚未消费）、计划/任务可见性（待 runtime 投影）。
+
+runtime 待办：发布 `AttentionVM`（items 与 AttentionCount/Overview.PersonCount 保持一致）；`TicketActions`/`ExecutionPaths` 对应的 view 字段已就位（CanStop/ProjectRoot/ExecutionRoot/Artifact.Path）。IM `ChannelValidator` 适配器由 conf-arch/nih-runtime 提供，UI 已按契约探测。

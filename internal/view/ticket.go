@@ -205,6 +205,11 @@ type TicketDetailVM struct {
 	Follows []FollowDetail
 	// Artifacts are the deliverables this Ticket produced.
 	Artifacts []Artifact
+	// ProjectRoot is the project directory the person chose; ExecutionRoot is the
+	// per-Ticket copy the Agent actually works in. They are different paths on
+	// purpose: the panel must not claim the Agent edits the project in place.
+	ProjectRoot   string
+	ExecutionRoot string
 	// Delivery is the last failed delivery attempt, nil when there is none.
 	Delivery     *DeliveryDetail
 	LastActivity string

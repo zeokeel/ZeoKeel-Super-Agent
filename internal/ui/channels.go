@@ -59,7 +59,7 @@ var (
 type errNoChannelChecker struct{}
 
 func (errNoChannelChecker) Error() string {
-	return "动作未接线：运行时未提供 CheckChannel"
+	return "暂时不可用：运行时还没有接入 CheckChannel"
 }
 
 // postToUI runs fn on the main thread: a window posts through Window.Update, and
@@ -93,7 +93,7 @@ func (a *App) checkChannelState(name string) channelCheck {
 // checkChannel asks the runtime to check one channel, without blocking the frame.
 func (a *App) checkChannel(name string) {
 	if _, ok := a.channelChecker(); !ok {
-		a.channelErr = "动作未接线：运行时未提供 CheckChannel"
+		a.channelErr = "暂时不可用：运行时还没有接入 CheckChannel"
 		return
 	}
 	if c := a.checkChannelState(name); c.pending {
@@ -179,9 +179,20 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 						Label("启用" + spec.Label).Changed() {
 						*p = boolText(on)
 					}
+					if _, ok := a.channelValidator(); ok {
+						if b := mui.Button(c, "连接向导…").Label("配置连接 " + spec.Label).
+							Height(26).FontSize(fs(11)); b.Clicked() {
+							a.openConnectionWizard(spec.Name)
+						}
+					} else {
+						b := mui.Button(c, "连接向导…").Label("配置连接 " + spec.Label).
+							Height(26).FontSize(fs(11))
+						b.Disabled(true)
+						mui.Text(c, "暂时不可用：运行时还没有接入连接向导").FontSize(fs(10)).TextColor(tk.Amber)
+					}
 				})
 			} else {
-				mui.Text(c, "等待运行时投影："+spec.EnabledKey).FontSize(fs(11)).TextColor(tk.Amber)
+				mui.Text(c, "还没有数据："+spec.EnabledKey).FontSize(fs(11)).TextColor(tk.Amber)
 			}
 		})
 
@@ -198,10 +209,14 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 		for _, key := range spec.CredentialKeys {
 			f, ok := settingFieldOf(g, key)
 			if !ok {
-				mui.Text(c, "等待运行时投影："+key).FontSize(fs(11)).TextColor(tk.TextFaint)
+				mui.Text(c, "还没有数据："+key).FontSize(fs(11)).TextColor(tk.TextFaint)
 				continue
 			}
 			a.settingField(c, g, f)
+		}
+
+		if spec.Name == "dingtalk" {
+			a.dingtalkPauseSwitch(c, g)
 		}
 
 		// Check / authorize.
@@ -210,7 +225,7 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 			if check.pending {
 				label = "检查中…"
 			}
-			btn := mui.Button(c, label).Label(label).Height(26).FontSize(fs(13))
+			btn := mui.Button(c, label).Label("传输方式 " + label).Height(26).FontSize(fs(13))
 			if _, wired := a.channelChecker(); !wired {
 				btn.Disabled(true)
 			} else if check.pending {
@@ -227,7 +242,7 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 			}
 			mui.Spacer(c)
 			if _, wired := a.channelChecker(); !wired {
-				mui.Text(c, "动作未接线：运行时未提供 CheckChannel").FontSize(fs(11)).TextColor(tk.Amber)
+				mui.Text(c, "暂时不可用：运行时还没有接入 CheckChannel").FontSize(fs(11)).TextColor(tk.Amber)
 			}
 		})
 		if check.authURL != "" {
@@ -326,26 +341,18 @@ func (a *App) channelTransport(c *mui.Context, g *view.SettingsGroup, spec view.
 			if !opt.Implemented {
 				label += "（未实现）"
 			}
-			row := mui.Row(c).Height(26).Padding(0, 10).Radius(6).Border(1, tk.BorderSoft).
-				Background(ifColor(on, tk.AccentSoft, tk.Surface)).AlignItems(mui.Center).
-				OnClick(func() {
-					if ptr == nil || !opt.Implemented {
-						return
-					}
-					*ptr = opt.ID
-				})
-			row.Children(func() {
-				fg := ifColor(on, tk.Accent, tk.TextMuted)
-				if !opt.Implemented {
-					fg = tk.TextFaint
-				}
-				mui.Text(c, label).FontSize(fs(12)).TextColor(fg)
-			})
+			btn := mui.Button(c, label).Label("传输方式 " + label).Height(28).FontSize(fs(12))
+			if !opt.Implemented || ptr == nil {
+				btn.Disabled(true)
+			} else if btn.Clicked() {
+				*ptr = opt.ID
+			}
+			_ = on // the selected transport is shown by the card's status line
 		}
 		mui.Spacer(c)
 		switch {
 		case !hasField:
-			mui.Text(c, "等待运行时投影："+spec.TransportKey).FontSize(fs(11)).TextColor(tk.Amber)
+			mui.Text(c, "还没有数据："+spec.TransportKey).FontSize(fs(11)).TextColor(tk.Amber)
 		case !enabled:
 			mui.Text(c, "未启用时不连接").FontSize(fs(11)).TextColor(tk.TextFaint)
 		}

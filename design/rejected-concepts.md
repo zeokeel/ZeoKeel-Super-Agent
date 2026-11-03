@@ -90,3 +90,19 @@
 | 设置唯一 bool 编码 + 三态启用 + 一次性迁移 + flag bootstrap | 接受 | UI 开关读写 1/0（读兼容 true/false）；`LoadSettings` 一次性迁移（bool/IM 启用/transport/im_self）并写 schema stamp；显式值优先，缺省按凭据/flags 推导；flag-only 部署启动时补写（`internal/runtime/settingscodec.go`、`internal/runtime/im.go:33-130`、`internal/runtime/pages.go:678-707`） |
 | settings 保存事务化 + secret redaction | 接受 | 先构造新快照→事务提交→成功才换内存；失败面板不变；secret 不回显，status/Inspect/health 用 `***`（`runtime/pages.go:567-690,539-550`、`store/redact.go`、`store/inspect.go`） |
 | 界面字号 scale token（`ui.font_scale`）+ 最小窗口 1100×720 | 接受（替换 magic +2） | 显式字号走 `fs()` 缩放，三档 0.9/1.0/1.1，设置›部署可编辑并投影（`internal/ui/tokens.go:48-78`、`internal/ui/app.go:238-264`、`internal/runtime/pages.go:537-539`） |
+
+## F. UI/UX 优化轮（2026-11-04）新增/变化的概念登记
+
+| 概念 / 实现 | 判定 | 说明与证据 |
+| --- | --- | --- |
+| 日常五项导航 + 折叠「诊断」 | **接受，替换“监控”平铺** | 超级Agent / 收件箱 / 项目 / 执行 / 设置；工程页收进默认折叠「诊断（高级）」。原型/DSh 的监控页不再占日常路径（`internal/view/vm.go:486-520`、`internal/ui/chrome.go:60-110`） |
+| UI 叫「项目」而不是「工作区」 | 接受（产品词） | 领域/代码仍是 workspace；UI 文案统一「项目」，减少“工作区/项目/会话/工单”混用（`internal/ui/workspace.go`、`internal/view/vm.go:525-535`） |
+| 多行 composer + target chip（聊天/项目派活） | **接受，替换单行隐式路由** | Enter 换行、⌘/Ctrl+Enter 发送（IME 安全）；chip 明确提交目标；失败保留草稿+再次发送；回答可展开/复制/查看全部（`internal/ui/composer.go:19-220`、`internal/ui/commands.go:137-188`、`internal/runtime/ux.go:134-172`） |
+| 统一收件箱（审批 + 任务动作） | **接受，替换分散在总览/来源** | 一个 `AttentionCount` 单源「待你决定 N」；批准/拒绝/回答/重试/停止；j/k/Enter；隐藏窗口系统通知（`internal/ui/inbox.go:1-350`、`internal/runtime/ux.go:279-440`、`internal/view/attention.go`） |
+| 模型设置成为一等设置组 + 测试连接 | 接受（替换仅 onboarding/CLI） | 设置›模型端点/API Key/模型名；测试已保存配置（401/403/404 分类）；保存即时生效；未配模型停车卡（`internal/runtime/ux.go:36-125`、`internal/runtime/pages.go:543-558`、`internal/ui/settings.go:501-535`） |
+| 首次运行可「稍后设置（演示模式）」 | 接受 | 不再强制 model+workspace 才能进入；任务停在待你决定，总览说明并给「去配置模型」（`internal/runtime/ux.go:445-452`、`internal/ui/onboarding.go:140-180`、`internal/ui/overview.go:76-95`） |
+| 路径真相：项目目录 vs 执行副本 | **接受，诚实披露当前语义** | 详情分列两路径、可打开/复制；提示词明确只在副本工作、不修改项目；交付物是副本路径（`internal/ui/ticketdetail.go:250-286`、`internal/runtime/worker.go:570-582`） |
+| 连接向导（draft 校验/测试/通过才保存） | 接受 | 只显示所选 transport 字段；用填写值测试、不保存；DWS 版本/登录命令/授权链接；Feishu chats ws 可选/longpoll 必填；暂停监听（`internal/ui/channelwizard.go:1-520`、`internal/runtime/ux_im.go`、`internal/runtime/im.go:1392-1505`） |
+| 可访问性最小集（对比度/focus/标签/尺寸） | 接受（系统级未接） | 提高 faint 对比度与 focus token；`Focusable/Role/Label/Tooltip`；28px 目标/16px 图标；状态栏去 debug（`internal/ui/tokens.go:100-145`、`internal/ui/uxsupport.go`、`internal/ui/chrome.go:143-160`） |
+| 窗口 StateKey + 最小尺寸 | 接受 | `StateKey:"main"` 记忆尺寸/位置；最小 1100×720；不引入多窗口（`internal/ui/app.go:320-330`） |
+| **未接受/仍未做**：原生 app 菜单、系统 TextScale/ReduceMotion/高对比、计划可视化、真正原项目执行、多窗口、自动更新 | **拒绝在本轮假装** | 明确写入 README 已知限制/RELEASE F-7；不以窗口内快捷键冒充 app 菜单，不以执行副本冒充原项目修改 |
