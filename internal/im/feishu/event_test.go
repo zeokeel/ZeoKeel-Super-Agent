@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -60,11 +61,18 @@ func TestDecryptEventRoundTrip(t *testing.T) {
 	}
 }
 
-// 错误密钥必须报错，而不是返回一段乱码 JSON 让上层继续处理。
+// 错误密钥不能还原出原文。PKCS#7 只能"大概率"发现错误密钥（随机明文恰好有
+// 合法填充的概率约 1/256），所以这里断言"不等于原文"，而不是断言"一定报错"；
+// 真实链路里错误密钥还会在解密前的 CheckEventSignature 被确定性拒绝。
 func TestDecryptEventRejectsWrongKey(t *testing.T) {
-	envelope := encryptEventForTest(t, "right-key", []byte(`{"ok":true}`))
-	if _, err := DecryptEvent("wrong-key", envelope); err == nil {
-		t.Fatal("expected an error for the wrong encrypt key")
+	plain := []byte(`{"ok":true}`)
+	envelope := encryptEventForTest(t, "right-key", plain)
+	got, err := DecryptEvent("wrong-key", envelope)
+	if err == nil && bytes.Equal(got, plain) {
+		t.Fatal("wrong key produced the original plaintext")
+	}
+	if err == nil {
+		t.Logf("wrong key happened to pass PKCS#7 padding (1/256); plaintext was garbage")
 	}
 }
 
