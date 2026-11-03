@@ -65,12 +65,14 @@ func TestAcceptedTicketRunsAfterRestart(t *testing.T) {
 	}
 	defer d2.Close()
 	rt := runtime.New(eng2, view.NewSnapshot())
-	if err := attachDurable(rt, d2); err != nil {
-		t.Fatal(err)
-	}
+	// Start the model before the durable queue: attachDurable starts the launch
+	// effect immediately, and on a slow CI runner it can run before EnableWorker.
 	rt.EnableWorker(runtime.WorkerConfig{
 		BaseURL: srv.URL, APIKey: "sk-mock", Model: "mock-tool", Root: work,
 	})
+	if err := attachDurable(rt, d2); err != nil {
+		t.Fatal(err)
+	}
 
 	// CI runners are slower (and -race doubles the cost of the mock model); give
 	// the recovered launch effect a wide margin instead of a tight wall clock.
