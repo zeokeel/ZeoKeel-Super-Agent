@@ -71,23 +71,18 @@ func verifyIMInbound(t *testing.T, drv im.Provider, tr *im.Transport, actor, con
 		Mentions: []string{"bot-self"},
 	}
 	tr.Push(ev)
-	// IM inbound is a PENDING APPROVAL: the Trigger reaches the engine and an
-	// approval decision appears; nothing runs until a person approves it.
+	// DSH flow: an admitted explicit IM message reaches the engine, is accepted
+	// by Eval and the Ticket is created without an approval step.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, decisions, _ := eng.Counts(); decisions > 0 {
-			for _, row := range rt.SourceRows(time.Now()) {
-				if row.Enabled && row.LastPoll.Outcome == view.PollOK {
-					// Approving the pending request creates and launches the Ticket.
-					for _, d := range eng.Proposals() {
-						if err := rt.Approve(string(d.ID)); err != nil {
-							t.Fatalf("approve pending IM request: %v", err)
-						}
-						if _, _, tickets := eng.Counts(); tickets > 0 {
-							return
-						}
-					}
-				}
+		if _, decisions, tickets := eng.Counts(); decisions > 0 && tickets > 0 {
+			return
+		}
+		// A deployment that opted into RequireApproval still works: approve the
+		// pending request and check that the Ticket appears.
+		for _, d := range eng.Proposals() {
+			if err := rt.Approve(string(d.ID)); err != nil {
+				t.Fatalf("approve pending IM request: %v", err)
 			}
 		}
 		time.Sleep(10 * time.Millisecond)

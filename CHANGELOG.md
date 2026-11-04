@@ -3,6 +3,35 @@
 本文件记录用户可见的变化。版本号遵循语义化版本；1.0.0 之前的 `-rc.N` / `-dev` 后缀表示
 发布清单（RELEASE.md）尚未全部通过——`1.0.0-rc.N` 不表示功能完成。
 
+## [1.0.0-rc.3] — 发布候选（2026-11-04）
+
+rc.3 对齐 DSH 主链，并把项目级配置/浏览器/工具补齐。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.3`；
+发布说明见 [RELEASE-NOTES-v1.0.0-rc.3.md](RELEASE-NOTES-v1.0.0-rc.3.md)。**不预称闸门全绿**，由 Lead bump 后重跑。
+
+- **DSH 对齐（行为变更）**：admitted 的明确 IM/GitHub 请求由 Eval 直接接单 → Ticket，移除“每条消息先审批”的 release policy；
+  推断请求按 accept mode `off`/`observe`/`auto`（auto 需匹配规则）；`DecPropose` 只在 Policy 显式 opt-in
+  `RequireApproval` 且请求为推断时产生；旧式 proposal 在收件箱标「旧式请求（需要批准）」；`AutoApproveIM` 移除
+  （`internal/engine/evaluate.go:348-390`、`internal/engine/gate.go:52-56`、`internal/ui/inbox.go:106`、`internal/ui/overview.go:109`）。
+- **项目面板**：项目页 概览/设置/统计；per-workspace 浏览器设置（Chrome/Edge、无头、CDP 端口 0=自动、profile 只读）、
+  启停/状态、技能开关（全局默认开/项目可关）、统计（会话/任务/进行中/等待/完成/失败/最近活动[无投影时空态]/工具可用性）
+  （`internal/view/workspacepanel.go:1-99`、`internal/ui/workspacepanel.go:193-520`、`internal/runtime/workspacesettings.go:75-160`、
+  `internal/store/workspacesettings.go`）。
+- **浏览器 + MCP**：默认路径检测 Chrome/Edge；每项目独立 profile `<stateDir>/workspaces/<ws>/browser-profile`、
+  唯一 CDP 端口、`--remote-debugging-port/--user-data-dir/--no-first-run/--headless=new`；`npx -y chrome-devtools-mcp@latest
+  --browserUrl http://127.0.0.1:<port>`；`mcp__browser__*` 只注入该项目 Worker；browser env scrub；npx/浏览器缺失可操作错误
+  （`internal/browser/detect.go:10-65`、`internal/browser/manager.go:99-107,185-245`、`internal/browser/launch.go:22-56`、`internal/browser/mcp.go:12-15,44-48,118-140`、
+  `internal/runtime/worker.go:468`、`internal/runtime/workspacesettings.go:427-480`）。
+- **工具**：`read_image`（仅元数据/尺寸/格式；模型端点 text-only，不附像素；10MB/路径约束/拒绝 observation）、
+  `job_list`（job_output/kill/list 三件套）、`subagent` 命名与 DSH 对齐；Worker 域工具
+  `ack/handback/thread_unrelated/request_status`；SuperAgent 聊天**不带工具**（非 orchestrator）；仍缺
+  `orchestrator_read` 与 DSH main orchestrator 工具集（主 Session 无 tool loop）（`internal/agent/imageread.go:1-120`、
+  `internal/agent/jobs.go:275-309`、`internal/agent/subagent.go:55`、`internal/runtime/artifacts.go:121-222`、
+  `internal/runtime/rc2.go:121-132`、`audit/tool-gap.md`）。
+
+**rc.3 诚实限制**：真正在原项目执行未实现（执行副本 + apply-back）；系统钥匙串未实现（SQLite 0600）；多窗口未实现；
+自动更新只检查不下载；真实飞书/DWS 租户 E2E 未验证；`read_image` 无视觉；无 `orchestrator_read`；
+浏览器需要 Chrome/Edge + node/npx；打包仍只有 tar/zip（无 `.dmg`/deb/安装器）。
+
 ## [1.0.0-rc.2] — 发布候选（2026-11-04）
 
 rc.2 在修复波 + UI/UX 优化轮之上补齐交互审计剩余项。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.2`；
@@ -81,7 +110,7 @@ sh scripts/release-check.sh   # 版本/产物/文档 + 上面的闸门
 
 ### Round 2/3 + 修复波（2026-11-04，同一 rc.1，不新增 tag）
 
-- **IM 审批优先（行为变更，最重要）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**恰好一个**待批准项
+- **IM 审批优先（rc.1 当时的行为；rc.3 已推翻，见上）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**恰好一个**待批准项
   （`DecPropose`，不建 Ticket/不启动 Worker/不自动回复）；Approve 才创建并唤醒，Reject 什么都不留；
   来源页与 health 显示「待审批 N」；重复投递只产生一个待批项。
   验收 A3 改为“IM 消息也要批准”，A7 先审批后建单（`cmd/zeokeel/acceptance_test.go:129-160,207-232`；
@@ -155,7 +184,7 @@ sh scripts/release-check.sh   # 版本/产物/文档 + 上面的闸门
 发布清单见 [RELEASE.md](RELEASE.md)。1.0.0 的定义（**目标，当前尚未全部满足**；缺口见 RELEASE.md F 组）：
 
 - 三平台安装包可从 CI 产出并安装（当前 CI 只交叉编译 + 查体积，未出包）
-- 一条请求能从本地面板/GitHub 走到交付物；**IM 入口已接线（审批优先）**
+- 一条请求能从本地面板/GitHub 走到交付物；**IM 入口已接线（DSH 对齐，rc.3）**
 - 崩溃恢复覆盖运行中的 Assignment（Wave 2 已实现：`RecoverAssignments` + patchtoolcalls）
 - 零 cgo 在全链路成立（已成立）
 - 首次运行向导可完成并落库（Wave 2 已实现）

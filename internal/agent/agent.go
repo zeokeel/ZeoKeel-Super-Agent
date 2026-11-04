@@ -270,6 +270,11 @@ func New(cfg Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	jobList, err := newJobListTool(jobs)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, jobList)
 	if cfg.WebTools {
 		web, err := newWebTools(cfg.WebSearchURL)
 		if err != nil {

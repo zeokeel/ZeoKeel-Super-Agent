@@ -195,11 +195,10 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 
 完整契约、DWS 命令形状与故障矩阵见 **[im-channels.md](im-channels.md)**；这里只列运维动作：
 
-1. **审批优先（首要注意）**：飞书/钉钉的每条消息（包括操作员自己的）先变成**一个待批准项**；
-   到**收件箱**（或总览旧「待你批准」）逐条 Approve/Reject；收件箱是唯一「待你决定 N」。**批准才建 Ticket 并启动 Worker；拒绝什么都不留**；
-   来源页显示「待审批 N」。重复投递只产生一个待批项。没有"IM 消息自动开工"的路径（除非部署显式打开
-   Policy 的 `AutoApproveIM`，默认关闭）。拒绝无损；收件箱拒绝后 10 秒内可「撤销」恢复待批
-   （不建单/不启动/不回复；同一 Thread 有更新决策后不可撤销）。
+1. **DSH 对齐（rc.3）**：admitted 的**明确**飞书/钉钉/GitHub 请求由 Eval 直接接单 → Ticket（默认无审批）；
+   推断请求按 accept mode `off`/`observe`/`auto`（auto 需匹配规则）。只有 Policy 显式 opt-in `RequireApproval`
+   且请求为推断时，才产生 `DecPropose`（旧式兼容），收件箱标「旧式请求（需要批准）」；`AutoApproveIM` 已移除。
+   旧式拒绝无损，10 秒内可撤销（不建单/不启动/不回复；同一 Thread 有更新决策后不可撤销）。
 2. **启用/停用（三态）**：设置›来源每渠道有开关。显式 1/0 优先；没写过开关时按凭据/flags 推导；
    flag-only 部署由启动 bootstrap 补写启用。禁用=停止监听、来源"未启用"、health 不假装在线。
    保存后只重启 enable/transport/凭据/self/profile 变化的渠道（`internal/runtime/im.go:345-470`）。
@@ -256,6 +255,17 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - **排障新增**：流式不动看模型端点/HTTP/SSE 错误；停止生成卡住看 runtime；应用失败看目标权限/备份是否成功；
   更新检查 403/限流是 GitHub API 侧问题。
 
+## 6.13 项目浏览器 / MCP（rc.3）
+
+- 项目页›设置：启用浏览器、选 Chrome/Edge（只检测默认安装路径）、无头、CDP 端口（0=自动）、保存；
+  再「启动浏览器」。每个项目独立 profile `<stateDir>/workspaces/<ws>/browser-profile`，端口由运行时分配/保留。
+- 启动同时拉起 `npx -y chrome-devtools-mcp@latest --browserUrl http://127.0.0.1:<port>`；`mcp__browser__*`
+  只注入该项目的 Worker。浏览器子进程 env 剥离 TOKEN/SECRET/PASSWORD/API_KEY 等。
+- 依赖：本机 Chrome/Edge + Node.js（含 npx）；缺失时面板/启动返回可操作错误，不会假装有浏览器工具。
+  端口冲突/浏览器未就绪/MCP 启动失败会写到项目浏览器状态与 health。
+- 停止项目浏览器会关闭该项目的 MCP 工具；`CloseBrowserBackend` 在进程退出时统一清理。
+- 统计页的「工具可用性」来自运行时投影；最近活动区无数据时显示空态（不伪造）。
+
 ## 7. 外部巡检（006 小时检查的等价物）
 
 `scripts/watchdog-check.sh`：
@@ -277,8 +287,8 @@ ZEOKEEL_BIN=/usr/local/bin/zeokeel scripts/watchdog-check.sh --restart-cmd "syst
   官方 Stream 是 bot 模式（app key/secret/robot）。
 - 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
 - `ui.font_scale` 已投影并可在设置›部署编辑（0.9/1.0/1.1，保存立即生效）。
-- rc.2 未做：真正原项目执行（当前执行副本+显式 apply-back）、系统钥匙串、多窗口、自动更新只检查不下载、
-  真实飞书/DWS 租户 E2E；打包仍无 .dmg/deb/安装器。
+- rc.3 未做：真正原项目执行（当前执行副本+显式 apply-back）、系统钥匙串、多窗口、自动更新只检查不下载、
+  真实飞书/DWS 租户 E2E、read_image 无视觉、无 orchestrator_read；浏览器依赖 Chrome/Edge+node/npx；打包仍无 .dmg/deb/安装器。
 - 升级迁移已接线（`LoadSettings` 的 `migrateSettings` + schema stamp）；历史旧文件仍按读取层兼容。
 - 监控指标导出（Prometheus 等）：没有；只有 `status --json` 与日志。
 - 设置页规则/admission/accept mode 与 GitHub Source 实例：不可编辑（只读事实或 CLI flag）。

@@ -430,102 +430,113 @@ func (a *App) workspacePage(c *mui.Context) {
 			return
 		}
 		a.workspaceSel = ws.ID
-
-		a.workspaceFilterBar(c)
-		// What the workspace is.
-		card(c, tk, 16, func() {
-			mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
-				mui.Icon(c, icFolder).FontSize(fs(20)).TextColor(tk.Accent)
-				mui.Text(c, ws.Name).FontSize(fs(20)).Bold().TextColor(tk.Text)
-				textChip(c, tk, ws.Kind)
-				mui.Spacer(c)
-				if n := len(ws.Conversations); n > 0 {
-					chip(c, tk, fmt.Sprintf("%d 个会话", n), tk.TextMuted, tk.SurfaceAlt)
-				}
-				if !ws.LastAt.IsZero() {
-					mui.Text(c, "最近 "+humanfmt.Ago(a.age(ws.LastAt))).FontSize(fs(13)).
-						TextColor(tk.TextFaint)
-				}
-			})
-			// P1-6: manage this workspace. Both actions are optional channels;
-			// without one the button is disabled and the line says which.
-			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				_, canRename := a.workspaceRenamer()
-				_, canDelete := a.workspaceDeleter()
-				rename := mui.Button(c, "重命名").Label("重命名").Height(28).FontSize(fs(12))
-				if !canRename {
-					rename.Disabled(true)
-				} else if rename.Clicked() {
-					a.openRename(ws)
-				}
-				del := mui.Button(c, "删除").Label("删除").Height(28).FontSize(fs(12))
-				if !canDelete {
-					del.Disabled(true)
-				} else if del.Clicked() {
-					a.openDelete(ws)
-				}
-				mui.Spacer(c)
-				var missing []string
-				if !canRename {
-					missing = append(missing, "WorkspaceRenamer")
-				}
-				if !canDelete {
-					missing = append(missing, "WorkspaceDeleter")
-				}
-				if len(missing) > 0 {
-					mui.Text(c, "暂时不可用：运行时还没有接入 "+strings.Join(missing, " / ")).
-						FontSize(fs(10)).TextColor(tk.Amber)
-				}
-			})
-			if ws.Purpose != "" {
-				mui.Text(c, ws.Purpose).FontSize(fs(15)).TextColor(tk.TextMuted)
-			}
-			if ws.Root != "" {
-				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, "根目录").FontSize(fs(13)).TextColor(tk.TextFaint)
-					mono(c, tk, ws.Root)
-				})
-			}
-		})
-
-		// Its conversations.
-		mui.Column(c).Grow(1).MinHeight(0).Background(tk.Surface).Radius(tk.Radius).
-			Border(1, tk.Border).Children(func() {
-			mui.Row(c).Height(34).Padding(0, 16).Gap(8).AlignItems(mui.Center).
-				Background(tk.SurfaceAlt).Children(func() {
-				mui.Text(c, "会话").FontSize(fs(14)).Bold().TextColor(tk.Text)
-				mui.Spacer(c)
-				row := mui.Row(c).Height(24).Padding(0, 10).Radius(6).AlignItems(mui.Center).
-					Background(tk.Surface).Border(1, tk.Border).OnClick(func() {
-					a.openConversationModal(ws.ID)
-				})
-				row.Children(func() {
-					mui.Text(c, "＋ 新建会话").FontSize(fs(14)).TextColor(tk.Text)
-				})
-			})
-			mui.Box(c).Height(1).Background(tk.Border)
-			groups := ws.Groups()
-			if len(groups) == 0 {
-				mui.Row(c).Padding(16, 14).Children(func() {
-					mui.Text(c, "这个工作区还没有会话。新建一个，或在总览里派活。").
-						FontSize(13).TextColor(tk.TextMuted)
-				})
-				return
-			}
-			mui.Scroll(c).Grow(1).Children(func() {
-				mui.Column(c).Children(func() {
-					for _, g := range groups {
-						mui.Row(c).Height(28).Padding(0, 16).AlignItems(mui.Center).
-							Background(tk.SurfaceAlt).Children(func() {
-							mui.Text(c, g.Label).FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
-						})
-						for i := range g.Conversations {
-							a.workspaceConversationRow(c, ws, g.Conversations[i])
-						}
+		if a.wsTab == "" {
+			a.wsTab = "overview"
+		}
+		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() { a.workspaceTabs(c) })
+		a.ensureWorkspacePanel(ws.ID)
+		switch a.wsTab {
+		case "settings":
+			a.workspaceSettingsTab(c, ws)
+		case "stats":
+			a.workspaceStatsTab(c, ws)
+		default:
+			a.workspaceFilterBar(c)
+			// What the workspace is.
+			card(c, tk, 16, func() {
+				mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
+					mui.Icon(c, icFolder).FontSize(fs(20)).TextColor(tk.Accent)
+					mui.Text(c, ws.Name).FontSize(fs(20)).Bold().TextColor(tk.Text)
+					textChip(c, tk, ws.Kind)
+					mui.Spacer(c)
+					if n := len(ws.Conversations); n > 0 {
+						chip(c, tk, fmt.Sprintf("%d 个会话", n), tk.TextMuted, tk.SurfaceAlt)
+					}
+					if !ws.LastAt.IsZero() {
+						mui.Text(c, "最近 "+humanfmt.Ago(a.age(ws.LastAt))).FontSize(fs(13)).
+							TextColor(tk.TextFaint)
 					}
 				})
+				// P1-6: manage this workspace. Both actions are optional channels;
+				// without one the button is disabled and the line says which.
+				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+					_, canRename := a.workspaceRenamer()
+					_, canDelete := a.workspaceDeleter()
+					rename := mui.Button(c, "重命名").Label("重命名").Height(28).FontSize(fs(12))
+					if !canRename {
+						rename.Disabled(true)
+					} else if rename.Clicked() {
+						a.openRename(ws)
+					}
+					del := mui.Button(c, "删除").Label("删除").Height(28).FontSize(fs(12))
+					if !canDelete {
+						del.Disabled(true)
+					} else if del.Clicked() {
+						a.openDelete(ws)
+					}
+					mui.Spacer(c)
+					var missing []string
+					if !canRename {
+						missing = append(missing, "WorkspaceRenamer")
+					}
+					if !canDelete {
+						missing = append(missing, "WorkspaceDeleter")
+					}
+					if len(missing) > 0 {
+						mui.Text(c, "暂时不可用：运行时还没有接入 "+strings.Join(missing, " / ")).
+							FontSize(fs(10)).TextColor(tk.Amber)
+					}
+				})
+				if ws.Purpose != "" {
+					mui.Text(c, ws.Purpose).FontSize(fs(15)).TextColor(tk.TextMuted)
+				}
+				if ws.Root != "" {
+					mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+						mui.Text(c, "根目录").FontSize(fs(13)).TextColor(tk.TextFaint)
+						mono(c, tk, ws.Root)
+					})
+				}
 			})
-		})
+
+			// Its conversations.
+			mui.Column(c).Grow(1).MinHeight(0).Background(tk.Surface).Radius(tk.Radius).
+				Border(1, tk.Border).Children(func() {
+				mui.Row(c).Height(34).Padding(0, 16).Gap(8).AlignItems(mui.Center).
+					Background(tk.SurfaceAlt).Children(func() {
+					mui.Text(c, "会话").FontSize(fs(14)).Bold().TextColor(tk.Text)
+					mui.Spacer(c)
+					row := mui.Row(c).Height(24).Padding(0, 10).Radius(6).AlignItems(mui.Center).
+						Background(tk.Surface).Border(1, tk.Border).OnClick(func() {
+						a.openConversationModal(ws.ID)
+					})
+					row.Children(func() {
+						mui.Text(c, "＋ 新建会话").FontSize(fs(14)).TextColor(tk.Text)
+					})
+				})
+				mui.Box(c).Height(1).Background(tk.Border)
+				groups := ws.Groups()
+				if len(groups) == 0 {
+					mui.Row(c).Padding(16, 14).Children(func() {
+						mui.Text(c, "这个工作区还没有会话。新建一个，或在总览里派活。").
+							FontSize(13).TextColor(tk.TextMuted)
+					})
+					return
+				}
+				mui.Scroll(c).Grow(1).Children(func() {
+					mui.Column(c).Children(func() {
+						for _, g := range groups {
+							mui.Row(c).Height(28).Padding(0, 16).AlignItems(mui.Center).
+								Background(tk.SurfaceAlt).Children(func() {
+								mui.Text(c, g.Label).FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
+							})
+							for i := range g.Conversations {
+								a.workspaceConversationRow(c, ws, g.Conversations[i])
+							}
+						}
+					})
+				})
+			})
+		}
 	})
 }
 

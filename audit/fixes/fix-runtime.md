@@ -203,6 +203,19 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 | 更新检查 | fixed | `CheckForUpdate(ctx) (latest string, upToDate bool, url string, err error)` 请求 GitHub releases API（仅查询，不下载），`httpDoUpdate` 可注入；`SetVersion/Version` 记录构建版本（cmd 传 ldflags，VERSION 未改）；`ui.UpdateChecker` 编译断言。测试 200/相等版本/500。 |
 | 验证 | — | runtime+cmd build/test 绿；全仓 `go test ./... -skip Live -count=1` 27 ok/0 FAIL；-race 复跑绿；gofmt/vet 干净。 |
 
+## 4nonies. DSH alignment + workspace browser/skills + worker tools
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| A DSH IM 对齐 | done | engine 已移除 IM 强制 proposal（conf-domain）；runtime 测试改为直接 Ticket/陌生人过滤/两条消息两任务，审批只在显式 `Policy.RequireApproval` + inferred 时出现（UndoReject 测试自建该策略）；health/来源「待审批」只在 proposals 存在时出现，默认无。 |
+| B SuperAgent 无工具 | done | 流式 chat 请求体显式断言无 `tools`/`tool_choice`（`TestSuperAgentChatRequestHasNoTools`，捕获 body，无 race）。 |
+| C 工作区设置/统计 | done | 使用 nih-core store API：`store.WorkspaceSettings/SaveWorkspaceSettings/WorkspaceCounts/SettingsSchema`；runtime 暴露 `WorkspaceSettings(workspaceID) (view.WorkspaceSettings,bool)`、`SaveWorkspaceSettings(...view.WorkspaceSettings) error`、`WorkspaceStats(workspaceID) (view.WorkspaceStats,bool)`（会话/任务/运行/等待/完成/失败/工具可用性）、`Skills() []view.SkillInfo`；memory 模式 kv 回退。 |
+| D/E 浏览器 + MCP | done（backend=internal/browser，cmd 接线） | `BrowserBackend` 接口（Detect/Start/Stop/Port/Status/Tools/ProfileDir/Close）；`cmd/zeokeel/browser.go` 适配 `browser.Manager`（每 workspace profile/CDP/MCP 全由 browser 包负责），main 启动时 `NewManager(stateDir)` 并 `defer Close`；per-ticket `browserToolsFor` 确保浏览器+MCP 工具（`mcp__browser__*`）注入该 workspace 的 `agent.Config.ExtraTools`，缓存/关闭随 Stop；UI 断言 `BrowserDetector/BrowserController`。 |
+| F skills per workspace | done | 工作区 `disabledSkills` 过滤 prompt 注入与 `load_skill`（`skillPromptForTicket`/`skillAllowed`），全局默认启用。 |
+| G worker DSH tools | done | artifacts.go 新增 `ack`（engine/persist Reply）、`handback`（HandBack）、`thread_unrelated`（MarkUnrelated）、`request_status`（只读状态）；prompt 增加这些工具名（TaskCreate 已有）。 |
+| UI 契约 | done | 断言 BrowserDetector/WorkspaceSettingsProvider/Saver/BrowserController/WorkspaceStatsProvider/SkillLibrary（view 类型）；plan/model/attention 既有断言保持。 |
+| 验证 | — | build ok；全仓 `go test ./... -skip Live` **28 ok/0 FAIL**；`-race ./internal/runtime ./cmd/zeokeel` ok（40.8s/5.8s，无 DATA RACE）；gofmt/vet 干净；VERSION 未改。 |
+
 ## 5. 跨 scope 待办 / 未完成
 
 1. **engine（conf-domain）**：缺“把 running Assignment 标记 interrupted”的 API。`RecoverAssignments` 目前只能补 note + 新 Assignment，旧 running 记录仍留在 `Ticket.Assignments`（`runtime/recovery.go`；期望 `Engine.InterruptAssignment(ticketID, assignmentID, reason)` 或 `RecoverAssignments` 内建实现）。

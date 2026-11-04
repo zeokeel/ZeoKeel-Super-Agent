@@ -98,7 +98,6 @@ func TestInspectNeverReturnsSecrets(t *testing.T) {
 		"schema":                           "3",
 		"setup.complete":                   "1",
 		"source.cursor.github:acme/webapp": "2026-01-01T00:00:00.000000000Z",
-		"chat.dm:1":                        `[{"role":"user","text":"hi"}]`,
 	}
 	for k, v := range plain {
 		if err := s.Set(k, v); err != nil {
@@ -128,6 +127,15 @@ func TestInspectNeverReturnsSecrets(t *testing.T) {
 			t.Fatalf("Inspect KV[%q] = %q, want the non-secret value %q", k, got, want)
 		}
 	}
+	// Data namespaces are not status facts: neither per-workspace settings nor
+	// recent chat may show up in the KV view.
+	if _, ok := view.KV[workspaceSettingsPrefix+"ws_a"+workspaceSettingsSuffix]; ok {
+		t.Fatal("workspace settings leaked into the status KV view")
+	}
+	if _, ok := view.KV[chatKeyPrefix+"dm:1"]; ok {
+		t.Fatal("chat content leaked into the status KV view")
+	}
+
 	if len(view.Health) != 1 {
 		t.Fatalf("health = %+v", view.Health)
 	}

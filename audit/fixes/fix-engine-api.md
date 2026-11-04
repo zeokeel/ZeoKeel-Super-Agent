@@ -185,3 +185,12 @@ func (p *Persistence) UndoReject(decisionID domain.ID) (Outcome, error)
 （追加 `undoReject` 审计 reason），不建 Ticket/不 launch/不回复。pending 提案上调用为幂等成功；accept/已建单/
 非拒绝 decision 返回错误；`ErrUndoSuperseded` 表示同 Thread 已有更新 Decision。Restore 由 Persistence 单事务写库，
 重启后仍可 Approve。
+
+
+## DSH 回归（2026-11-04）：IM 不再默认审批
+
+- `engine.Policy` **删除** `AutoApproveIM` 字段；`isIMSource`/`imSources` 移除。旧持久化 JSON 中的该键被忽略。
+- IM（feishu/dingtalk）与其它 Source 同构：explicit → Ticket；inferred → accept mode（off/observe/auto）+
+  至少一条命中规则；`DecPropose` 仅由显式 `Policy.RequireApproval`（只对 inferred）产生。
+- `UndoReject`/`RestoreProposal` 不变；proposal 来源改为 RequireApproval opt-in。
+- Runtime：IM 消息现在直接产生 Ticket，`Overview.Approvals` 默认应为空；无需为 IM 走 Approve。

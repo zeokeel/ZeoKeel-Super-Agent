@@ -254,6 +254,12 @@ func realMain() int {
 	}
 	rt.EnableWorker(worker)
 	rt.SetVersion(version)
+	// Per-workspace browser + browser MCP tools (internal/browser owns launch).
+	if !*inMemory {
+		if mgr := startBrowserBackend(rt, *stateDir, logger); mgr != nil {
+			defer func() { _ = mgr.Close() }()
+		}
+	}
 	// P0-A: model settings saved in the 模型 group take effect at startup too.
 	rt.ApplyModelSettings()
 	// A configured install records the marker `zeokeel status` reads. Status never

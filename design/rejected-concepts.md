@@ -77,7 +77,7 @@
 
 | 概念 / 实现 | 判定 | 说明与证据 |
 | --- | --- | --- |
-| **IM 入站审批优先**（每条消息先 DecPropose，Approve 建单/Reject 无痕） | **接受，release policy** | 产品决定：IM 不允许自动开工。每条消息恰好一个待批项，重复投递幂等；来源页「待审批 N」。逃生阀 `AutoApproveIM` 默认关闭（`internal/engine/evaluate.go:396-461`、`gate.go:56-60`、`runtime/runtime.go:896-930`、`cmd/zeokeel/acceptance_test.go:129-160`） |
+| ~~**IM 入站审批优先**~~ → **DSH 对齐（rc.3 推翻）** | **撤销旧 release policy；改为 DSH 主链** | admitted 明确 IM/GitHub 请求直接 Eval 接单 → Ticket；推断按 accept mode off/observe/auto（auto 需规则）；`DecPropose` 仅 opt-in `RequireApproval` 且非 explicit；`AutoApproveIM` 移除；旧 proposal 仅作兼容并标「旧式请求（需要批准）」（`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`ui/inbox.go:106`、`cmd/zeokeel/acceptance_test.go:129-160`） |
 | 飞书官方 `larkws` 长连接为推荐接收（longpoll 为显式 fallback） | 接受（替换“只做长轮询”） | 低延迟、无需公网回调；`larksuite/oapi-sdk-go/v3 v3.12.2` + `OnP2MessageReceiveV1`；longpoll 保留 cursor 兼容旧环境（`internal/im/feishu/ws.go`、`go.mod:12`）。webhook 拒绝。 |
 | DWS=操作员个人 OAuth，Stream=bot | 接受，身份模型偏离 | 两者**不是同一身份**：DWS 不用 app key/secret，靠 `dws auth login` 的 profile；Stream 是官方机器人 SDK（app key/secret/robot）。文档与设置字段按身份分开（`internal/im/dingtalk/dws.go:1-28`、`internal/runtime/pages.go:483-500`） |
 | DWS 长驻 NDJSON consumer（无 poll/cursor） | 接受，替换早期“JSON poll 契约” | 真实 CLI 只提供 `event +listen-im … -f ndjson`；event id 去重、断线 1s→30s 重连、短命令串行；发送无 idempotency-key，靠隐藏 marker（`dws.go`、`design/im-channels.md` §4） |
@@ -120,3 +120,16 @@
 | 系统无障碍偏好 | 接受（系统级接入） | TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent；不新增自有“无障碍模式”（`internal/ui/prefs.go:1-61`、`internal/ui/app.go:441-462`） |
 | 关于 / 更新检查（只查不下载） | 接受 | 版本/许可证；查询 GitHub Releases API，显示最新版本/发布页；**不下载、不安装、不自动更新**（`internal/ui/about.go:1-117`、`internal/runtime/rc2.go:355-415`） |
 | **仍拒绝假装**：原项目原地执行、钥匙串、多窗口、自动更新下载、真实租户 E2E | **明确未做** | 写入 README 已知限制/RELEASE F-7：执行副本 + apply-back 是当前真实语义；密钥仍 SQLite 0600；没有多窗口；更新只检查 |
+
+## H. rc.3（2026-11-04）DSH 对齐与项目级能力登记
+
+| 概念 / 实现 | 判定 | 说明与证据 |
+| --- | --- | --- |
+| **推翻“IM 审批优先”**，回到 DSH 主链 | **接受（推翻 rc.1 的 release policy）** | 明确/admitted 请求直接 Eval→Ticket；推断请求按 accept mode off/observe/auto（auto 需匹配规则）；`DecPropose` 只属于显式 opt-in `RequireApproval`（仅推断）；收件箱旧式文案；`AutoApproveIM` 删除（`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`ui/inbox.go:106`） |
+| 项目页 概览/设置/统计 | 接受 | 每项目浏览器开关/Chrome·Edge/无头/CDP 端口/profile 只读、启停/状态、技能开关（全局默认开/项目可关）、统计计数/最近活动/工具可用性（`view/workspacepanel.go`、`ui/workspacepanel.go:193-520`、`runtime/workspacesettings.go:75-160`） |
+| per-workspace 浏览器 + `chrome-devtools-mcp` | **接受（单机多项目隔离）** | 默认路径仅检测 Chrome/Edge；独立 profile `<stateDir>/workspaces/<ws>/browser-profile`；唯一 CDP 端口；`npx -y chrome-devtools-mcp@latest --browserUrl ...`；`mcp__browser__*` 只注入该项目 Worker；env scrub；缺依赖可操作错误（`internal/browser/`、`runtime/workspacesettings.go:427-480`） |
+| `read_image` 元数据-only | 接受（诚实偏离） | 模型端点 text-only，不附像素；只报告格式/字节/尺寸，10MB/路径约束；需要视觉用 bash OCR/ImageMagick 或问人；升级路径是多模态 tool result（`internal/agent/imageread.go`） |
+| `job_list` / `subagent` 命名 | 接受 | 补齐 DSH job_output/list/kill；eino 默认 `agent` 改名 `subagent`（`internal/agent/jobs.go:275-309`、`subagent.go:55`） |
+| Worker 域工具 `ack/handback/thread_unrelated/request_status` | 接受 | DSH Executor parity；按 Ticket/Thread 粒度，`ack` 无 purpose 元数据；prompt 已列出（`runtime/artifacts.go:121-222`、`worker.go:580`） |
+| SuperAgent **无工具** | **接受（有意缺席）** | SuperAgent 是问答，不是 orchestrator；请求 payload 无 tools；DSH main orchestrator 工具集没有模型可调用面（主 Session 是确定性 assessor），`orchestrator_read` 仍缺（`runtime/rc2.go:121-132`、`audit/tool-gap.md`） |
+| 仍拒绝假装：原项目原地执行、钥匙串、多窗口、自动更新下载、read_image 视觉、orchestrator_read、浏览器无 Chrome/Edge+node | **明确未做** | 写入 README 已知限制/RELEASE F-7/J：执行副本+apply-back 是真实语义；密钥 SQLite 0600；无多窗口；更新只检查；视觉/资源分页缺失 |

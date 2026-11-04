@@ -106,10 +106,10 @@ func (a *App) approvals(c *mui.Context, ov *view.OverviewVM) {
 	card(c, tk, 0, func() {
 		mui.Row(c).Padding(14, 16).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Icon(c, icBell).FontSize(fs(15)).TextColor(tk.Amber)
-			mui.Text(c, "待你批准").FontSize(fs(17)).Bold().TextColor(tk.Text)
+			mui.Text(c, "旧式请求待你决定").FontSize(fs(17)).Bold().TextColor(tk.Text)
 			chip(c, tk, fmt.Sprint(len(ov.Approvals)), tk.Amber, tk.AmberSoft)
 			mui.Spacer(c)
-			mui.Text(c, "批准后才会开工").FontSize(fs(13)).TextColor(tk.TextFaint)
+			mui.Text(c, "旧式流程：批准后才开工；新请求会直接进入任务").FontSize(fs(13)).TextColor(tk.TextFaint)
 		})
 		mui.Box(c).Height(1).Background(tk.BorderSoft)
 		for i, ap := range ov.Approvals {

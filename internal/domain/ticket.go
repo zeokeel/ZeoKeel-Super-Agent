@@ -60,10 +60,6 @@ const (
 	ReasonMandateRevoked = "mandateRevoked"
 	ReasonNotRetryable   = "notRetryable"
 	ReasonPaused         = "paused"
-	// ReasonIMApproval marks a Decision that waits for the operator because the
-	// message arrived on an IM Source: inbound IM work is always proposed, never
-	// started on its own (release policy; see engine.isIMSource).
-	ReasonIMApproval = "im_approval_required"
 	// ReasonRejectedByPerson marks a proposal the operator turned down; the
 	// proposal itself is kept so the rejection can be undone until a newer
 	// decision on the same Thread supersedes it.

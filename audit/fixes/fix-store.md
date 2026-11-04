@@ -116,3 +116,83 @@ $ go test ./cmd/zeokeel/ -run 'TestBackup|TestArchive|TestStatus' → ok（Inspe
 - 无本人 scope 内未完成项；store 包 build/test/vet/gofmt/race/nocgo 全绿。
 - **无法跑 `go test ./internal/runtime/`**：该包当前被另一位 agent 的在途编辑破坏（`internal/runtime/onboarding.go:192-193: undefined values/rev`），与本轮改动无关；`cmd/zeokeel` 相关测试已单独跑通。
 - 全仓 `go build ./...` 在最后检查时曾通过；若再红，请以各 owner 的 in-flight 编辑为准（本 scope 构建独立通过）。
+
+---
+
+## 8. 追加轮：workspace-level settings（browser / skills / stats）
+
+范围仍为 `internal/store/**`（未改 runtime/ui/agent/im/cmd/go.mod，未 bump VERSION）。
+
+### 8.1 模型与存储（选择 kv，无 schema migration）
+
+`internal/store/workspacesettings.go`：
+
+```go
+type WorkspaceBrowserSettings struct {
+    Enabled  bool   `json:"enabled"`
+    Browser  string `json:"browser"`  // "" | "chrome" | "edge"
+    Headless bool   `json:"headless"`
+    Port     int    `json:"port"`     // 0 = 自动选空闲端口；否则 1024-65535
+}
+type WorkspaceSkillsSettings struct { DisabledSkills []string `json:"disabledSkills"` }
+type WorkspaceSettings struct {
+    Browser   WorkspaceBrowserSettings `json:"browser"`
+    Skills    WorkspaceSkillsSettings  `json:"skills"`
+    UpdatedAt time.Time                `json:"updatedAt"` // store 盖章，调用方传值被忽略
+}
+```
+
+存储：每 workspace 一行 kv，key = `workspace.<id>.settings`（JSON），不新增表、无需迁移。
+原因：整读整写、SQL 不过滤其字段；且 `Settings()` 只读 `setting:` 前缀，这些行不会进入全局设置快照，也不会被全量保存写回。`Inspect()` 已从状态 KV 视图中隐藏 `workspace.`（以及 `chat.`）命名空间。
+
+### 8.2 API（含校验/归一化）
+
+```go
+func (ws WorkspaceSettings) Validate() (WorkspaceSettings, error) // 面板可先校验，错误文案与保存一致
+func (s *Store) WorkspaceSettings(id domain.WorkspaceID) (WorkspaceSettings, error) // 未保存 => 零值, nil
+func (s *Store) SaveWorkspaceSettings(id domain.WorkspaceID, set WorkspaceSettings) error // 校验+归一化+盖 UpdatedAt
+func (s *Store) AllWorkspaceSettings() (map[domain.WorkspaceID]WorkspaceSettings, error) // 坏 JSON => 报错，不静默跳过
+func (s *Store) DeleteWorkspaceSettings(id domain.WorkspaceID) error // workspace 删除路径使用
+```
+
+校验规则：`Browser ∈ {"", "chrome", "edge"}`（大小写归一为小写）；`Port == 0 || 1024..65535`；`DisabledSkills` 每项 kebab-case、≤64 字节、≤256 项、去重并排序；`id` 非空、≤200 字节、无控制字符/路径分隔符。保存失败不落盘。
+
+### 8.3 stats API（runtime 无需自己算）
+
+```go
+type WorkspaceCounts struct {
+    TicketsByStage map[string]int // SELECT stage,COUNT(*) ... GROUP BY stage（读 ticket.stage 缓存列）
+    Tickets        int            // 全部 Ticket（= 面板里的会话数）
+    OpenTickets    int            // ended_at IS NULL
+    Threads        int            // thread.workspace_id 计数
+    LastActivity   time.Time      // max(ticket.created_at, thread.last_at)
+}
+func (s *Store) WorkspaceCounts(id domain.WorkspaceID) (WorkspaceCounts, error) // 全部走 workspace_id 索引
+```
+
+### 8.4 测试（新增 `workspacesettings_test.go`）
+
+- 默认值/不存在 => 零值；round-trip（browser/headless/port/skills；`UpdatedAt` 由 store 盖章、调用方传值被忽略）。
+- 校验表：未知 browser、端口 1/1023/-1/65536 拒绝；0/1024/65535 接受；空/大写/带空格/超长 skill 拒绝；重复去重 + 排序。
+- 隔离：ws_a 与 ws_b 互不影响；`AllWorkspaceSettings` 返回两者。
+- **重启持久化**：Close → Open 同一文件 → 设置仍在。
+- `Settings()` 不含 `workspace.*`；一次全量 settings 保存不会扰动 workspace settings；`Inspect()` KV 不含该命名空间。
+- 坏 JSON 行 => `WorkspaceSettings`/`AllWorkspaceSettings` 报错（投影不猜测）。
+- 删除：删除后回到零值；删除不存在行是 no-op；空/控制字符 id 拒绝。
+- stats：3 个 Ticket（ended / person-answer / working-queued）+ thread 行 → 计数与 `LastActivity` 断言；他区隔离；空工作区全零。
+
+### 8.5 验证
+
+```
+go test ./internal/store/ -count=1                         → ok (1.48s)
+go test <store,effects,outbox,schedule,goal,domain> -count=1 → 全 ok
+go test -race ./internal/store/ -run 'TestWorkspace|TestInspect|TestChat|TestPolicy|TestSettings|TestStatusFacts' → ok
+gofmt -l internal/store → 空；go vet ./internal/store/ → 通过
+GOOS=windows/darwin CGO_ENABLED=0 go build ./internal/store/ → ok
+```
+
+### 8.6 待办（scope 外）
+
+- runtime 工作区页：读 `WorkspaceSettings` 渲染 browser/headless/port/disabled skills；修改时 `SaveWorkspaceSettings`；workspace 删除时 `DeleteWorkspaceSettings`。
+- runtime 工作区行计数可直接用 `WorkspaceCounts`（会话数=Tickets，未结束=OpenTickets）。
+- `Browser` 实际驱动（chrome/edge 启动、端口选择）属于 runtime/agent，不在 store。

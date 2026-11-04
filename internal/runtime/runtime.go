@@ -84,6 +84,9 @@ type Runtime struct {
 	chatPartial string
 	// version is the running build (ldflags value), used by CheckForUpdate.
 	version string
+	// browserBackend/browserMCP are the per-workspace browser + MCP tools (rc3).
+	browserBackend BrowserBackend
+	browserMCP     map[string]*browserMCP
 	// commandMu serializes the UI command boundary: the panel calls Dispatch,
 	// NewConversation, CreateWorkspace and SaveSettings from goroutines, and the
 	// runtime must never run two of them at once (P0-2).

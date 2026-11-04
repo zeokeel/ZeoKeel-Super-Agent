@@ -1,9 +1,9 @@
 # 1.0.0 发布清单
 
-**当前候选：`1.0.0-rc.2`（2026-11-04）。** 发布说明：[RELEASE-NOTES-v1.0.0-rc.2.md](RELEASE-NOTES-v1.0.0-rc.2.md)。
+**当前候选：`1.0.0-rc.3`（2026-11-04）。** 发布说明：[RELEASE-NOTES-v1.0.0-rc.3.md](RELEASE-NOTES-v1.0.0-rc.3.md)。
 
 一条不过就不发 1.0.0。每项都要有可复现的证据（测试名、命令输出或文件路径）。
-**本清单按 2026-11-04 rc.2 代码重写；未验证/未实现的不勾，不用"完成了"装饰。**
+**本清单按 2026-11-04 rc.3 代码重写；未验证/未实现的不勾，不用"完成了"装饰。**
 
 闸门命令（本地与 CI 同一个）：
 
@@ -14,15 +14,16 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 
 ## A. 功能完整（对照测试/代码，逐条可复现）
 
-> **本清单对应 2026-11-04 最终代码（P0/P1 修复波 + UI/UX 轮 + rc.2 之后）。**
+> **本清单对应 2026-11-04 rc.3 最终代码（P0/P1 + UI/UX 轮 + rc.2 + DSH 对齐）。**
 > 2026-11-03 20:53 的历史快照曾全绿（2×非 race + 1×-race + release-check 16/0/6），但修复波改了大量并发/IM/UI 代码，
 > **不能拿旧快照当本轮证据**：由 Lead 在合并前跑 `sh scripts/verify-fixes.sh` 与 `sh scripts/release-check.sh` 后再勾 C/B。
 > 以下 A 组行为勾选按最终代码；未能本机验证的仍不勾。
 
 - [x] 一条请求从聊天出发，经两阶段 Eval 创建 Decision/Ticket，执行后回写原会话（`TestEndToEndFromChatToReply`）
 - [x] 同事的请求按 gate + admission 判定强度；`RequireApproval` 时生成待批单（`TestA2ColleagueRequestCarriesTheFourParts`、`TestV2GateAdmissionNineCells`）
-- [x] **IM 审批优先**：自身账号的 IM 消息也不自动执行；每条消息（含操作员）先成一个待批准项，Approve 才建单
-      （`TestA3OperatorRequestRunsWithoutApproval` 的语义已改为审批；`cmd/zeokeel/acceptance_test.go:129-160`）
+- [x] **DSH 对齐（行为变更）**：admitted 明确 IM/GitHub 请求由 Eval 直接接单 → Ticket（无默认审批）；推断请求按
+      accept mode off/observe/auto（auto 需匹配规则）；`DecPropose` 仅 opt-in `RequireApproval` 且非 explicit
+      （`TestA3OperatorRequestRunsWithoutApproval`；`cmd/zeokeel/acceptance_test.go:129-160`；`internal/engine/evaluate.go:348-390`）
 - [x] 敏感外发要人批准（`TestA4SensitiveOutboundEscalates`）
 - [x] 首次运行向导能完成并**落库**（`TestOnboardingLeavesAWorkingAgent`；`SaveOnboarding` 写 store）
 - [x] 陌生人/机器人不触发动作（`TestA6StrangersAndBotsDoNothing`、`TestV2BotNeverExplicit`）
@@ -32,10 +33,11 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
 - [x] 崩溃恢复：中断的 Assignment 变成 note Input + 新 Assignment + patchtoolcalls（`RecoverAssignments`；测试见 `internal/runtime/recovery_test.go`）
 - [x] PR 生命周期 follows 与 ended 结果（`TestV2FollowsOutcomes`）
 - [x] 后台作业（eino `backgroundtask`，`job_output`/`job_kill`）与子智能体（`internal/agent/jobs.go`、`subagent.go`）
-- [x] IM 渠道已接线且**审批优先**：飞书新装默认 `larkws` 长连接、旧配置迁移 pin longpoll（fallback）；钉钉默认 DWS
-      个人 OAuth CLI（长驻 NDJSON，无 poll/cursor），官方 Stream 为 bot 模式可选 transport；每条消息先待批，
-      Approve 建单/Reject 无痕；三态启用 + bool 兼容 + flag-only bootstrap；per-channel generation/Close/sender 注销；
-      secret 不回显、status/Inspect redaction（`cmd/zeokeel/imwiring.go`、`internal/runtime/im.go`、`design/im-channels.md`）
+- [x] IM 渠道已接线且**DSH 对齐**：飞书新装默认 `larkws` 长连接、旧配置迁移 pin longpoll（fallback）；钉钉默认 DWS
+      个人 OAuth CLI（长驻 NDJSON，无 poll/cursor），官方 Stream 为 bot 模式可选 transport；admitted 明确请求直接接单，
+      推断按 accept mode，旧式 opt-in `RequireApproval` 才 proposal；三态启用 + bool 兼容 + flag-only bootstrap；
+      per-channel generation/Close/sender 注销；secret 不回显、status/Inspect redaction（`cmd/zeokeel/imwiring.go`、
+      `internal/runtime/im.go`、`internal/engine/evaluate.go:348-390`、`design/im-channels.md`）
       **未验证**：真实凭据/真实 DWS 租户端到端（需要环境）
 - [ ] **面板可配置 Source 实例 / 规则 / admission / accept mode**：设置页来源组用连接向导配置 IM（凭据/transport/检查/授权），评估组只读事实；
       GitHub 仓库/CLI、规则、admission 表、accept mode 仍不可编辑（owner: fix-ui2）
@@ -96,17 +98,17 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
    （`store/redact.go`、`inspect.go`），worker 环境已剥离凭证。真实 IM 凭据 E2E 仍需环境。
 5. **分发**：`.dmg`/deb/PKGBUILD/NSIS/自动更新；CI 出包与签名公证。
 6. **运维**：开机自启/休眠唤醒（委托 systemd/launchd）；`--respect-stop` 由 stop 标记 + 巡检承担（无独立 flag）。
-7. **平台/UX 收尾**：真正在原项目执行（当前为执行副本 + 显式「应用到项目」，已在 UI/提示词披露）；
-   多窗口；自动更新只检查不下载/不安装（About 检查更新已实现）；真实飞书/DWS 租户 E2E 需环境。
-   ~~mygo 原生 app 菜单 / 系统 TextScale·ReduceMotion·HighContrast / 计划可视化~~ 已在 rc.2 实现。
-## G. rc.1 的签发语义（不要误读）
+7. **平台/工具/UX 收尾**：真正在原项目执行（当前执行副本 + 显式「应用到项目」）；多窗口；自动更新只检查不下载；
+   真实飞书/DWS 租户 E2E；`read_image` 无像素（模型 text-only）；无 `orchestrator_read` 与 DSH main orchestrator 工具集；
+   浏览器需 Chrome/Edge + node/npx；打包仍无 `.dmg`/deb/安装器。
+## G. rc.3 的签发语义（不要误读）
 
-`VERSION=1.0.0-rc.2` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
+`VERSION=1.0.0-rc.3` 表示：**候选版可构建、机械闸门（build/test/vet/zero-cgo/-race/package/release-check）全绿**，
 但 F 组的产品面缺口未完成。F 组全部完成、E 组最后一项通过后，才由发布负责人把 `VERSION` 改为 `1.0.0`。
 
 ## H. Round 2/3 + 修复波 + UI/UX 优化轮增量（2026-11-04，不新增 release tag）
 
-> 同一 rc.1 内的用户可见增量；不改变"rc.1 仍是候选"的结论。证据见 `design/im-channels.md` 与设计 §13。
+> 同一 rc 候选内的用户可见增量（当时 rc.1；后续 rc.2/rc.3 延续，不改变“仍是候选”的结论）。证据见 `design/im-channels.md` 与设计 §13。
 
 - [x] 侧栏（UX 轮后）：超级Agent / 收件箱 / 项目 / 执行 / 设置 + 折叠「诊断」；footer OS/arch + 时区
 - [x] 工作区：原生目录选择器、opaque ID、重命名、删除（仅空工作区，有工单拒绝）、绝对路径/重复 root 拒绝、
@@ -115,8 +117,8 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
   回答内联在输入框上方与总览对话；非失败不标红；历史最多 20 条并持久化
 - [x] 异步命令边界：发送/新建会话/保存设置走后台命令锁，面板显示「发送中/保存中/连接中」；主线程不等 DB/模型/渠道
 - [x] Ticket 身份：行/详情查找与详情 VM 的 ID 都是 domain ID，`Number` 单独显示 `#number`
-- [x] IM 审批优先：每条飞书/钉钉消息（含操作员）→ 恰好一个待批项；Approve 建单/Reject 无痕；
-  来源页「待审批 N」；A3/A7 已按审批语义更新
+- [x] IM DSH 对齐：明确请求直接接单；推断按 accept mode；`DecPropose` 仅旧式 opt-in `RequireApproval`；
+  收件箱只显示「旧式请求（需要批准）」；A3/A7 已按 DSH 语义更新
 - [x] 飞书：**新装默认** `feishu_transport=ws`（官方 `larkws` 长连接，推荐）；旧凭据-only 配置迁移时 pin `longpoll`；
   面板 Options 只有 `ws`/`longpoll`；longpoll 为显式 fallback（cursor）；401/403 给 `open.feishu.cn/app`
 - [x] 钉钉 DWS 真实契约：长驻 `dws event +listen-im … -f ndjson`（无 poll/cursor；event id 去重；1s→30s 重连）、
@@ -177,3 +179,25 @@ sh scripts/release-check.sh   # 版本/产物/文档/验收测试 + 上面的闸
   真实飞书/DWS 租户 E2E；打包仍无 `.dmg`/deb/安装器
 - [ ] **最终闸门**：Lead 在 bump VERSION 后跑 `sh scripts/verify-fixes.sh` 与 `sh scripts/release-check.sh`，
   再 tag `v1.0.0-rc.2`；本文不预称全绿。
+
+## J. rc.3 增量（2026-11-04，发布候选）
+
+> DSH 主链对齐 + 项目级浏览器/MCP + 工具补齐；`VERSION` 由发布负责人 bump 为 `1.0.0-rc.3`。
+
+- [x] **DSH 对齐**：admitted 明确 IM/GitHub 请求 Eval 直接接单；推断请求 accept mode off/observe/auto（auto 需规则）；
+  `DecPropose` 仅 opt-in `RequireApproval`（推断）；收件箱旧式 proposal 文案；移除 `AutoApproveIM`
+  （`internal/engine/evaluate.go:348-390`、`internal/engine/gate.go:52-56`、`internal/ui/inbox.go:106`、`internal/ui/overview.go:109`）
+- [x] **项目面板**：概览/设置/统计；per-workspace 浏览器（Chrome/Edge、无头、CDP 端口 0=自动、profile 只读）、启停/状态、
+  技能开关、统计（会话/任务/进行中/等待/完成/失败/最近活动[无投影时空态]/工具可用性）
+  （`internal/view/workspacepanel.go:1-99`、`internal/ui/workspacepanel.go:193-520`、`internal/runtime/workspacesettings.go:75-160`）
+- [x] **浏览器+MCP**：默认路径检测、每项目独立 profile/唯一端口、启动 flags、`npx -y chrome-devtools-mcp@latest
+  --browserUrl http://127.0.0.1:<port>`、`mcp__browser__*` 只注入该项目、env scrub、缺 Chrome/Edge/node 可操作错误
+  （`internal/browser/detect.go:10-65`、`internal/browser/manager.go:99-107,185-245`、`internal/browser/launch.go:22-56`、`internal/browser/mcp.go:12-15,44-48,118-140`、
+  `internal/runtime/worker.go:468`、`internal/runtime/workspacesettings.go:427-480`）
+- [x] **工具**：`read_image`（元数据-only，无像素）、`job_list`、`subagent` 命名；Worker 域工具
+  `ack/handback/thread_unrelated/request_status`；SuperAgent 无工具
+  （`internal/agent/imageread.go:1-120`、`internal/agent/jobs.go:275-309`、`internal/agent/subagent.go:55`、
+  `internal/runtime/artifacts.go:121-222`、`internal/runtime/rc2.go:121-132`）
+- [ ] **rc.3 明确未做**：真正原项目执行（副本+apply-back）、系统钥匙串、多窗口、自动更新下载、真实飞书/DWS E2E、
+  `read_image` 视觉、`orchestrator_read`/DSH main orchestrator 工具、浏览器依赖 Chrome/Edge+node/npx、打包无 .dmg/deb
+- [ ] **最终闸门**：Lead bump VERSION 后跑 `verify-fixes.sh`+`release-check.sh`，tag `v1.0.0-rc.3`；本文不预称全绿。

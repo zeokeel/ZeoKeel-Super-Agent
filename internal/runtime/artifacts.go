@@ -117,14 +117,117 @@ func (r *Runtime) workerTools(t domain.Ticket) []tool.BaseTool {
 	}
 
 	out := []tool.BaseTool{report, present, ask, follow}
+
+	// DSH executor parity: ack / handback / thread_unrelated / request_status.
+	ack, err := utils.InferTool("ack",
+		"Send a short acknowledgement to the person who asked (the message came from a chat channel). "+
+			"Use it when the work will take a while, so the requester knows it was heard.",
+		func(_ context.Context, in struct {
+			Text string `json:"text" jsonschema:"description=one short sentence to send back"`
+		}) (string, error) {
+			text := strings.TrimSpace(in.Text)
+			if text == "" {
+				return "", fmt.Errorf("ack text is empty")
+			}
+			r.mu.Lock()
+			p := r.persist
+			r.mu.Unlock()
+			if p != nil {
+				if _, err := p.Reply(t.ID, text); err != nil {
+					return "", err
+				}
+				return "已发送确认", nil
+			}
+			r.eng.Reply(t.ID, text)
+			return "已发送确认", nil
+		})
+	if err != nil {
+		return nil
+	}
+	handback, err := utils.InferTool("handback",
+		"Hand a thread back to the person: say you cannot own it and why. "+
+			"The message returns to the operator instead of being answered by you.",
+		func(_ context.Context, in struct {
+			Thread string `json:"thread" jsonschema:"description=thread id, e.g. dm_1 or owner/repo#12"`
+			Reason string `json:"reason" jsonschema:"description=why you are handing it back"`
+		}) (string, error) {
+			thread := strings.TrimSpace(in.Thread)
+			if thread == "" {
+				return "", fmt.Errorf("thread is required")
+			}
+			r.mu.Lock()
+			p := r.persist
+			r.mu.Unlock()
+			var err error
+			if p != nil {
+				err = p.HandBack(t.ID, thread, in.Reason)
+			} else {
+				err = r.eng.HandBack(t.ID, thread, in.Reason)
+			}
+			if err != nil {
+				return "", err
+			}
+			r.Publish()
+			return "已交回给操作员", nil
+		})
+	if err != nil {
+		return nil
+	}
+	unrelated, err := utils.InferTool("thread_unrelated",
+		"Mark a thread as unrelated to this ticket, so the person's messages there are handed "+
+			"back instead of silently answered. Cannot be the ticket's own thread.",
+		func(_ context.Context, in struct {
+			Thread string `json:"thread" jsonschema:"description=thread id"`
+			Reason string `json:"reason" jsonschema:"description=why it is unrelated"`
+		}) (string, error) {
+			thread := strings.TrimSpace(in.Thread)
+			if thread == "" {
+				return "", fmt.Errorf("thread is required")
+			}
+			r.mu.Lock()
+			p := r.persist
+			r.mu.Unlock()
+			var err error
+			if p != nil {
+				err = p.MarkUnrelated(t.ID, thread, in.Reason)
+			} else {
+				err = r.eng.MarkUnrelated(t.ID, thread, in.Reason)
+			}
+			if err != nil {
+				return "", err
+			}
+			r.Publish()
+			return "已标记为无关，消息会交回操作员", nil
+		})
+	if err != nil {
+		return nil
+	}
+	status, err := utils.InferTool("request_status",
+		"Read this ticket's current status (stage, last report, running/queued) without changing it.",
+		func(_ context.Context, _ struct{}) (string, error) {
+			snap, ok := r.ticketSnapshot(t.ID)
+			if !ok {
+				return "", fmt.Errorf("ticket not found")
+			}
+			st := domain.StageOf(&snap, r.clock())
+			report := ""
+			if rep := snap.LastReport(); rep != nil {
+				report = string(rep.State) + "：" + rep.Summary
+			}
+			return fmt.Sprintf("ticket #%d stage=%s report=%s", snap.Number, st, report), nil
+		})
+	if err != nil {
+		return nil
+	}
+	out = append(out, ack, handback, unrelated, status)
 	out = append(out, r.capabilityTools()...)
-	out = append(out, r.skillTools()...)
+	out = append(out, r.skillTools(t)...)
 	return out
 }
 
 // skillTools exposes the skill library the prompt advertises. Without load_skill the
 // prompt's "open the full skill by name" line is a promise nothing can keep.
-func (r *Runtime) skillTools() []tool.BaseTool {
+func (r *Runtime) skillTools(t domain.Ticket) []tool.BaseTool {
 	r.mu.Lock()
 	set := r.skills
 	r.mu.Unlock()
@@ -137,7 +240,11 @@ func (r *Runtime) skillTools() []tool.BaseTool {
 		func(_ context.Context, in struct {
 			Name string `json:"name" jsonschema:"description=the skill name shown in the prompt"`
 		}) (string, error) {
-			sk, ok := set.Get(strings.TrimSpace(in.Name))
+			name := strings.TrimSpace(in.Name)
+			if !r.skillAllowed(t.Workspace, name) {
+				return "skill " + name + " is disabled for this workspace", nil
+			}
+			sk, ok := set.Get(name)
 			if !ok {
 				return "no skill named " + in.Name + " in the library", nil
 			}

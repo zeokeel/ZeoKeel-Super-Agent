@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/cloudwego/eino/adk/backgroundtask"
 	"github.com/cloudwego/eino/adk/backgroundtask/local"
 	adkbackgroundtask "github.com/cloudwego/eino/adk/middlewares/backgroundtask"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 )
 
 // defaultBackgroundAfter 是 design §5.6 的"前台 5 秒转后台"：命令在前台等 5 秒，
@@ -266,5 +269,40 @@ func (r *Runner) newJobsMiddleware(ctx context.Context) (adk.ChatModelAgentMiddl
 		CustomSystemPrompt: func(context.Context, *adkbackgroundtask.SystemPromptInput) string {
 			return jobInstruction
 		},
+	})
+}
+
+// jobListToolName is DSH's job-control set: job_output/job_list/job_kill. The
+// output/kill tools come from eino's backgroundtask middleware; listing is this
+// small tool over the same registry.
+const (
+	jobListToolName = "job_list"
+	jobListDesc     = "List the background shell jobs of this session, newest first: id, status, exit code and description. " +
+		"Use job_output to read a job's result and job_kill to stop one."
+)
+
+func newJobListTool(jobs *jobRegistry) (tool.BaseTool, error) {
+	return utils.InferTool(jobListToolName, jobListDesc, func(ctx context.Context, _ struct{}) (string, error) {
+		if jobs == nil {
+			return "no background jobs", nil
+		}
+		ids := jobs.tracked()
+		if len(ids) == 0 {
+			return "no background jobs", nil
+		}
+		var b strings.Builder
+		for i := len(ids) - 1; i >= 0; i-- {
+			task, err := jobs.mgr.Get(ctx, ids[i])
+			if err != nil {
+				continue
+			}
+			job := jobFromTask(task)
+			fmt.Fprintf(&b, "%s  %s  exit=%d  %s\n", job.ID, job.Status, job.ExitCode, job.Description)
+		}
+		out := strings.TrimRight(b.String(), "\n")
+		if out == "" {
+			return "no background jobs", nil
+		}
+		return out, nil
 	})
 }

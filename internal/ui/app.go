@@ -233,6 +233,31 @@ type App struct {
 	// workspace rows are open; workspaceSel is the workspace 工作区 shows.
 	wsExpanded   map[string]bool
 	workspaceSel string
+	// 项目面板: tab, per-workspace settings/stats/browsers, and their pending
+	// states (all loaded off the frame through optional runtime capabilities).
+	wsTab                  string
+	wsPanelFor             string
+	wsPanelTab             string
+	wsPanelLoading         bool
+	wsDetected             []view.BrowserInfo
+	wsDetectedWired        bool
+	wsSkills               []view.SkillInfo
+	wsSkillsWired          bool
+	wsSettings             view.WorkspaceSettings
+	wsSettingsReady        bool
+	wsSettingsWired        bool
+	wsSaving               bool
+	wsSaveErr              string
+	wsPort                 float64
+	wsStats                view.WorkspaceStats
+	wsStatsReady           bool
+	wsStatsWired           bool
+	wsBrowserRunning       bool
+	wsBrowserDetail        string
+	wsBrowserWired         bool
+	wsBrowserPending       string
+	detectedBrowsers       []view.BrowserInfo
+	detectedBrowsersLoaded bool
 	// The 新建项目 dialog and its draft. pickingFolder is true while the native
 	// directory picker is open, so a second click cannot open a second dialog.
 	wsModal       bool

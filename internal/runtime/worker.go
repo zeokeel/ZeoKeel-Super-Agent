@@ -465,7 +465,7 @@ func (r *Runtime) runnerFor(t domain.Ticket, cfg *WorkerConfig, workdir string) 
 		// The event log is the truth: a Worker that dies mid-run resumes from it
 		// instead of starting over (design §5.2).
 		SessionDir:           filepath.Join(workdir, ".zeokeel", "sessions"),
-		ExtraTools:           append(r.workerTools(t), cfg.ExtraTools...),
+		ExtraTools:           append(append(r.workerTools(t), r.browserToolsFor(context.Background(), t.Workspace)...), cfg.ExtraTools...),
 		Subagents:            cfg.Subagents,
 		ContextBudget:        saneBudget(cfg.ContextBudget),
 		CompactAfterMessages: cfg.CompactAfterMessages,
@@ -561,12 +561,10 @@ func (r *Runtime) systemPromptFor(t domain.Ticket, cfg *WorkerConfig) string {
 		system += fmt.Sprintf("\n\n当前工作区：%s（%s）。工作目录就是它的根目录，任务里提到的\"%s\"指这里。",
 			ws.Name, ws.Brief.Purpose, ws.Name)
 	}
-	if cfg.Skills != nil {
-		// Only the skills that match this task are injected; the whole library
-		// would eat the context budget before the work started (design §5.10).
-		if injected := cfg.Skills.RenderPrompt(t.Title, 2); injected != "" {
-			system += "\n\n" + injected
-		}
+	// Only skills enabled for this workspace are injected (DSH F): global
+	// library default-on, workspace.disabled_skills excluded.
+	if injected := r.skillPromptForTicket(t, 2); injected != "" {
+		system += "\n\n" + injected
 	}
 	// P0-C: state the truth about directories. Work happens in the execution copy;
 	// claiming the project root was modified would be a lie until sync exists.
@@ -579,7 +577,8 @@ func (r *Runtime) systemPromptFor(t domain.Ticket, cfg *WorkerConfig) string {
 	system += "\n\n" + r.promptVars(t, ticketWorkdir(cfg, t))
 	// Framework tools enabled for every Worker (ui2-spec §4/§5): the model needs
 	// to know they exist, not just to have them registered.
-	system += "\n\n计划工具：TaskCreate / TaskGet / TaskUpdate / TaskList。" +
+	system += "\n\nDSH 执行器工具：ack（短确认）/ handback（交回）/ thread_unrelated（标记无关）/ request_status（查状态）。" +
+		"\n计划工具：TaskCreate / TaskGet / TaskUpdate / TaskList。" +
 		"\n网络工具：web_fetch / web_search（仅 http/https，拒绝内网地址）。" +
 		"\n工作区根目录的 AGENTS.md 会自动注入；没有该文件不影响执行。"
 	// Team sections last: they own the voice and the delivery standard, and a team

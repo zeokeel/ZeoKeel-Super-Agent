@@ -52,3 +52,13 @@ var (
 	_ ui.RejectUndoer    = (*runtime.Runtime)(nil)
 	_ ui.VersionReporter = (*runtime.Runtime)(nil)
 )
+
+// rc3 project panel: workspace settings/stats, browser control, skills library.
+var (
+	_ ui.BrowserDetector           = (*runtime.Runtime)(nil)
+	_ ui.WorkspaceSettingsProvider = (*runtime.Runtime)(nil)
+	_ ui.WorkspaceSettingsSaver    = (*runtime.Runtime)(nil)
+	_ ui.BrowserController         = (*runtime.Runtime)(nil)
+	_ ui.WorkspaceStatsProvider    = (*runtime.Runtime)(nil)
+	_ ui.SkillLibrary              = (*runtime.Runtime)(nil)
+)

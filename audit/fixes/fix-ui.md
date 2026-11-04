@@ -567,3 +567,40 @@ $ sh scripts/check-nocgo.sh                                             → PASS
 - **模型组**：`view.SettingsWorker`（"worker"，label 模型）已是 RequiredSettingsGroups 的成员；当前静态组共 **7** 个：worker、source（连接）、eval、execution、about、prompt、deploy（people 由 runtime 发布，非静态骨架）。`dingtalk_pause_listen_on_send` 已由 runtime 发布，UI 卡片/向导读取并保存。
 - Snapshot `Plan()` 消费 runtime 发布的 PlanVM（详情 + 对话页任务卡）；`AttentionVM` 已由 runtime 发布（`runtime.Publish → snap.PublishAttention`），收件箱优先消费它（含 stop 动作），仅在为空时回退 Overview 列表。
 - 测试仍全绿：`go test ./internal/ui/... ./internal/view/...`、vet、gofmt、build。
+
+---
+
+# Round 6（rc3：项目面板 设置/统计、浏览器/技能、DSH 收件箱）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime/store/cmd 改动，无 `go.mod`，未 bump VERSION。
+
+## 已完成
+
+1. **项目面板 概览/设置/统计**（`internal/ui/workspacepanel.go` + `internal/view/workspacepanel.go`）：工作区页增加 tab 切换（默认概览，保留原会话列表）；面板数据每次切换通过 off-frame seam 载入（浏览器检测、工作区设置、技能库、统计、浏览器状态），加载中显示 spinner。
+2. **浏览器设置**：启用开关、Chrome/Edge 选择（仅检测到且 Available 的可选，未检测到明说）、无头模式、CDP 端口（0=自动，NumberInput）、Profile 目录（runtime 报告，只读）、CDP 端口事实；「启动/停止浏览器」经可选 `BrowserController` off-frame，pending（启动中…/停止中…），状态只显示 controller 报告的 运行中/已停止/未知，从不自报运行；未接线禁用 + 明说。
+3. **技能**：全局技能库（可选 `SkillLibrary`）逐项开关，默认开；工作区通过 `DisabledSkills` 覆盖；未接线/空库诚实提示。保存走可选 `WorkspaceSettingsSaver`（pending/错误 inline/成功 toast）。
+4. **检测的浏览器**：设置›部署新增「浏览器（默认路径检测）」区块，显示 name/path/version；无检测结果时诚实提示；工作区设置里同一列表 + 可用标记。
+5. **统计**：会话/任务/进行中/等待你/已完成/失败 计数、最近活动（时间 ago）、工具类别清单（filesystem/web/plan/browser MCP/domain ack/handback/thread/status 由 runtime 报告，Available 才标"可用"，未报告时不猜测）；无 stats provider 时回退为"按已发布会话计数"并明确说明。
+6. **DSH 收件箱文案**：收件箱/总览不再以"批准后才会开工"为主文案；请求区改名「旧式请求（需要批准）」（仅当存在 Approvals 时渲染），说明新请求直接进入任务；overview 旧式卡标题改「旧式请求待你决定」，副文案「旧式流程：批准后才开工；新请求会直接进入任务」。批准/拒绝按钮与撤销逻辑保留（legacy proposals 仍可处理）。
+7. **测试**：新增 `workspacepanel_test.go`（tabs、browser+skills 保存、unwired 四连诚实提示、stats 计数/活动/工具、启动停止浏览器、设置页检测浏览器、DSH inbox 非 approval-first）；既有 ui/view 测试保持绿。
+
+## optional runtime 契约（给 runtime 编译断言）
+
+- `ui.BrowserDetector { DetectedBrowsers() []view.BrowserInfo }`
+- `ui.WorkspaceSettingsProvider { WorkspaceSettings(workspaceID string) (view.WorkspaceSettings, bool) }`
+- `ui.WorkspaceSettingsSaver { SaveWorkspaceSettings(workspaceID string, s view.WorkspaceSettings) error }`
+- `ui.BrowserController { StartBrowser(workspaceID string) error; StopBrowser(workspaceID string) error; BrowserStatus(workspaceID string) (running bool, detail string) }`
+- `ui.WorkspaceStatsProvider { WorkspaceStats(workspaceID string) (view.WorkspaceStats, bool) }`
+- `ui.SkillLibrary { Skills() []view.SkillInfo }`
+view 类型：`BrowserInfo{ID,Name,Path,Version,Available}`、`SkillInfo{ID,Name,Description,EnabledByDefault}`、`WorkspaceSettings{BrowserEnabled,Browser,Headless,Port,ProfileDir,DisabledSkills}`、`WorkspaceStats{Conversations,Tasks,Running,Waiting,Completed,Failed,Tools,Recent,UpdatedAt}`、`ToolCategory{ID,Label,Description,Available}`、`ActivityRow{Text,At}`。
+
+## 结果 / 备注
+
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/...  → ok
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...   → 干净
+$ gofmt -l internal/ui internal/view                           → 空
+$ go build ./internal/ui ./internal/view                       → OK
+$ go build ./...  → 失败于 internal/browser（别人 in-flight：launch.go sync unused / undefined Manager），非本 scope
+```
+未做：项目面板的浏览器 MCP 细节（由 runtime 的 browser 包负责，当前该包在别人手里未编译通过）；VERSION 未改。

@@ -154,9 +154,8 @@ func (p *Persistence) Load() error {
 	}
 	for _, d := range decisions {
 		e.decisions[d.ID] = d
-		// The Trigger a Decision is about: the record itself carries the batch for
-		// Decisions created by an Eval (an IM message per approval has its own
-		// Decision), and the content-derived key covers the older shape.
+		// The Trigger a Decision is about: the record itself carries the batch for an
+		// Eval's Decisions, and the content-derived key covers the older shape.
 		if n := len(d.TriggerIDs); n > 0 {
 			e.decisionTrigger[d.ID] = d.TriggerIDs[n-1]
 			continue
@@ -602,8 +601,8 @@ func (p *Persistence) EvaluateDue(now time.Time) ([]Outcome, error) {
 						return err
 					}
 				}
-				// One Eval may decide a batch (each IM message gets its own
-				// approval), so every disposition's Decision is persisted too.
+				// One Eval decides a batch; persist every disposition's Decision so a
+				// per-Trigger Decision is not lost.
 				if id := p.e.dispositions[tid].DecisionID; id != "" && !savedDec[id] {
 					if dec, ok := p.e.decisions[id]; ok {
 						if err := p.st.PutDecision(dec); err != nil {

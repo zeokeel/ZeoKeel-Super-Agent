@@ -53,23 +53,7 @@ type Policy struct {
 	// proposal the operator must approve before a Ticket exists. It defaults to
 	// false because the prototype's Eval creates the Ticket (001:35).
 	RequireApproval bool
-	// AutoApproveIM turns the release policy OFF: by default every admitted
-	// message from an IM Source (feishu/dingtalk) becomes a proposal the operator
-	// must approve, whatever its strength and whatever the accept mode. Set it
-	// only for deployments that explicitly want IM auto-processing back.
-	AutoApproveIM bool `json:"autoApproveIM,omitempty"`
 }
-
-// imSources are the messaging Sources whose inbound messages always require the
-// operator's approval in this release. An IM message is a person talking, so it is
-// proposed, never started on the agent's own initiative; Approve is the only path
-// that creates the Ticket. The list is code, not config, so a deployment cannot
-// silently lose the approval step.
-var imSources = map[string]bool{"feishu": true, "dingtalk": true}
-
-// isIMSource reports whether a Source is an inbound IM Source. Non-IM Sources
-// (GitHub, the local panel, schedulers) keep the prototype's behavior.
-func isIMSource(source string) bool { return imSources[source] }
 
 // allowed reports whether actor may originate work through source.
 func (p Policy) allowed(source, actor string) bool { return p.Allowed[source][actor] }

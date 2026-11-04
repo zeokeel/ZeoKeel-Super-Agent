@@ -1,8 +1,9 @@
 package runtime
 
-// IM proposals (Lead requirement): every inbound feishu/dingtalk message is a
-// pending approval, never auto-run. Approve authorizes work; Reject leaves nothing;
-// two messages are two independent approvals.
+// DSH flow: IM messages are ordinary requests. An admitted explicit request is
+// accepted directly like GitHub or the panel; inferred candidates follow the
+// accept mode. There is no IM-specific approval step (RequireApproval is a
+// deliberate opt-in on the Policy, not an IM rule).
 
 import (
 	"testing"
@@ -52,55 +53,57 @@ func waitProposals(t *testing.T, eng *engine.Engine, n int) {
 	t.Fatalf("proposals = %d, want %d", len(eng.Proposals()), n)
 }
 
-func TestIMMessagesBecomePendingApprovals(t *testing.T) {
+func waitTickets(t *testing.T, eng *engine.Engine, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(eng.AllTickets()) == n {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("tickets = %d, want %d", len(eng.AllTickets()), n)
+}
+
+// An explicit request from an admitted sender runs directly: the Trigger is
+// accepted, a Ticket exists and nothing waits for the operator's approval.
+func TestIMMessagesExecuteDirectly(t *testing.T) {
 	rt, eng := newApprovalRuntime(t)
 	if _, err := rt.ReceiveTrigger(pendingIMTrigger("feishu", "ou_zhangsan", "oc_1", "m1",
 		"把 webapp 的登录超时改一下")); err != nil {
 		t.Fatal(err)
 	}
-	waitProposals(t, eng, 1)
-	if len(eng.AllTickets()) != 0 {
-		t.Fatal("an IM proposal created a Ticket before approval")
+	waitTickets(t, eng, 1)
+	if len(eng.Proposals()) != 0 {
+		t.Fatalf("an explicit IM request must not become a proposal: %d", len(eng.Proposals()))
+	}
+	tk := eng.AllTickets()[0]
+	if tk.Mandate.Strength != domain.StrengthExplicit {
+		t.Fatalf("the mandate must be explicit: %+v", tk.Mandate)
 	}
 	rt.Publish()
 	ov := rt.snap.Overview()
-	if len(ov.Approvals) != 1 {
-		t.Fatalf("approvals = %+v", ov.Approvals)
-	}
-	row := ov.Approvals[0]
-	if row.Source != "feishu" || row.Said == "" || row.DecisionID == "" {
-		t.Fatalf("approval row lacks source/text/decision: %+v", row)
-	}
-
-	if err := rt.Approve(row.DecisionID); err != nil {
-		t.Fatal(err)
-	}
-	if len(eng.AllTickets()) != 1 {
-		t.Fatal("Approve did not create the Ticket")
-	}
-	tk := eng.AllTickets()[0]
-	if domain.StageOf(&tk, time.Now()) == domain.StageEnded {
-		t.Fatalf("approved ticket ended instead of being queued: %+v", tk.Ended)
+	if len(ov.Approvals) != 0 {
+		t.Fatalf("no approval should be pending: %+v", ov.Approvals)
 	}
 }
 
-func TestIMProposalRejectLeavesNothing(t *testing.T) {
+// A sender the policy does not admit stays filtered: no Ticket and no proposal.
+func TestIMStrangerIsFiltered(t *testing.T) {
 	rt, eng := newApprovalRuntime(t)
-	if _, err := rt.ReceiveTrigger(pendingIMTrigger("dingtalk", "ding_zhangsan", "dm_1", "m2",
+	if _, err := rt.ReceiveTrigger(pendingIMTrigger("dingtalk", "someone-else", "dm_9", "m2",
 		"把 webapp 的登录超时改一下")); err != nil {
 		t.Fatal(err)
 	}
-	waitProposals(t, eng, 1)
-	id := eng.Proposals()[0].ID
-	if err := rt.Reject(string(id)); err != nil {
-		t.Fatal(err)
-	}
-	if len(eng.Proposals()) != 0 || len(eng.AllTickets()) != 0 {
-		t.Fatalf("reject left state: proposals=%d tickets=%d", len(eng.Proposals()), len(eng.AllTickets()))
+	time.Sleep(50 * time.Millisecond) // give the eval pass a chance to run
+	if len(eng.AllTickets()) != 0 || len(eng.Proposals()) != 0 {
+		t.Fatalf("a stranger must be filtered, tickets=%d proposals=%d",
+			len(eng.AllTickets()), len(eng.Proposals()))
 	}
 }
 
-func TestTwoIMMessagesAreTwoApprovals(t *testing.T) {
+// Two messages in two conversations are two independent tasks, not one batch.
+func TestTwoIMConversationsCreateTwoTasks(t *testing.T) {
 	rt, eng := newApprovalRuntime(t)
 	for _, tr := range []domain.Trigger{
 		pendingIMTrigger("feishu", "ou_zhangsan", "oc_1", "a", "把 webapp 的登录超时改一下"),
@@ -110,19 +113,5 @@ func TestTwoIMMessagesAreTwoApprovals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitProposals(t, eng, 2)
-	if len(eng.AllTickets()) != 0 {
-		t.Fatal("batching approved/ran IM messages")
-	}
-	// Health/来源 say work is waiting on a person.
-	rt.Publish()
-	found := false
-	for _, item := range rt.snap.Overview().Health {
-		if item.Name == "待审批" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("health does not mention pending approvals: %+v", rt.snap.Overview().Health)
-	}
+	waitTickets(t, eng, 2)
 }

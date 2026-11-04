@@ -1161,7 +1161,7 @@ func TestReceiveNormalizesEpochTimestamps(t *testing.T) {
 	}
 }
 
-// ---- Release policy: every inbound IM message is a pending approval ---------
+// ---- DSH semantics: IM sources are ordinary Sources -------------------------
 
 func imPolicy() Policy {
 	p := basePolicy()
@@ -1204,169 +1204,183 @@ func evaluateOnce(t *testing.T, e *Engine, tr domain.Trigger) Outcome {
 	return outs[len(outs)-1]
 }
 
-func TestIMExplicitBecomesProposal(t *testing.T) {
+// An admitted explicit IM request is accepted directly, exactly like GitHub or
+// the panel: the gate computes strength, Eval accepts, a Ticket is created. No
+// approval step exists for IM by default (DSH flow).
+func TestIMExplicitRequestCreatesTicket(t *testing.T) {
 	e := New(RuleAssessor{})
 	e.Register(repoWS("ws_web"), imPolicy())
 	out := evaluateOnce(t, e, imTrigger("im1", "ding", "chat-1", "webapp: change the timeout"))
-	if out.Kind != domain.DispDecided {
-		t.Fatalf("disposition %q", out.Kind)
+	if out.Kind != domain.DispDecided || out.Ticket == "" {
+		t.Fatalf("an explicit IM request must create a ticket: %+v", out)
 	}
-	if out.Ticket != "" {
-		t.Fatal("an IM message must not create a Ticket before approval")
+	if len(e.Proposals()) != 0 {
+		t.Fatal("no proposal may exist for an explicit IM request by default")
 	}
-	if len(e.AllTickets()) != 0 {
-		t.Fatal("an IM message must not create a Ticket before approval")
+	tk, ok := e.TicketSnapshot(out.Ticket)
+	if !ok || tk.Mandate.Strength != domain.StrengthExplicit {
+		t.Fatalf("ticket mandate must be explicit: %+v", tk.Mandate)
 	}
-	ps := e.Proposals()
-	if len(ps) != 1 {
-		t.Fatalf("want one pending approval, got %d", len(ps))
-	}
-	if ps[0].Kind != domain.DecPropose {
-		t.Fatalf("decision kind %q, want propose", ps[0].Kind)
-	}
-	if ps[0].Proposal == nil || ps[0].Proposal.From != "ding" {
-		t.Fatalf("proposal must name the requester: %+v", ps[0].Proposal)
-	}
-	if ps[0].Reply.Route != domain.ReplyNone {
-		t.Fatalf("a proposal must not reply on its own, route %q", ps[0].Reply.Route)
-	}
-	if len(e.Replies()) != 0 {
-		t.Fatal("a proposal must not queue an outbound reply")
-	}
-	// The gate's strength is still recorded for the audit, even though the message
-	// waits for the operator.
+	// The gate still records the Source and the way it was received.
 	disp, _ := e.Disposition(domain.Key(domain.Global, "dingtalk", "im1"))
-	if disp.Strength != domain.StrengthExplicit {
-		t.Fatalf("the gate must record explicit strength, got %q", disp.Strength)
+	if disp.Strength != domain.StrengthExplicit || disp.Basis.Via != domain.ViaAddressed {
+		t.Fatalf("disposition must keep gate strength/basis: %+v", disp)
 	}
 }
 
-func TestIMApproveCreatesTicketRejectCreatesNothing(t *testing.T) {
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), imPolicy())
-	evaluateOnce(t, e, imTrigger("im2", "ding", "chat-2", "webapp: change the timeout"))
-	ps := e.Proposals()
-	if len(ps) != 1 {
-		t.Fatalf("want one proposal, got %d", len(ps))
-	}
-	out, err := e.Approve(ps[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out.Ticket == "" {
-		t.Fatal("Approve must create the Ticket")
-	}
-	if _, ok := e.TicketSnapshot(out.Ticket); !ok {
-		t.Fatal("the approved Ticket must exist")
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatal("the approved proposal must leave the pending list")
+// An inferred IM candidate follows the accept mode: observe records only, auto
+// (with a matched rule) starts work, and off means the gate never admits it.
+func TestIMInferredFollowsAcceptMode(t *testing.T) {
+	inferred := func(mode domain.AcceptMode) *Engine {
+		p := imPolicy()
+		row := p.Admissions["dingtalk|chat"]
+		row.UnlistedAddressed = domain.CellInferred
+		p.Admissions["dingtalk|chat"] = row
+		p.AcceptMode = mode
+		e := New(RuleAssessor{})
+		e.Register(repoWS("ws_web"), p)
+		return e
 	}
 
-	// Reject leaves nothing running.
-	e2 := New(RuleAssessor{})
-	e2.Register(repoWS("ws_web"), imPolicy())
-	evaluateOnce(t, e2, imTrigger("im3", "ding", "chat-3", "webapp: change the timeout"))
-	ps = e2.Proposals()
-	if err := e2.Reject(ps[0].ID, "no"); err != nil {
+	observe := inferred(domain.AcceptObserve)
+	out := evaluateOnce(t, observe, imTrigger("im-o", "outsider", "chat-o", "webapp: change the timeout"))
+	if out.Ticket != "" || len(observe.AllTickets()) != 0 || len(observe.Proposals()) != 0 {
+		t.Fatalf("observe must only record the inferred candidate: %+v", out)
+	}
+	dec := mustDecision(t, observe, domain.Key(domain.Global, "dingtalk", "im-o"))
+	if dec.Kind != domain.DecIgnore || len(dec.Reasons) == 0 || dec.Reasons[0].Code != domain.ReasonObserved {
+		t.Fatalf("observe must record would_accept: %+v", dec)
+	}
+
+	auto := inferred(domain.AcceptAuto)
+	tk := accept(t, auto, imTrigger("im-a", "outsider", "chat-a", "webapp: change the timeout"))
+	if tk.Mandate.Strength != domain.StrengthInferred || len(tk.Mandate.Rules) == 0 {
+		t.Fatalf("auto must accept inferred with matched rules: %+v", tk.Mandate)
+	}
+
+	off := inferred(domain.AcceptOff)
+	if _, err := off.Receive(imTrigger("im-off", "outsider", "chat-off", "webapp: change the timeout")); err != nil {
 		t.Fatal(err)
 	}
-	if len(e2.Proposals()) != 0 || len(e2.AllTickets()) != 0 {
-		t.Fatal("Reject must leave no ticket and no pending item")
+	if _, err := off.EvaluateDue(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(off.AllTickets()) != 0 || len(off.Proposals()) != 0 {
+		t.Fatal("off mode must not admit an inferred IM candidate")
 	}
 }
 
-func TestNonIMExplicitStillAccepts(t *testing.T) {
-	// GitHub explicit keeps the prototype behavior.
-	e := newTestEngine(basePolicy())
-	tk := accept(t, e, ghTrigger("gp1", "lin", "webapp: change the timeout", true, true))
-	if tk.Mandate.Strength != domain.StrengthExplicit {
-		t.Fatalf("GitHub explicit strength %q", tk.Mandate.Strength)
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatal("GitHub must not require approval")
-	}
-	// The local panel keeps the prototype behavior too.
-	e2 := newTestEngine(basePolicy())
-	if _, err := e2.Dispatch(DispatchInput{Text: "change the timeout", Workspace: "ws_web"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e2.EvaluateDue(time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if len(e2.AllTickets()) != 1 || len(e2.Proposals()) != 0 {
-		t.Fatal("a local panel task must still start work directly")
-	}
-}
-
-// Two IM messages on one Thread produce two separate approvals, never one batched
-// item.
-func TestIMMessagesAreSeparateProposals(t *testing.T) {
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), imPolicy())
-	for _, id := range []string{"imb1", "imb2"} {
-		if _, err := e.Receive(imTrigger(id, "ding", "chat-9", "webapp: "+id)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := e.EvaluateDue(time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	ps := e.Proposals()
-	if len(ps) != 2 {
-		t.Fatalf("two messages must become two approvals, got %d", len(ps))
-	}
-	seen := map[domain.ID]bool{}
-	for _, p := range ps {
-		if seen[p.ID] {
-			t.Fatalf("duplicate proposal id %s", p.ID)
-		}
-		seen[p.ID] = true
-		if p.Proposal == nil || len(p.TriggerIDs) != 1 {
-			t.Fatalf("each approval must cover exactly one message: %+v", p)
-		}
-	}
-	if len(e.AllTickets()) != 0 {
-		t.Fatal("no Ticket may exist before approval")
-	}
-	// Approving one leaves the other waiting and creates exactly one Ticket.
-	if _, err := e.Approve(ps[0].ID); err != nil {
-		t.Fatal(err)
-	}
-	if len(e.AllTickets()) != 1 || len(e.Proposals()) != 1 {
-		t.Fatalf("approving one must leave the other pending: tickets=%d proposals=%d",
-			len(e.AllTickets()), len(e.Proposals()))
-	}
-}
-
-// The gate still decides who may ask: an unlisted sender's IM message is filtered,
-// not turned into an approval.
-func TestIMStrangerIsNotProposed(t *testing.T) {
-	e := New(RuleAssessor{})
+// An explicit admission cell still makes an unlisted sender's IM message explicit,
+// exactly as 002:54 requires.
+func TestIMExplicitAdmissionCellAccepts(t *testing.T) {
 	p := imPolicy()
 	row := p.Admissions["dingtalk|chat"]
-	row.UnlistedAddressed = domain.CellIgnore
+	row.UnlistedAddressed = domain.CellExplicit
 	p.Admissions["dingtalk|chat"] = row
+	e := New(RuleAssessor{})
 	e.Register(repoWS("ws_web"), p)
-	if _, err := e.Receive(imTrigger("ims1", "stranger", "chat-4", "webapp: change the timeout")); err != nil {
-		t.Fatal(err)
+	out := evaluateOnce(t, e, imTrigger("im-cell", "outsider", "chat-cell", "webapp: change the timeout"))
+	if out.Ticket == "" {
+		t.Fatalf("an explicit admission cell must accept: %+v", out)
 	}
-	if _, err := e.EvaluateDue(time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatal("an unlisted sender must be filtered, not proposed")
+	if tk, _ := e.TicketSnapshot(out.Ticket); tk.Mandate.Strength != domain.StrengthExplicit {
+		t.Fatalf("mandate strength %q", tk.Mandate.Strength)
 	}
 }
 
-// ---- Undo reject: a rejected proposal is reversible until superseded ---------
+// ignore and stop are Decisions, not Source-specific behavior.
+func TestIMIgnoreAndStopUnchanged(t *testing.T) {
+	ignore := New(fixedKindAssessor{kind: domain.DecIgnore})
+	ignore.Register(repoWS("ws_web"), imPolicy())
+	out := evaluateOnce(t, ignore, imTrigger("im-i", "ding", "chat-i", "webapp: just chatting"))
+	if out.Ticket != "" || len(ignore.AllTickets()) != 0 {
+		t.Fatalf("ignore must create nothing: %+v", out)
+	}
 
-// A rejection keeps the proposal, and UndoReject puts it back on the approval
-// list without a Ticket, a launch or a reply; approving it then works.
-func TestUndoRejectRestoresProposal(t *testing.T) {
+	stop := New(fixedKindAssessor{kind: domain.DecStop})
+	stop.Register(repoWS("ws_web"), imPolicy())
+	out = evaluateOnce(t, stop, imTrigger("im-s", "ding", "chat-s", "webapp: please stop"))
+	if out.Ticket != "" || len(stop.AllTickets()) != 0 {
+		t.Fatalf("a stop with no live ticket creates nothing: %+v", out)
+	}
+	if dec, _ := stop.Decision(out.Decision.ID); dec.Kind != domain.DecStop {
+		t.Fatalf("the stop must be recorded as a stop Decision, got %q", dec.Kind)
+	}
+}
+
+type fixedKindAssessor struct{ kind domain.DecisionKind }
+
+func (f fixedKindAssessor) Assess(_ context.Context, in AssessInput) (AssessOutput, error) {
+	hits := make([]domain.RuleHit, 0)
+	for _, r := range in.Policy.EnabledRules() {
+		hits = append(hits, domain.RuleHit{ID: r.ID, Matched: true})
+	}
+	return AssessOutput{Kind: f.kind, Workspace: in.Trigger.DefaultWorkspace,
+		Rules: hits, Reasons: []domain.Reason{{Code: domain.ReasonSaid}}, Title: "x"}, nil
+}
+
+// The same IM message delivered twice creates one Ticket (idempotent receive).
+func TestIMRepeatedDeliveryCreatesOneTicket(t *testing.T) {
 	e := New(RuleAssessor{})
 	e.Register(repoWS("ws_web"), imPolicy())
-	evaluateOnce(t, e, imTrigger("ur1", "ding", "chat-ur", "webapp: change the timeout"))
+	tr := imTrigger("im-r", "ding", "chat-r", "webapp: change the timeout")
+	first := accept(t, e, tr)
+	if _, err := e.Receive(tr); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("want ErrDuplicate, got %v", err)
+	}
+	if n := len(e.AllTickets()); n != 1 || e.AllTickets()[0].ID != first.ID {
+		t.Fatalf("want exactly the first ticket, got %d", n)
+	}
+}
+
+// A proposal only exists for an explicit opt-in: RequireApproval on an inferred
+// candidate. IM has no longer any special case, so the same policy behaves the
+// same on every Source.
+func TestProposalOnlyViaRequireApproval(t *testing.T) {
+	p := approvalPolicy()
+	e := New(RuleAssessor{})
+	e.Register(repoWS("ws_web"), p)
+	out := evaluateOnce(t, e, approvalTrigger("opt-1", "chat-opt"))
+	if !out.Proposal || out.Ticket != "" {
+		t.Fatalf("RequireApproval must propose an inferred candidate: %+v", out)
+	}
+	if len(e.Proposals()) != 1 || len(e.AllTickets()) != 0 {
+		t.Fatalf("proposals=%d tickets=%d", len(e.Proposals()), len(e.AllTickets()))
+	}
+	// The proposal machinery is source-agnostic: GitHub behaves the same.
+	gp := basePolicy()
+	gp.RequireApproval = true
+	row := gp.Admissions["github|comment"]
+	row.UnlistedAddressed = domain.CellInferred
+	gp.Admissions["github|comment"] = row
+	ge := New(RuleAssessor{})
+	ge.Register(repoWS("ws_web"), gp)
+	gout := evaluateOnce(t, ge, ghTrigger("gh-opt", "outsider", "webapp: change the timeout", true, true))
+	if !gout.Proposal || len(ge.AllTickets()) != 0 {
+		t.Fatalf("RequireApproval must behave the same on GitHub: %+v", gout)
+	}
+}
+
+// approvalPolicy makes an inferred IM candidate a proposal (RequireApproval is a
+// deliberate opt-in, not an IM rule).
+func approvalPolicy() Policy {
+	p := imPolicy()
+	p.RequireApproval = true
+	p.AcceptMode = domain.AcceptAuto
+	row := p.Admissions["dingtalk|chat"]
+	row.UnlistedAddressed = domain.CellInferred
+	p.Admissions["dingtalk|chat"] = row
+	return p
+}
+
+func approvalTrigger(id, thread string) domain.Trigger {
+	return imTrigger(id, "outsider", thread, "webapp: change the timeout")
+}
+
+func TestUndoRejectRestoresProposal(t *testing.T) {
+	e := New(RuleAssessor{})
+	e.Register(repoWS("ws_web"), approvalPolicy())
+	evaluateOnce(t, e, approvalTrigger("ur1", "chat-ur"))
 	ps := e.Proposals()
 	if len(ps) != 1 {
 		t.Fatalf("want one proposal, got %d", len(ps))
@@ -1414,8 +1428,8 @@ func TestUndoRejectRestoresProposal(t *testing.T) {
 // Undo is idempotent while the proposal is pending, and audited.
 func TestUndoRejectIsIdempotentAndAudited(t *testing.T) {
 	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), imPolicy())
-	evaluateOnce(t, e, imTrigger("ur2", "ding", "chat-ur2", "webapp: change the timeout"))
+	e.Register(repoWS("ws_web"), approvalPolicy())
+	evaluateOnce(t, e, approvalTrigger("ur2", "chat-ur2"))
 	id := e.Proposals()[0].ID
 	if err := e.Reject(id, "later"); err != nil {
 		t.Fatal(err)
@@ -1453,8 +1467,8 @@ func TestUndoRejectIsIdempotentAndAudited(t *testing.T) {
 // Undo fails when a newer decision on the same Thread has superseded the rejection.
 func TestUndoRejectSupersededByNewerDecision(t *testing.T) {
 	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), imPolicy())
-	evaluateOnce(t, e, imTrigger("ur3", "ding", "chat-ur3", "webapp: first"))
+	e.Register(repoWS("ws_web"), approvalPolicy())
+	evaluateOnce(t, e, approvalTrigger("ur3", "chat-ur3"))
 	old := e.Proposals()[0].ID
 	if err := e.Reject(old, "not now"); err != nil {
 		t.Fatal(err)
@@ -1462,7 +1476,7 @@ func TestUndoRejectSupersededByNewerDecision(t *testing.T) {
 	// Advance the clock so the new decision is unambiguously newer.
 	now := time.Now()
 	e.SetClock(func() time.Time { return now.Add(time.Minute) })
-	evaluateOnce(t, e, imTrigger("ur3b", "ding", "chat-ur3", "webapp: second"))
+	evaluateOnce(t, e, approvalTrigger("ur3b", "chat-ur3"))
 	if _, err := e.UndoReject(old); !errors.Is(err, ErrUndoSuperseded) {
 		t.Fatalf("want ErrUndoSuperseded, got %v", err)
 	}
@@ -1475,8 +1489,8 @@ func TestUndoRejectSupersededByNewerDecision(t *testing.T) {
 // Undoing something that was never a rejected proposal fails clearly.
 func TestUndoRejectRejectsNonRejection(t *testing.T) {
 	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), imPolicy())
-	evaluateOnce(t, e, imTrigger("ur4", "ding", "chat-ur4", "webapp: change the timeout"))
+	e.Register(repoWS("ws_web"), approvalPolicy())
+	evaluateOnce(t, e, approvalTrigger("ur4", "chat-ur4"))
 	id := e.Proposals()[0].ID
 	if _, err := e.UndoReject(id); err != nil {
 		t.Fatalf("undo of a pending proposal is idempotent, got %v", err)

@@ -47,7 +47,11 @@ func workspaceTools(cfg Config) ([]tool.BaseTool, *jobRegistry, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return []tool.BaseTool{bash}, jobs, nil
+	readImage, err := newReadImageTool(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	return []tool.BaseTool{bash, readImage}, jobs, nil
 }
 
 // BashArgs is one shell command.

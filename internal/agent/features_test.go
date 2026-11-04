@@ -7,6 +7,9 @@ package agent
 import (
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -290,7 +293,8 @@ func TestAllBuiltinFeaturesToolNames(t *testing.T) {
 		names[n] = true
 	}
 	for _, want := range append([]string{
-		"bash", "read", "write", "edit", "glob", "grep", "job_output", "job_kill",
+		"bash", "read", "write", "edit", "glob", "grep", "read_image",
+		"job_output", "job_list", "job_kill",
 		"web_fetch", "web_search",
 	}, planTaskToolNames...) {
 		if !names[want] {
@@ -730,5 +734,138 @@ func TestPlanTaskIgnoresRepositoryJSON(t *testing.T) {
 	res := runSessionForTest(t, r2, "list", nil)
 	if !strings.Contains(res.Answer, "task in metadata dir") || strings.Contains(res.Answer, "not") {
 		t.Fatalf("TaskList read repository JSON: %q", res.Answer)
+	}
+}
+
+// ---- read_image -------------------------------------------------------------
+
+func TestReadImageMetadataAndRefusals(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "shot.png"), 2, 3)
+
+	out := readImageObservation(dir, "shot.png")
+	for _, want := range []string{"shot.png", "format: png", "dimensions: 2x3", "content: image pixels are NOT available"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("read_image lost %q: %q", want, out)
+		}
+	}
+	// Outside the workspace, unsupported files, directories and oversized files are
+	// observations, never Go errors.
+	for name, tc := range map[string]struct{ path, want string }{
+		"outside root": {"../escape.png", "refused"},
+		"not an image": {"notes.txt", "refused"},
+		"directory":    {".", "refused"},
+		"missing":      {"missing.png", "refused"},
+	} {
+		if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := readImageObservation(dir, tc.path)
+		if !strings.Contains(got, tc.want) {
+			t.Fatalf("%s: %q does not contain %q", name, got, tc.want)
+		}
+	}
+	big := filepath.Join(dir, "big.png")
+	f, err := os.Create(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(readImageMaxBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	if got := readImageObservation(dir, "big.png"); !strings.Contains(got, "refused") {
+		t.Fatalf("oversized image was not refused: %q", got)
+	}
+}
+
+func writePNG(t *testing.T, path string, w, h int) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: 10, G: 20, B: 30, A: 255})
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ---- job_list ---------------------------------------------------------------
+
+func TestJobListReportsTrackedJobs(t *testing.T) {
+	dir := t.TempDir()
+	if got := invokeStringTool(t, mustJobListTool(t, nil), "{}"); !strings.Contains(got, "no background jobs") {
+		t.Fatalf("empty registry = %q", got)
+	}
+	jobs, err := newJobRegistry(context.Background(), 20*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runBash(context.Background(), dir, nil, 5*time.Second, jobs,
+		BashArgs{Command: "sleep 0.3; echo listed-job"}); err != nil {
+		t.Fatal(err)
+	}
+	ids := jobs.tracked()
+	if len(ids) != 1 {
+		t.Fatalf("fixture: expected one tracked job, got %v", ids)
+	}
+	if _, err := (&Jobs{registry: jobs}).Wait(context.Background(), ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	got := invokeStringTool(t, mustJobListTool(t, jobs), "{}")
+	if !strings.Contains(got, "completed") {
+		t.Fatalf("job_list did not report the completed job: %q", got)
+	}
+	if !strings.Contains(got, "sleep 0.3") {
+		t.Fatalf("job_list lost the command description: %q", got)
+	}
+}
+
+func mustJobListTool(t *testing.T, jobs *jobRegistry) tool.BaseTool {
+	t.Helper()
+	bt, err := newJobListTool(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bt
+}
+
+func invokeStringTool(t *testing.T, bt tool.BaseTool, args string) string {
+	t.Helper()
+	out, err := toolInvoker(t, bt)(args)
+	if err != nil {
+		t.Fatalf("tool returned an error: %v", err)
+	}
+	return out
+}
+
+// The DSH worker tool name for spawning a nested agent is "subagent", not eino's
+// default "agent"; the middleware must expose the parity name.
+func TestSubagentToolIsNamedSubagent(t *testing.T) {
+	srv := startMock(t)
+	dir := t.TempDir()
+	r := newTestRunner(t, testConfig(srv, dir, "mock-text", func(c *Config) {
+		c.Subagents = []SubagentSpec{{
+			Name: "explorer", Description: "只读调查",
+			Instruction: "只读，不要改文件", Tools: []string{"read", "grep"},
+		}}
+	}))
+	runSessionForTest(t, r, "hi", nil)
+	names := map[string]bool{}
+	for _, n := range srv.LastRequest().ToolNames {
+		names[n] = true
+	}
+	if !names["subagent"] {
+		t.Fatalf("subagent middleware tool is not named \"subagent\": %v", srv.LastRequest().ToolNames)
+	}
+	if names["agent"] {
+		t.Fatalf("eino's default \"agent\" tool name leaked into the Worker tool list: %v", srv.LastRequest().ToolNames)
 	}
 }

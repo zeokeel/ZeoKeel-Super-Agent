@@ -201,3 +201,20 @@ merged-policy 确定性/最终强度测试仍绿。
   `TestUndoRejectRejectsNonRejection`、`TestUndoRejectSurvivesRestart`（拒绝→重启→undo→再重启→proposal 仍在→Approve 建单）。
 - 验证：engine/domain/assess 测试 + engine `-race` 绿；`go build ./...` 绿；runtime/ui/cmd 测试绿（runtime 首次全量有一次
   已知时序 flake，重跑绿）。
+
+
+## DSH 回归：取消 IM 审批优先（方向调整）
+
+- 删除强制规则：`engine.Policy.AutoApproveIM`、`imSources`/`isIMSource`、`evaluate.proposeIMLocked`、
+  `domain.ReasonIMApproval` 全部移除（持久化 JSON 里的旧字段被忽略，兼容旧库）。
+- 恢复 DSH 流程：IM（feishu/dingtalk）与 GitHub/local 同构——门禁产出 strength；explicit 请求 Eval 直接 accept 建 Ticket；
+  inferred 候选按 accept mode（off 拒绝 / observe 只记录 / auto 且有命中规则才接）；admission cell=explicit 仍显式。
+  `DecPropose` 只在 **显式配置** `Policy.RequireApproval` 时出现（且仅对 inferred，explicit 永不需要批准），无 IM 特例。
+- 保留 `UndoReject`（proposal 只在 RequireApproval 配置下产生；撤回拒绝/=恢复 proposal 的行为不变，测试已改用该 opt-in policy）。
+- 测试：engine 新增/改写——`TestIMExplicitRequestCreatesTicket`、`TestIMInferredFollowsAcceptMode`、
+  `TestIMExplicitAdmissionCellAccepts`、`TestIMIgnoreAndStopUnchanged`、`TestIMRepeatedDeliveryCreatesOneTicket`、
+  `TestProposalOnlyViaRequireApproval`（IM 与 GitHub 同策略同行为）；Undo/persist 测试改用 approvalPolicy。
+  cmd 验收 A3/A7/Overview 改为"explicit IM → 直接 Ticket / 重复投递一张 / 总览可见"；`verify_im_test` 改为直连建单
+  （仍兼容 RequireApproval 的 approve 路径）。runtime `im_approval_test.go` 改为 DSH 语义（直接建单、陌生人过滤、
+  两个会话两张任务），rc2 undo 测试改用 RequireApproval opt-in。
+- 未动 VERSION。文档（README/design §13）仍写"IM 审批优先"，需 docs owner 同步（不在本 scope）。

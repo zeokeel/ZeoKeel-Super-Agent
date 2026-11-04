@@ -48,6 +48,10 @@ type HealthView struct {
 	// credential. The key stays visible so "configured / not configured" is still
 	// answerable. The writer-side Settings()/Get() accessors return the real
 	// values; they are for the process that owns the store, not for status.
+	//
+	// Data namespaces are omitted entirely: "workspace.<id>.settings" (per-workspace
+	// configuration) and "chat." (recent conversation content) are projected through
+	// their own APIs and do not belong in a status view (see statusHiddenKVKey).
 	KV map[string]string
 
 	// Workspaces is the number of registered workspaces.
@@ -113,6 +117,9 @@ func Inspect(path string) (HealthView, error) {
 		}
 	}
 	for k, v := range kv {
+		if statusHiddenKVKey(k) {
+			continue
+		}
 		if IsSecretKey(k) {
 			view.KV[k] = RedactedValue
 			continue
@@ -261,6 +268,14 @@ func (s *Store) HealthEntries() ([]HealthEntry, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// statusHiddenKVKey reports whether a kv key is stored data rather than a status
+// fact. Per-workspace settings and recent chat are read through their own APIs; a
+// status view that printed them would grow without bound and would print
+// conversation content next to health facts.
+func statusHiddenKVKey(key string) bool {
+	return strings.HasPrefix(key, workspaceSettingsPrefix) || strings.HasPrefix(key, chatKeyPrefix)
 }
 
 func isNoSuchTable(err error) bool {

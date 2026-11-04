@@ -203,16 +203,16 @@ func TestLaunchEffectRerunsAfterRestart(t *testing.T) {
 	}
 }
 
-// IM approvals are Decisions: they survive a restart and can still be approved
+// Opt-in proposals are Decisions: they survive a restart and can still be approved
 // after it (Approve needs the Decision→Trigger edge, which Load rebuilds).
-func TestIMProposalsSurviveRestart(t *testing.T) {
+func TestRequireApprovalProposalsSurviveRestart(t *testing.T) {
 	st := openTestStore(t)
 	_, p1, _ := restart(t, st)
-	if err := p1.Register(repoWS("ws_web"), imPolicy()); err != nil {
+	if err := p1.Register(repoWS("ws_web"), approvalPolicy()); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"ip1", "ip2"} {
-		if _, err := p1.Receive(imTrigger(id, "ding", "chat-r", "webapp: "+id)); err != nil {
+		if _, err := p1.Receive(approvalTrigger(id, "chat-r-"+id)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -246,10 +246,10 @@ func TestIMProposalsSurviveRestart(t *testing.T) {
 func TestUndoRejectSurvivesRestart(t *testing.T) {
 	st := openTestStore(t)
 	_, p1, _ := restart(t, st)
-	if err := p1.Register(repoWS("ws_web"), imPolicy()); err != nil {
+	if err := p1.Register(repoWS("ws_web"), approvalPolicy()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p1.Receive(imTrigger("urr1", "ding", "chat-urr", "webapp: change the timeout")); err != nil {
+	if _, err := p1.Receive(approvalTrigger("urr1", "chat-urr")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p1.EvaluateDue(time.Now()); err != nil {

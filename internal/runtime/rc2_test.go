@@ -208,9 +208,24 @@ func enginePolicyForTest() engine.Policy {
 }
 
 func TestUndoRejectRestoresTheProposal(t *testing.T) {
-	rt, eng, _ := newRound3(t)
-	if _, err := rt.ReceiveTrigger(pendingIMTrigger("dingtalk", "colleague", "dm_1", "m1",
-		"把 webapp 的登录超时改一下")); err != nil {
+	// Approvals are a deliberate policy opt-in, not an IM rule: make an inferred
+	// candidate a proposal via RequireApproval + admission cell.
+	eng := engine.New(engine.RuleAssessor{})
+	eng.Register(domain.Workspace{ID: "ws_web", Name: "web", Root: t.TempDir(), Kind: domain.KindRepo,
+		Brief: domain.Brief{Purpose: "webapp", Keywords: []string{"webapp"}}},
+		engine.Policy{Version: "v1", RequireApproval: true, AcceptMode: domain.AcceptAuto,
+			Rules:   []domain.Rule{{ID: "implementation", Instruction: "要求改代码", Enabled: true, Proactive: true}},
+			Allowed: map[string]map[string]bool{"dingtalk": {"ding": true}},
+			Admissions: map[string]domain.AdmissionRow{"dingtalk|chat": {
+				Source: "dingtalk", Scope: "chat", Observed: true,
+				ListedUnaddressed: domain.CellInferred, UnlistedAddressed: domain.CellInferred,
+				UnlistedUnaddressed: domain.CellIgnore}}})
+	rt := New(eng, view.NewSnapshot())
+	tr := pendingIMTrigger("dingtalk", "outsider", "dm_1", "m1", "把 webapp 的登录超时改一下")
+	tr.Row = "chat"
+	tr.Addressed = domain.Addressed{Mention: true}
+	tr.ScopeReceivesAll = true
+	if _, err := rt.ReceiveTrigger(tr); err != nil {
 		t.Fatal(err)
 	}
 	waitProposals(t, eng, 1)

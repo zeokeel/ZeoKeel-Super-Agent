@@ -397,3 +397,31 @@ engine 路由 `internal/runtime/workspaces.go:182`/`internal/engine/engine.go:15
 **检查**：相对 markdown 链接 0 broken；docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据。
 未跑全量 `verify-fixes.sh`/`release-check.sh`；README/RELEASE/CHANGELOG/发布说明均声明由 Lead bump VERSION 后跑闸门并 tag，
 不预称全绿。
+
+## 16. rc.3 文档与发布说明（2026-11-04，docs-only）
+
+Lead 已把 `VERSION` bump 为 `1.0.0-rc.3`；本轮只改文档（README/CHANGELOG/RELEASE/design §13/im-channels/ops/rejected + 新
+`RELEASE-NOTES-v1.0.0-rc.3.md`），未改代码/go.mod。
+
+**DSH 对齐（推翻 rc.1 的审批优先）**
+- admitted 的明确 IM/GitHub 请求由 Eval 直接接单 → Ticket；推断请求按 accept mode off/observe/auto（auto 需匹配规则）。
+- `DecPropose` 只保留给显式 opt-in `Policy.RequireApproval`（仅推断）；`AutoApproveIM` 已移除；旧 proposal 在收件箱/总览标
+  「旧式请求（需要批准）」。证据：`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`ui/inbox.go:106`、`ui/overview.go:109`、
+  `cmd/zeokeel/acceptance_test.go:129-160`。README/CHANGELOG/RELEASE A/H/J/design §13/im-channels/ops/rejected 均已改写。
+
+**rc.3 新能力**
+- 项目面板 概览/设置/统计：`view/workspacepanel.go:1-99`、`ui/workspacepanel.go:193-520`、`runtime/workspacesettings.go:75-160,296-333,427-480`、
+  `store/workspacesettings.go`；统计的“最近活动”区当前 runtime 未投影时为空态（文档已注明，不伪造）。
+- 浏览器 + MCP：默认路径检测 `internal/browser/detect.go:10-65`；独立 profile/唯一端口/启动 flags
+  `manager.go:99-107,185-245`、`launch.go:22-56`；`npx -y chrome-devtools-mcp@latest --browserUrl ...` + `mcp__browser__*`
+  `mcp.go:12-15,44-48,118-140`；只注入项目 Worker `runtime/worker.go:468`；env scrub / npx 缺失错误。
+- 工具：`read_image`（元数据-only，无像素；webp 无维度）`agent/imageread.go:1-120`；`job_list` `agent/jobs.go:275-309`；
+  `subagent` 命名 `agent/subagent.go:55`；域工具 `runtime/artifacts.go:121-222`；SuperAgent 无 tools `runtime/rc2.go:121-132`；
+  `orchestrator_read`/DSH main orchestrator 工具仍缺（`audit/tool-gap.md`）。
+
+**诚实限制**（写入 README 已知限制 / RELEASE F-7+J / design §13 / ops §8 / 发布说明）：真正原项目执行（执行副本+apply-back）、
+系统钥匙串（SQLite 0600）、多窗口、自动更新只检查不下载、真实飞书/DWS 租户 E2E、`read_image` 无视觉、无 `orchestrator_read`、
+浏览器需 Chrome/Edge+node/npx、打包无 .dmg/deb/安装器。
+
+**检查**：docs 相对链接 0 broken；所有 docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据。未运行全量闸门；README/RELEASE/
+CHANGELOG/发布说明均声明 Lead bump 后跑 `verify-fixes.sh`+`release-check.sh` 并 tag `v1.0.0-rc.3`，不预称全绿。

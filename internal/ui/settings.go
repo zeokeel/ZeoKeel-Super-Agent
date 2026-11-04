@@ -161,6 +161,7 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 			// backup and archive commands and the exit codes are fixed facts of
 			// the CLI, and the health rows are the live ones.
 			a.deploymentSection(c, *g)
+			a.browserFactsSection(c)
 		}
 		if g.ID == view.SettingsWorker {
 			a.modelTestRow(c)

@@ -283,3 +283,28 @@ ok（21.2s）；`go build ./...` ok；gofmt/vet clean。**零新增依赖**（we
 - `internal/runtime/worker.go:481`：PlanTasks/AgentsMD/WebTools 目前硬编码 true；建议从 settings/per-workspace
   policy 读取（data/docs 工作区可关 web、外部仓库可关 AgentsMD），并把 prompt 工具清单由启用集合生成。
 - runtime 的 artifact scanner 已跳过 `.zeokeel`（`runtime/artifacts.go:189`）；无需改动，确认即可。
+
+### 8.7 第七轮：tool-gap 审计 + agent 层缺失工具（user: 修复全部）
+
+- 新增 `audit/tool-gap.md`：DSH `_ref/src/app/tools/{executor,main,tool}.ts` + `sessions.ts:55-63` 对照
+  （missing/equivalent/intentionally-absent），含跨 scope 建议。
+- 本轮实现（agent scope）：
+  1. `read_image`（`internal/agent/imageread.go`，注册于 `tools.go`）：os.Root 内路径、png/jpeg/gif/webp
+     识别、尺寸（stdlib DecodeConfig；webp 仅格式）、10MB 上限、目录/超大/非图片/越界 → refusal observation。
+     **模型端点是 text-only**：图片像素不发给模型，返回诚实说明（可用 bash+`file`/ImageMagick/OCR，或
+     `ask_user_question` 让人看）。升级路径（eino EnhancedInvokableTool + 支持 image tool content 的
+     provider）已记录；未做假实现。
+  2. `job_list`（`internal/agent/jobs.go`，`agent.New` 注册）：列本 Runner 后台 job（id/status/exit/description，
+     最新在前；空→"no background jobs"），补齐 DSH `job_output/job_list/job_kill` 三件套。
+  3. `subagent` 工具名 parity：eino subagent middleware 默认名 `agent` → `ToolName:"subagent"`（DSH 同名）。
+- Domain 工具（`ack/handback/thread_unrelated/request_status`）**已由 runtime owner（fix-runtime）实现并经
+  nih-runtime 确认**（`internal/runtime/artifacts.go`，`rc3_test.go TestWorkerToolListHasDSHExecutorTools`，
+  worker prompt 已列出）；本 agent 未改 runtime；审计标记为 EQUIV（粒度差异 handback thread vs trigger、
+  ack 无 purpose 元数据已记录）。
+- 测试：`TestReadImageMetadataAndRefusals`、`TestJobListReportsTrackedJobs`、
+  `TestSubagentToolIsNamedSubagent`，并更新 `TestAllBuiltinFeaturesToolNames` 的期望工具名。
+- 验证：`CGO_ENABLED=0 go test ./internal/agent/... -count=1` ok（19.4s）；`CGO_ENABLED=1 -race
+  ./internal/agent/` ok（24.2s）；`go build ./...` ok；gofmt/vet clean。
+- 跨 scope（未改）：runtime prompt（`worker.go:580-582`）可补 `read_image/job_list/job_kill` 与
+  `ack/handback/thread_unrelated/request_status`；`orchestrator_read` 分页资源读取仍缺（runtime，高价值）；
+  pwsh/Windows shell 有意缺席；`internal/prompts/defaults.go:16-19` tools 段可补新工具名。

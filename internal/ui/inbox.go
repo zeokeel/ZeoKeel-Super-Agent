@@ -87,7 +87,7 @@ func (a *App) inboxPage(c *mui.Context) {
 		total := ov.PersonCount()
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			chip(c, tk, view.AttentionLabel(total), tk.Amber, tk.AmberSoft)
-			mui.Text(c, "批准后才会开工；拒绝不会建任务").FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, "新的请求会直接进入任务；旧的“批准”请求仍列在下面").FontSize(fs(12)).TextColor(tk.TextFaint)
 			mui.Spacer(c)
 			mui.Text(c, "j / k 选择 · Enter 打开").FontSize(fs(11)).TextColor(tk.TextFaint)
 		})
@@ -103,7 +103,7 @@ func (a *App) inboxPage(c *mui.Context) {
 		mui.Scroll(c).Grow(1).Children(func() {
 			mui.Column(c).Gap(10).Children(func() {
 				if len(ov.Approvals) > 0 {
-					mui.Text(c, "请求批准").FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
+					mui.Text(c, "旧式请求（需要批准）").FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
 					for i := range ov.Approvals {
 						ap := ov.Approvals[i]
 						a.approvalInboxCard(c, ap, selected == i)
@@ -126,7 +126,7 @@ func (a *App) attentionInbox(c *mui.Context, avm *view.AttentionVM) {
 	tk := a.tk
 	mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 		chip(c, tk, view.AttentionLabel(avm.Count()), tk.Amber, tk.AmberSoft)
-		mui.Text(c, "批准后才会开工；拒绝不会建任务").FontSize(fs(12)).TextColor(tk.TextFaint)
+		mui.Text(c, "新的请求会直接进入任务；旧的“批准”请求仍列在下面").FontSize(fs(12)).TextColor(tk.TextFaint)
 	})
 	mui.Scroll(c).Grow(1).Children(func() {
 		mui.Column(c).Gap(10).Children(func() {

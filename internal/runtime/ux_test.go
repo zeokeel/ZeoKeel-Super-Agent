@@ -173,20 +173,20 @@ func TestAttentionInboxUnifiesAndNotifiesOnce(t *testing.T) {
 	var notified []AttentionItem
 	rt.SetAttentionNotify(func(item AttentionItem) { notified = append(notified, item) })
 
-	// One IM proposal.
-	if _, err := rt.ReceiveTrigger(pendingIMTrigger("dingtalk", "colleague", "dm_1", "m1",
-		"把 webapp 的登录超时改一下")); err != nil {
+	// A Ticket that needs a person (failed work) is an attention item; routine
+	// IM messages are ordinary Tickets and do not appear here (DSH alignment).
+	if err := rt.NewConversation("ws_web", "在 webapp 里跑个命令"); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && len(rt.attentionItems(nil)) == 0 {
-		time.Sleep(10 * time.Millisecond)
+	id := soleTicketID(t, eng)
+	if err := eng.Report(id, domain.ReportFailed, "模型失败"); err != nil {
+		t.Fatal(err)
 	}
 	rt.Publish()
 	rt.Publish() // a second publish must not repeat the notification
 	items := rt.AttentionItems()
-	if len(items) != 1 || items[0].Kind != "proposal" || items[0].Source != "dingtalk" ||
-		items[0].Sender != "colleague" || items[0].Text == "" {
+	if len(items) != 1 || items[0].Kind != "ticket" || items[0].TicketID != string(id) ||
+		items[0].Text == "" || items[0].Workspace != "ws_web" {
 		t.Fatalf("attention items = %+v", items)
 	}
 	if len(notified) != 1 {
@@ -199,16 +199,10 @@ func TestAttentionInboxUnifiesAndNotifiesOnce(t *testing.T) {
 	if att == nil || len(att.Items) != rt.AttentionCount() {
 		t.Fatalf("published attention = %+v, count %d", att, rt.AttentionCount())
 	}
-	if att.Items[0].Kind != "proposal" || att.Items[0].DecisionID == "" {
-		t.Fatalf("attention item = %+v", att.Items[0])
-	}
-	// One canonical number on every surface: AttentionCount == AttentionVM.Items
-	// == OverviewVM.PersonCount (nih-ui nav badge/inbox/overview).
 	if got := rt.snap.Overview().PersonCount(); got != rt.AttentionCount() || got != att.Count() {
 		t.Fatalf("counts disagree: overview=%d attention=%d count=%d",
 			got, rt.AttentionCount(), att.Count())
 	}
-	_ = eng
 }
 
 func TestSkipOnboardingEnablesDemoMode(t *testing.T) {

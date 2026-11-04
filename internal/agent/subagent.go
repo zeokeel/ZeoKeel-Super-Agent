@@ -51,7 +51,8 @@ func (r *Runner) newSubagents(ctx context.Context, mb model.ToolCallingChatModel
 		}
 		agents = append(agents, ag)
 	}
-	mw, err := subagent.New(ctx, &subagent.Config{SubAgents: agents})
+	// DSH calls its worker tool "subagent"; use the same name for parity.
+	mw, err := subagent.New(ctx, &subagent.Config{SubAgents: agents, ToolName: "subagent"})
 	if err != nil {
 		return nil, fmt.Errorf("agent: subagent middleware: %w", err)
 	}

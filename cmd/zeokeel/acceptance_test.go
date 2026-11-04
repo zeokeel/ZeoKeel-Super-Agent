@@ -126,31 +126,25 @@ func TestA2ColleagueRequestCarriesTheFourParts(t *testing.T) {
 	}
 }
 
-// A3: every IM message becomes one pending approval item, including the
-// operator's own. Nothing runs until the operator approves it.
+// A3: an admitted IM request runs directly (DSH flow). The gate admits it, Eval
+// accepts and a Ticket exists; there is no IM approval step by default.
 func TestA3OperatorRequestRunsWithoutApproval(t *testing.T) {
 	e := newAcceptanceEngine(t)
 	tr := chat("dingtalk", "m2", "me", "把 webapp 的登录超时改成可配置")
 	tr.Self = true
 	tr.Addressed = domain.Addressed{Direct: true}
-	out, err := e.Receive(tr)
-	if err != nil {
+	if _, err := e.Receive(tr); err != nil {
 		t.Fatal(err)
 	}
-	out = evalEngine(e)
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("an IM message must wait as a proposal: %+v", out)
+	out := evalEngine(e)
+	if out.Proposal {
+		t.Fatal("an IM message must not become a proposal by default")
 	}
-	proposals := e.Proposals()
-	if len(proposals) != 1 {
-		t.Fatalf("expected one proposal, got %d", len(proposals))
+	if out.Ticket == "" {
+		t.Fatalf("an explicit IM request must start work: %+v", out)
 	}
-	appr, err := e.Approve(proposals[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if appr.Ticket == "" {
-		t.Fatalf("approval must create the ticket: %+v", appr)
+	if len(e.Proposals()) != 0 {
+		t.Fatalf("no proposal may exist for an explicit IM request: %d", len(e.Proposals()))
 	}
 }
 
@@ -216,15 +210,11 @@ func TestA7RepeatedDeliveryCreatesOneTicket(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := evalEngine(e)
-	if !out.Proposal {
-		t.Fatalf("expected a proposal, got %+v", out)
+	if out.Ticket == "" {
+		t.Fatalf("an explicit IM request must start work: %+v", out)
 	}
-	if len(e.Proposals()) != 1 {
-		t.Fatalf("a duplicate delivery must not add a proposal")
-	}
-	appr, err := e.Approve(e.Proposals()[0].ID)
-	if err != nil || appr.Ticket == "" {
-		t.Fatalf("approve: %+v %v", appr, err)
+	if len(e.Proposals()) != 0 {
+		t.Fatalf("no proposal may exist: %d", len(e.Proposals()))
 	}
 	// A redelivery of the already-decided message must not create anything new.
 	if _, err := e.Receive(tr); err != nil && !strings.Contains(err.Error(), "duplicate") {
@@ -236,8 +226,8 @@ func TestA7RepeatedDeliveryCreatesOneTicket(t *testing.T) {
 	}
 }
 
-// The overview a person opens must show real work: the ticket the operator
-// approved appears as something to look at, not as a number in a health panel.
+// The overview a person opens must show real work: the ticket an explicit IM
+// request created appears as something to look at, not as a health number.
 func TestOverviewShowsTheTicketThatExists(t *testing.T) {
 	e := newAcceptanceEngine(t)
 	tr := chat("dingtalk", "m7", "me", "webapp 登录超时改成可配置")
@@ -247,20 +237,15 @@ func TestOverviewShowsTheTicketThatExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := evalEngine(e)
-	if !out.Proposal {
-		t.Fatalf("expected a proposal, got %+v", out)
+	if out.Ticket == "" {
+		t.Fatalf("an explicit IM request must create a ticket: %+v", out)
 	}
-	proposals := e.Proposals()
-	if len(proposals) != 1 {
-		t.Fatalf("expected one proposal, got %d", len(proposals))
-	}
-	appr, err := e.Approve(proposals[0].ID)
-	if err != nil || appr.Ticket == "" {
-		t.Fatalf("approve: %+v %v", appr, err)
+	if len(e.Proposals()) != 0 {
+		t.Fatalf("no approval may be pending: %d", len(e.Proposals()))
 	}
 	_ = view.NewSnapshot() // the projection is the runtime's job; this checks the fact
-	if _, ok := e.TicketSnapshot(appr.Ticket); !ok {
-		t.Fatal("the ticket is not readable after it was approved")
+	if _, ok := e.TicketSnapshot(out.Ticket); !ok {
+		t.Fatal("the ticket is not readable after it was created")
 	}
 }
 
