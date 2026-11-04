@@ -11,69 +11,15 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 
-	"github.com/zeokeel/super-agent/internal/humanfmt"
 	"github.com/zeokeel/super-agent/internal/view"
 )
-
-// approve/reject run off the frame with a per-item pending state and a touch of
-// feedback: approving starts work, rejecting is a real decision.
-func (a *App) approve(decisionID string) {
-	if a.cmd == nil || decisionID == "" {
-		return
-	}
-	if a.inboxPending[decisionID] {
-		return
-	}
-	a.inboxPending[decisionID] = true
-	delete(a.inboxErr, decisionID)
-	a.runOffMain(func() {
-		err := a.cmd.Approve(decisionID)
-		a.postToUI(func() {
-			delete(a.inboxPending, decisionID)
-			if err != nil {
-				a.inboxErr[decisionID] = err.Error()
-				return
-			}
-			a.toast("已批准：任务开始执行", toastOK)
-		})
-	})
-}
-
-func (a *App) reject(decisionID string) {
-	if a.cmd == nil || decisionID == "" {
-		return
-	}
-	if a.inboxPending[decisionID] {
-		return
-	}
-	a.inboxPending[decisionID] = true
-	delete(a.inboxErr, decisionID)
-	a.runOffMain(func() {
-		err := a.cmd.Reject(decisionID)
-		a.postToUI(func() {
-			delete(a.inboxPending, decisionID)
-			if err != nil {
-				a.inboxErr[decisionID] = err.Error()
-				return
-			}
-			if _, ok := a.cmd.(RejectUndoer); ok {
-				// A real undo channel only: no fake 撤销 button.
-				a.toastAction("已拒绝：不会建任务", toastOK, "撤销", func() {
-					startUndoReject(a, decisionID)
-				})
-				return
-			}
-			a.toast("已拒绝：不会建任务；重新批准也来得及", toastOK)
-		})
-	})
-}
 
 // inboxPage draws 收件箱.
 func (a *App) inboxPage(c *mui.Context) {
 	tk := a.tk
 	ov := a.snap.Overview()
 	mui.Column(c).Fill().Padding(24).Gap(12).Children(func() {
-		heading(c, tk, "收件箱", "只有这些事需要你：批准请求，或回答任务的问题")
+		heading(c, tk, "收件箱", "只有这些事需要你：任务的问题、受阻与失败")
 		// The runtime's unified attention inbox is the source of truth; the
 		// overview's two lists are the fallback (older runtimes, no projection yet).
 		if avm := a.snap.Attention(); avm != nil && len(avm.Items) > 0 {
@@ -87,11 +33,11 @@ func (a *App) inboxPage(c *mui.Context) {
 		total := ov.PersonCount()
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			chip(c, tk, view.AttentionLabel(total), tk.Amber, tk.AmberSoft)
-			mui.Text(c, "新的请求会直接进入任务；旧的“批准”请求仍列在下面").FontSize(fs(12)).TextColor(tk.TextFaint)
+			mui.Text(c, "任务的问题、受阻与失败会出现在这里").FontSize(fs(12)).TextColor(tk.TextFaint)
 			mui.Spacer(c)
 			mui.Text(c, "j / k 选择 · Enter 打开").FontSize(fs(11)).TextColor(tk.TextFaint)
 		})
-		if len(ov.Approvals) == 0 && len(ov.NeedsPerson) == 0 {
+		if len(ov.NeedsPerson) == 0 {
 			card(c, tk, 14, func() {
 				mui.Text(c, "没有待你决定的事").FontSize(fs(16)).Bold().TextColor(tk.Text)
 				mui.Text(c, "新的请求或任务问题会出现在这里；窗口关着时也会发系统通知。").
@@ -102,19 +48,10 @@ func (a *App) inboxPage(c *mui.Context) {
 		selected := a.inboxSel
 		mui.Scroll(c).Grow(1).Children(func() {
 			mui.Column(c).Gap(10).Children(func() {
-				if len(ov.Approvals) > 0 {
-					mui.Text(c, "旧式请求（需要批准）").FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
-					for i := range ov.Approvals {
-						ap := ov.Approvals[i]
-						a.approvalInboxCard(c, ap, selected == i)
-					}
-				}
-				if len(ov.NeedsPerson) > 0 {
-					mui.Text(c, "任务需要你").FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
-					for i := range ov.NeedsPerson {
-						r := ov.NeedsPerson[i]
-						a.ticketInboxRow(c, r, selected == len(ov.Approvals)+i)
-					}
+				mui.Text(c, "任务需要你").FontSize(fs(13)).Bold().TextColor(tk.TextMuted)
+				for i := range ov.NeedsPerson {
+					r := ov.NeedsPerson[i]
+					a.ticketInboxRow(c, r, selected == i)
 				}
 			})
 		})
@@ -126,12 +63,16 @@ func (a *App) attentionInbox(c *mui.Context, avm *view.AttentionVM) {
 	tk := a.tk
 	mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 		chip(c, tk, view.AttentionLabel(avm.Count()), tk.Amber, tk.AmberSoft)
-		mui.Text(c, "新的请求会直接进入任务；旧的“批准”请求仍列在下面").FontSize(fs(12)).TextColor(tk.TextFaint)
+		mui.Text(c, "任务的问题、受阻与失败会出现在这里").FontSize(fs(12)).TextColor(tk.TextFaint)
 	})
 	mui.Scroll(c).Grow(1).Children(func() {
 		mui.Column(c).Gap(10).Children(func() {
 			for _, item := range avm.Items {
 				item := item
+				if item.Kind == "proposal" {
+					// Legacy proposal items are history now: attention-only inbox.
+					continue
+				}
 				card(c, tk, 12, func() {
 					mui.Row(c).Gap(10).AlignItems(mui.Start).Children(func() {
 						icon := icBell
@@ -164,14 +105,6 @@ func (a *App) attentionInbox(c *mui.Context, avm *view.AttentionVM) {
 						})
 						mui.Column(c).Gap(6).AlignItems(mui.End).Children(func() {
 							mui.Row(c).Gap(6).Children(func() {
-								if item.CanApprove() {
-									if b := mui.PrimaryButton(c, "批准").Height(26).FontSize(fs(12)); b.Clicked() {
-										a.approve(item.DecisionID)
-									}
-									if b := mui.Button(c, "拒绝").Height(26).FontSize(fs(12)); b.Clicked() {
-										a.reject(item.DecisionID)
-									}
-								}
 								if item.Has("answer") {
 									if row, ok := a.ticketRowByID(item.TicketID); ok && row.Attention != nil {
 										if b := mui.Button(c, "回答").Height(26).FontSize(fs(12)); b.Clicked() {
@@ -199,9 +132,6 @@ func (a *App) attentionInbox(c *mui.Context, avm *view.AttentionVM) {
 									}
 								}
 							})
-							if pending := a.inboxPending[item.DecisionID]; pending {
-								spinner(c, tk, "处理中…")
-							}
 						})
 					})
 				})
@@ -230,63 +160,6 @@ func (a *App) ticketRowByID(id string) (view.TicketRow, bool) {
 		}
 	}
 	return view.TicketRow{}, false
-}
-
-// approvalInboxCard is one IM request: who, what they said, what it would do, and
-// Approve/Reject with their own pending state.
-func (a *App) approvalInboxCard(c *mui.Context, ap view.ApprovalRow, selected bool) {
-	tk := a.tk
-	if selected {
-		a.inboxFocus(ap.DecisionID)
-	}
-	card(c, tk, 12, func() {
-		mui.Row(c).Gap(10).AlignItems(mui.Start).Children(func() {
-			mui.Row(c).Size(30, 30).Radius(8).Background(tk.AmberSoft).Center().
-				Children(func() { mui.Icon(c, icBell).FontSize(fs(15)).TextColor(tk.Amber) })
-			mui.Column(c).Grow(1).Gap(4).Children(func() {
-				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, ap.From+" 找你").FontSize(fs(14)).Bold().TextColor(tk.Text)
-					textChip(c, tk, ap.Source)
-					textChip(c, tk, ap.Workspace)
-					if ap.Age > 0 {
-						mui.Text(c, humanfmt.Ago(ap.Age)).FontSize(fs(10)).TextColor(tk.TextFaint)
-					}
-				})
-				mui.Text(c, "他说："+ap.Said).FontSize(fs(13)).TextColor(tk.TextMuted)
-				mui.Text(c, "要做："+ap.Intent).FontSize(fs(13)).TextColor(tk.Text)
-				if len(ap.Sensitive) > 0 {
-					mui.Row(c).Gap(6).Wrap().Children(func() {
-						for _, s := range ap.Sensitive {
-							mui.Text(c, "注意："+s).FontSize(fs(11)).TextColor(tk.Amber)
-						}
-					})
-				}
-			})
-			mui.Column(c).Gap(6).AlignItems(mui.End).Children(func() {
-				pending := a.inboxPending[ap.DecisionID]
-				mui.Row(c).Gap(6).Children(func() {
-					approve := mui.PrimaryButton(c, "批准").Label("批准").Height(26).FontSize(fs(12))
-					if pending {
-						approve.Disabled(true)
-					} else if approve.Clicked() {
-						a.approve(ap.DecisionID)
-					}
-					reject := mui.Button(c, "拒绝").Label("拒绝").Height(26).FontSize(fs(12))
-					if pending {
-						reject.Disabled(true)
-					} else if reject.Clicked() {
-						a.reject(ap.DecisionID)
-					}
-				})
-				if pending {
-					spinner(c, tk, "处理中…")
-				}
-				if errText := a.inboxErr[ap.DecisionID]; errText != "" {
-					mui.Text(c, errText).FontSize(fs(11)).TextColor(tk.Red)
-				}
-			})
-		})
-	})
 }
 
 // ticketInboxRow is one Ticket that needs a person: answer, retry or open.
@@ -332,7 +205,7 @@ func (a *App) inboxKeys(c *mui.Context) {
 	if ov == nil {
 		return
 	}
-	n := len(ov.Approvals) + len(ov.NeedsPerson)
+	n := len(ov.NeedsPerson)
 	if n == 0 {
 		return
 	}
@@ -343,10 +216,7 @@ func (a *App) inboxKeys(c *mui.Context) {
 		a.inboxSel = (a.inboxSel - 1 + n) % n
 	}
 	if c.Shortcut(0, mui.KeyEnter) {
-		if a.inboxSel < len(ov.Approvals) {
-			return // Enter on a request leaves the choice to its buttons
-		}
-		if r := ov.NeedsPerson[a.inboxSel-len(ov.Approvals)]; r.Attention != nil {
+		if r := ov.NeedsPerson[a.inboxSel]; r.Attention != nil {
 			a.openAnswer(r)
 		} else {
 			a.openTicket(r.ID)

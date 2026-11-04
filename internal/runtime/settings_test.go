@@ -246,7 +246,7 @@ func TestAllowlistSettingTakesEffect(t *testing.T) {
 		// A colleague the policy admits gets an approval proposal; one it does not
 		// admit is filtered before either a proposal or a Ticket exists.
 		ev := evalNow(eng)
-		return ev.Ticket != "" || ev.Proposal
+		return ev.Ticket != ""
 	}
 	if ask("colleague") {
 		t.Fatal("nobody is allowed yet")

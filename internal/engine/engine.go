@@ -34,12 +34,6 @@ var ErrNotRetryable = errors.New("engine: the ticket is not retryable")
 // ErrNotPaused reports a resume when processing is not paused.
 var ErrNotPaused = errors.New("engine: processing is not paused")
 
-// ErrNotRejected reports an undo on a Decision that is not a rejected proposal.
-var ErrNotRejected = errors.New("engine: the decision is not a rejected proposal")
-
-// ErrUndoSuperseded reports an undo blocked by a newer decision on the Thread.
-var ErrUndoSuperseded = errors.New("engine: a newer decision on the thread supersedes this rejection")
-
 // contextBackground is the parent context for one assessor call.
 func contextBackground() context.Context { return context.Background() }
 
@@ -251,9 +245,7 @@ type Outcome struct {
 	Decision   domain.Decision
 	// NeedsPerson is set when the Router could not choose a workspace.
 	NeedsPerson bool
-	// Proposal is true when the request waits for the operator's approval.
-	Proposal bool
-	Question string
+	Question    string
 	// Held is true when the Trigger was accepted but processing is paused.
 	Held bool
 }
@@ -325,12 +317,6 @@ func copyDecision(d domain.Decision) domain.Decision {
 		m := *d.Mandate
 		m.Rules = append([]string(nil), d.Mandate.Rules...)
 		out.Mandate = &m
-	}
-	if d.Proposal != nil {
-		pr := *d.Proposal
-		pr.Plan = append([]string(nil), d.Proposal.Plan...)
-		pr.Sensitive = append([]string(nil), d.Proposal.Sensitive...)
-		out.Proposal = &pr
 	}
 	return out
 }
@@ -724,20 +710,6 @@ func (e *Engine) Feed() []FeedItem {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Trigger.At.Before(items[j].Trigger.At) })
 	return items
-}
-
-// Proposals returns the decisions waiting for the operator's approval.
-func (e *Engine) Proposals() []domain.Decision {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	out := make([]domain.Decision, 0)
-	for _, d := range e.decisions {
-		if d.Kind == domain.DecPropose {
-			out = append(out, copyDecision(d))
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
 }
 
 // TriggerOf returns the Trigger a decision came from.

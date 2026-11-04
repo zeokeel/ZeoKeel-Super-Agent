@@ -14,17 +14,9 @@ import (
 // F-04 / design §6.5 "诚实状态").
 func TestPersonCountAgreesAcrossTheSurfaces(t *testing.T) {
 	a := newTestApp(t, false)
-	ov := viewtest.DemoOverview(a.now)
-	ov.NeedsPerson = ov.NeedsPerson[:2]
-	ov.Approvals = []view.ApprovalRow{{
-		DecisionID: "d-9", From: "张三", Source: "钉钉", Said: "把用量发我",
-		Intent: "跑 acme 的用量查询", Deliverable: "report.md", Workspace: "acme/data",
-	}}
-	a.snap.PublishOverview(ov)
-
 	tt := mui.NewTester(a.view, 1440, 900)
-	// Two Tickets wait for a person and one request waits for approval: three on
-	// the chip, three in the heading, and the nav badge that links to this page.
+	// Three Tickets wait for a person: three on the chip, three in the heading,
+	// three on the nav badge that links to this page.
 	wantTexts(t, tt, "待你决定 3", "需要你关注的只有 3 件事")
 	if got := view.Nav(a.snap.Overview())[1].Count; got != 3 {
 		t.Fatalf("the sidebar badge says %d, the chip says 3", got)

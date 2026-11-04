@@ -143,7 +143,7 @@ func TestWorkerToolListHasDSHExecutorTools(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"report", "present", "ask_user_question", "follow",
-		"ack", "handback", "thread_unrelated", "request_status"} {
+		"ack", "handback", "thread_unrelated", "request_status", "read_resource"} {
 		if !names[want] {
 			t.Fatalf("worker tool %q missing; have %v", want, names)
 		}
@@ -195,3 +195,83 @@ func TestSuperAgentChatRequestHasNoTools(t *testing.T) {
 }
 
 var _ tool.BaseTool = nil
+
+func TestReadResourcePagingOwnershipAndRedaction(t *testing.T) {
+	rt, eng, _ := newRound3(t)
+	if err := rt.NewConversation("ws_web", "在 webapp 里跑个命令"); err != nil {
+		t.Fatal(err)
+	}
+	id := soleTicketID(t, eng)
+	tk, _ := eng.TicketSnapshot(id)
+	// Own ticket page.
+	raw, err := rt.readResource(tk, ReadResourceInput{Resource: "ticket"})
+	if err != nil || !strings.Contains(raw, `"number":1`) {
+		t.Fatalf("ticket page = %q %v", raw, err)
+	}
+	// Inputs page: paging + redaction.
+	if err := rt.deliverInput(id, domain.Input{ID: "in-1", Kind: domain.InputNote,
+		Text: "use sk-abcdef123456 please", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = rt.readResource(tk, ReadResourceInput{Resource: "inputs", Offset: 1, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, "sk-abcdef123456") || !strings.Contains(raw, "[redacted]") {
+		t.Fatalf("inputs page not redacted: %s", raw)
+	}
+	if !strings.Contains(raw, `"limit":1`) {
+		t.Fatalf("paging not applied: %s", raw)
+	}
+	// Own origin trigger; another trigger is refused.
+	raw, err = rt.readResource(tk, ReadResourceInput{Resource: "trigger/" + string(tk.Origin)})
+	if err != nil || !strings.Contains(raw, `"source":"local"`) {
+		t.Fatalf("own trigger = %q %v", raw, err)
+	}
+	if _, err := rt.readResource(tk, ReadResourceInput{Resource: "trigger/not-mine"}); err == nil {
+		t.Fatal("another ticket's trigger was readable")
+	}
+	// Own thread works; a foreign thread is refused.
+	tr, _ := eng.Trigger(tk.Origin)
+	key := domain.ThreadKey(tr.Scope, tr.Threads[0].Source, tr.Threads[0].ID)
+	if _, err := rt.readResource(tk, ReadResourceInput{Resource: "thread/" + key}); err != nil {
+		t.Fatalf("own thread: %v", err)
+	}
+	if _, err := rt.readResource(tk, ReadResourceInput{Resource: "thread/global|local|not-mine"}); err == nil {
+		t.Fatal("a foreign thread was readable")
+	}
+	if _, err := rt.readResource(tk, ReadResourceInput{Resource: "bogus"}); err == nil {
+		t.Fatal("unknown resource accepted")
+	}
+}
+
+func TestBrowserPrerequisites(t *testing.T) {
+	oldLook, oldCmd := prereqLookPath, prereqCommand
+	defer func() { prereqLookPath, prereqCommand = oldLook, oldCmd }()
+
+	rt, _, _ := newRound3(t)
+	prereqLookPath = func(name string) (string, error) {
+		if name == "node" || name == "npx" {
+			return "/usr/bin/" + name, nil
+		}
+		return "", fmt.Errorf("not found")
+	}
+	prereqCommand = func(name string, args ...string) (string, error) {
+		return "v20.11.0\n", nil
+	}
+	pre := rt.BrowserPrerequisites()
+	if !pre.NodeInstalled || !pre.NpxInstalled || !pre.Ready() || pre.NodeVersion != "v20.11.0" {
+		t.Fatalf("prereq = %+v", pre)
+	}
+	// Missing npx: not ready, actionable hint, and no fake browser claim.
+	prereqLookPath = func(name string) (string, error) {
+		if name == "node" {
+			return "/usr/bin/node", nil
+		}
+		return "", fmt.Errorf("not found")
+	}
+	pre = rt.BrowserPrerequisites()
+	if pre.NpxInstalled || pre.Ready() || !strings.Contains(pre.Detail, "node/npx") {
+		t.Fatalf("missing npx prereq = %+v", pre)
+	}
+}

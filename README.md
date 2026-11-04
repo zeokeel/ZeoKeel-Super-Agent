@@ -3,30 +3,51 @@
 你的 AI 同事：从聊天里接活，自己研判该不该做、该派给哪个项目，干完把交付物和结论送回原处。
 单人模式、单机、单二进制、原生窗口——**不是又一个聊天框**。
 
-> **当前状态：`1.0.0-rc.3` 发布候选（2026-11-04）。** rc.3 对齐 DSH 的主链：**明确请求直接接单**
-> （admitted IM/GitHub → Eval → Ticket；不再默认“每条消息先审批”），推断请求按 accept mode off/observe/auto，
-> auto 需要匹配规则；`DecPropose` 只保留给显式 opt-in 的 `Policy.RequireApproval`（仅推断），收件箱只显示
-> “旧式请求（需要批准）”。另新增：项目面板（概览/设置/统计）、per-workspace 浏览器 + `chrome-devtools-mcp`
-> （`mcp__browser__*` 只注入该项目）、per-workspace 技能开关、`read_image`/`job_list`/`subagent`/域工具。
-> **仍未完成**：真正在原项目执行（执行副本 + 显式 apply-back）、系统钥匙串（SQLite 0600）、多窗口、
-> 自动更新只检查不下载、真实飞书/DWS 租户 E2E、`read_image` 无视觉（模型端点 text-only）、无 `orchestrator_read`、
-> 浏览器需 Chrome/Edge + node/npx；打包仍只有 tar/zip（无 `.dmg`/deb/安装器）。
-> 全量闸门由 Lead 在 bump VERSION 后统一跑（本文不预称全绿）；发布说明见 [RELEASE-NOTES-v1.0.0-rc.3.md](RELEASE-NOTES-v1.0.0-rc.3.md)。
+> **当前状态：`1.0.0-rc.4` 发布候选（2026-11-04）。** rc.4 把**旧式审批/提案机制彻底删除**：
+> Decision 只有 accept/stop/ignore/unavailable；没有 Approve/Reject/UndoReject/proposal/`RequireApproval`；
+> 旧 DB 里的 `propose` 行载入为 `ignore`（`legacyImport`），旧 `requireApproval` 被忽略；收件箱只服务
+> **任务问题/受阻/失败**（attention-only）。另：浏览器 MCP 前置检查（Node.js/npx，缺失时警告+安装命令+重新检查）、
+> Worker 新增 `read_resource`（DSH `orchestrator_read` 等价，分页读自己的 ticket/inputs/trigger/thread，只读脱敏）。
+> **仍未完成**：真正在原项目执行（执行副本 + apply-back）、系统钥匙串（SQLite 0600）、多窗口、自动更新只检查不下载、
+> 真实飞书/DWS 租户 E2E、`read_image` 无像素（需 vision endpoint）、浏览器需 Chrome/Edge+node/npx；打包仍无 `.dmg`/deb/安装器。
+> 全量闸门由 Lead 在 bump VERSION 后统一跑（本文不预称全绿）；发布说明见 [RELEASE-NOTES-v1.0.0-rc.4.md](RELEASE-NOTES-v1.0.0-rc.4.md)。
 > 渠道契约见 [design/im-channels.md](design/im-channels.md)，变更见 [CHANGELOG](CHANGELOG.md)。
 
-## 当前状态（2026-11-04，rc.3 候选）
+## 当前状态（2026-11-04，rc.4 候选）
 
 | 层 | 已实现（代码证据见设计 §13） | 未完成 / 限制 |
 | --- | --- | --- |
-| 领域与授权 | Deterministic gate（Strength/Basis）、admission table、bot list、团队规则、accept mode、Mandate/Policy version、两阶段 Eval、Input/Delivery、PR/Issue 生命周期（`follow` + `CloseThread → ThreadClosed`）、followup owners、hand-back、revalidate、pause/resume/stop/retry、`AnswerAttention`、投递三段式；**DSH 对齐**：admitted 的明确 IM/GitHub 请求由 Eval 直接接单 → Ticket；推断请求按 accept mode off/observe/auto（auto 需匹配规则）；`DecPropose` 只在显式 opt-in `RequireApproval` 且非 explicit 时产生；旧 proposal 在收件箱标「旧式请求（需要批准）」，拒绝无损可撤销 | 领域仍未搬 `Thread`/`UserError`；Eval 的 deadline/暂停细节仍在演进；`RequireApproval` 是 opt-in 兼容路径，非默认 |
+| 领域与授权 | Deterministic gate（Strength/Basis）、admission table、bot list、团队规则、accept mode、Mandate/Policy version、两阶段 Eval、Input/Delivery、PR/Issue 生命周期（`follow` + `CloseThread → ThreadClosed`）、followup owners、hand-back、revalidate、pause/resume/stop/retry、`AnswerAttention`、投递三段式；**DSH 对齐**：admitted 的明确 IM/GitHub 请求由 Eval 直接接单 → Ticket；推断按 accept mode off/observe/auto（auto 需规则）；**审批机制已彻底移除**：Decision 只有 accept/stop/ignore/unavailable，旧 DB `propose` 载入为 ignore（legacyImport），旧 `requireApproval` 忽略 | 领域仍未搬 `Thread`/`UserError`；Eval 的 deadline/暂停细节仍在演进；无任何 proposal/Approval API |
 | 执行 | 每 Ticket 一个 Worker 会话 + inbox；eino `filesystem`/`backgroundtask`/`patchtoolcalls`/`reduction`/`summarization`/`subagent`；skills/MCP/定时/目标；崩溃恢复；`execution.prepare`（`sh -c`、10m、scrub 后 `ZEOKEEL_*`、失败不自动重试）；30 分钟后台作业规则；**UI 命令异步边界**：发送/新建会话/保存设置都提交到 runtime 后台命令队列，面板显示「发送中/保存中/渠道重启中」，主线程不等 DB/模型/渠道 | `Runner.Resume` 已删除；无 steer/inject；跨工作区自动路由仍只靠 Router |
 | 来源 | GitHub（notifications + Issue/PR 评论；receive-all/CI 仅配置结构）；IM：**飞书官方 SDK 长连接（ws：新装默认/推荐；旧凭据迁移时 pin longpoll）与 HTTP 长轮询（longpoll，显式 fallback）**，**钉钉默认 DWS 个人 OAuth CLI（长驻 NDJSON consumer，无 poll/cursor）**，官方 Stream SDK 为 bot 模式可选 transport；按渠道三态启停（显式开关优先，缺省按凭据/flag 推导）、设置变更只重启变化渠道、失败批不推进 cursor、DWS 断线 1s→30s 重连并按 event id 去重；本地面板；定时任务 | 无 Source 实例表/面板“添加来源”：GitHub 仍需 `-repo/-gh-login`；飞书 webhook 未实现、无 IM 媒体下载；检查只验证凭据/订阅，不代替真实消息 E2E |
-| 面板 | 日常导航：超级Agent / 收件箱 / 项目 / 执行 / 设置 + 折叠「诊断」；**收件箱统一「待你决定 N」**，含旧式 IM 请求批准与任务回答/重试/停止，拒绝后 10s 可撤销；输入条多行、Enter 换行、⌘/Ctrl+Enter 发送、target chip 聊天/项目（派活）；回答支持流式/Markdown/停止生成/复制；计划/待办可见；详情可**应用到项目**；原生 App/File/Edit/Window 菜单；系统 TextScale×`ui.font_scale`、ReduceMotion、HighContrast、Accent；设置›关于含版本/许可证/检查更新（只查询）；窗口记忆尺寸/位置、最小 1100×720 | 会话不能重命名/删除；评估组只读；删除有工单的项目会被拒绝；真正原项目执行/多窗口/自动下载未做 |
+| 面板 | 日常导航：超级Agent / 收件箱 / 项目 / 执行 / 设置 + 折叠「诊断」；**收件箱 attention-only**（任务问题/受阻/失败，无批准），统一「待你决定 N」；输入条多行、Enter 换行、⌘/Ctrl+Enter 发送、target chip 聊天/项目（派活）；回答支持流式/Markdown/停止生成/复制；计划/待办可见；详情可**应用到项目**；原生菜单；系统 TextScale×`ui.font_scale`、ReduceMotion、HighContrast、Accent；设置›关于版本/许可证/检查更新；浏览器 MCP 前显示 Node.js/npx 前置检查 | 会话不能重命名/删除；评估组只读；删除有工单项目拒绝；真正原项目执行/多窗口/自动下载未做 |
 | 项目与会话 | UI 把工作区叫**项目**：注册项目（名称/根目录/用途/类型 + 原生目录选择器；根目录归一为绝对路径，重复 root 拒绝；opaque `ws_*` ID，名字可改且历史不断）；项目页三 tab（概览/设置/统计），设置含 per-project 浏览器（Chrome/Edge、无头、CDP 端口、profile 只读）与技能开关，统计含会话/任务/进行中/等待/完成/失败/工具可用性（最近活动区无投影时空态）；项目→会话按操作员/超级Agent 分组，最近 50 条；详情分开「项目目录/执行副本」 | 删除仅限“没有工单”的项目；会话每项目 50 条上限；浏览器需 Chrome/Edge + node/npx；Agent 只在执行副本工作 |
-| 内置工具 | eino `plantask`（TaskCreate/Get/Update/List，任务 JSON 存 `.zeokeel/plan`）、**AGENTS.md 作为不可信仓库内容信封注入（≤64KB，带显式 untrusted 标记）**、`web_fetch`（仅 http(s)、DNS 解析后 pin IP、拒绝私网、显式 `Proxy:nil`、10s、2MiB、返回 untrusted-content 信封）、`web_search`（前 5 条，端点可用 `execution.web_search_url` 覆盖）；设置›执行有 `plan_tasks/agents_md/web_tools` 开关（默认开） | 无浏览器渲染/JS；web 检索仍是 HTML 解析，受站点反爬/限流影响；工具能力在工单里的可视化仍有限 |
+| 内置工具 | eino `plantask`（TaskCreate/Get/Update/List，任务 JSON 存 `.zeokeel/plan`）、**AGENTS.md 作为不可信仓库内容信封注入（≤64KB）**、`web_fetch`（http(s)、DNS pin、拒私网、`Proxy:nil`、2MiB）、`web_search`（前 5）、`read_image`（元数据-only，无像素）、`job_list`、`subagent`、`read_resource`（分页读自己的 ticket/inputs/trigger/thread）、域工具 `ack/handback/thread_unrelated/request_status` | web 检索仍是 HTML 解析；`read_image` 无视觉；DSH main orchestrator 工具集缺席；SuperAgent 无工具 |
 | 运维 | `status/check/setup/login/backup/archive/stop`（退出码 0/1/2/3；stop 写 STOPPED）；`-headless` 服务；slog JSON 日志按天轮转 14 天；supervisor；单实例锁；systemd/launchd；watchdog；**settings 保存说明真实生效方式**（来源=重启相关渠道几秒、执行=下次新工单、提示词=热更新、部署=重启后生效）；`status --json`/Inspect 对 secret 做 redaction | 无开机自启/休眠唤醒/自动更新；无设置页 Source 实例/规则编辑；真实 IM 凭据 E2E 仍待环境 |
 
-## rc.3 新增（2026-11-04）
+## rc.4 新增（2026-11-04）
+
+- **旧式审批/提案机制彻底删除**：Decision 只有 `accept`/`stop`/`ignore`/`unavailable`；没有
+  Approve/Reject/UndoReject/proposal/`RequireApproval`；旧 DB 里的 `propose` 行载入为 `ignore` 并记
+  `legacyImport`，旧 `requireApproval` 被忽略；审批 UI/文案全部移除，收件箱只显示**任务问题/受阻/失败**
+  （`internal/domain/ticket.go:10-13`、`internal/engine/persist.go:156-162`、`internal/engine/gate.go:52-56`、
+  `internal/ui/inbox.go:1-140`）。
+- **浏览器 MCP 前置检查**：`browser.Prerequisites` 检测 node/npx 及版本；缺失时项目页/设置显示醒目警告、
+  当前 OS 的安装命令（brew/winget/apt 等）、nodejs.org 链接与「重新检查」；「启动浏览器」被禁用并说明原因；
+  不自动安装、不假装运行（`internal/browser/prereq.go:1-140`、`internal/runtime/rc3.go:170-205`、
+  `internal/ui/workspacepanel.go:613-692`、`internal/browser/manager.go:189-197`）。
+- **浏览器 MCP 前置检查（Node.js/npx）**：`browser.Prerequisites` 检测 node/npx 与版本；缺失时设置/项目页显示醒目警告、
+  当前系统安装命令（brew/winget/apt 等）、nodejs.org 链接与「重新检查」；「启动浏览器」禁用并说明原因；
+  不自动安装、不假装运行（`internal/browser/prereq.go:1-140`、`internal/runtime/rc3.go:170-205`、
+  `internal/ui/workspacepanel.go:613-692`、`internal/browser/manager.go:189-197`）。
+- **`read_resource`（DSH `orchestrator_read` 等价）**：分页读**自己的** ticket/inputs/trigger/thread（只读、路径/归属校验、
+  文本 redaction；offset/limit，默认 20、上限 200）；Worker prompt 已列出；SuperAgent 仍然**不带工具**
+  （`internal/runtime/rc3.go:17-160`、`internal/runtime/artifacts.go:205-214`、`internal/runtime/worker.go:580`、
+  `internal/runtime/rc2.go:121-132`）。
+- **工具/状态**：`read_image`（元数据-only，无像素）、`job_list`、`subagent` 命名、Worker 域工具
+  `ack/handback/thread_unrelated/request_status`、per-project `mcp__browser__*`；SuperAgent 无工具。
+
+## rc.3 新增（2026-11-04，rc.4 之前；当时仍有 opt-in 旧式审批，rc.4 已删除）
 
 - **DSH 对齐（重要）**：admitted 的明确 IM/GitHub 请求直接由 Eval 接单 → Ticket，不再默认每条消息先审批；
   推断请求按 accept mode `off`/`observe`/`auto`（auto 需匹配规则）；`DecPropose` 只在显式 opt-in
@@ -63,9 +84,6 @@
 - **应用到项目**：把记录过的交付物从执行副本复制到项目根；拒绝绝对/越界路径；已有同名文件先备份
   `.bak-<timestamp>`；返回相对路径；UI 确认框列出目标/文件/覆盖警告（`internal/runtime/rc2.go:193-270`、
   `internal/ui/applyproject.go:1-199`、`internal/ui/ticketdetail.go:291-301`）。
-- **撤销拒绝**：拒绝无损（保留 proposal 与 `RejectedAt`）；10 秒内「撤销」恢复为待批（幂等；
-  同一 Thread 有更新决策则拒绝 undo；重启安全）；不建 Ticket、不启动、不回复（`internal/engine/lifecycle.go:723-815`、
-  `internal/engine/persist.go:835-860`、`internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`）。
 - **原生应用菜单**：App/文件/编辑/窗口；新建对话 ⌘N、设置 ⌘,、打开主窗口、标准编辑 roles（撤销/重做/剪切/复制/粘贴/全选）
   （`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`）。
 - **系统无障碍偏好**：mygo `Theme.Preferences` 的 TextScale 与 `ui.font_scale` 相乘、ReduceMotion、
@@ -78,7 +96,7 @@
 **日常导航只有五项 + 诊断组**（`internal/ui/chrome.go`、`internal/view/vm.go:486-520`）：
 
 - **超级Agent**：总览 + 全局输入（聊天/派活）。
-- **收件箱**：所有「待你决定」——IM 请求批准，以及需要回答/重试/停止的任务。
+- **收件箱**：**attention-only** —— 任务的问题、受阻与失败，需要回答/重试/停止；不承载任何批准。
 - **项目**（旧称工作区）：树；展开看会话，点会话打开执行详情；新建/重命名/删除。
 - **执行**：任务列表与行内动作。
 - **设置**：来源（连接）/评估/执行/提示词/允许名单/模型/部署。
@@ -95,7 +113,7 @@
 新任务有**计划/待办卡**（`.zeokeel/plan`，显示 x/y 完成与进行中/受阻）。
 
 **收件箱**（`internal/ui/inbox.go`、`internal/runtime/ux.go:316`）：统一「待你决定 N」一个数；
-请求批准卡片（谁/哪条消息/要做什么/敏感项）可批准/拒绝；任务卡可回答/重试/停止/打开；
+只显示**任务问题/受阻/失败**，任务卡可回答/重试/停止/打开；没有批准/拒绝（旧式 proposal 已删除）；
 `j/k` 选择、`Enter` 打开；切换有 pending 与就地错误；窗口隐藏时新待办发**系统通知**。
 
 **消息与派活**：提问先走超级Agent 回答（无模型时确定性回答）；「派活」由 target chip 指定项目，
@@ -115,8 +133,9 @@ Ticket 行/详情 ID 都是 domain ID，显示 `#N`。
 **浏览器自动化（per project）**：检测结果只来自默认安装路径（Chrome/Edge）；启用后启动独立实例：
 `<stateDir>/workspaces/<ws>/browser-profile`、唯一 CDP 端口、`--headless=new`（可选）；
 同时启动 `npx -y chrome-devtools-mcp@latest --browserUrl http://127.0.0.1:<port>`，工具 `mcp__browser__*`
-只注入该项目的 Worker（别的项目看不到）；浏览器子进程环境剥离凭证类变量。缺浏览器或 node/npx 时返回可操作错误，
-不会假装有浏览器工具；关闭项目浏览器即不再注入。
+只注入该项目的 Worker（别的项目看不到）；浏览器子进程环境剥离凭证类变量。
+**前置检查**：项目页/设置会检测 node/npx 及版本；缺失时显示醒目警告、当前系统的安装命令（brew/winget/apt 等）、
+nodejs.org 链接与「重新检查」，「启动浏览器」禁用并说明原因；不会自动安装或假装运行。关闭项目浏览器即不再注入。
 
 **执行**（`internal/ui/execution.go:150-210`）：行内直接给「回答/重试/停止」，各自 pending 与就地错误，
 不用跳总览；`#N` 标签与筛选 tabs（全部/待开工/排队/执行中/等你处理/已结束）。
@@ -132,7 +151,7 @@ Ticket 行/详情 ID 都是 domain ID，显示 `#N`。
 **系统无障碍偏好** TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent 生效；
 设置›关于显示版本/许可证并可「检查更新」（只查询 GitHub Releases，不下载）。
 
-## 内置工具（2026-11-04 rc.3）
+## 内置工具（2026-11-04 rc.4）
 
 Worker 默认拿到这些内置工具；设置›执行可逐个关闭（`plan_tasks/agents_md/web_tools`，默认开）：
 
@@ -142,24 +161,24 @@ Worker 默认拿到这些内置工具；设置›执行可逐个关闭（`plan_t
 | `read_image` | 报告图片格式/字节/尺寸（png/jpeg/gif；webp 识别格式但维度不解析） | **模型端点 text-only，不附像素**；10MB 上限、拒绝目录/越界路径；需要视觉时用 bash OCR/ImageMagick 或问人 |
 | `job_output` / `job_list` / `job_kill` | 后台 shell 作业三件套；`job_list` 列本会话作业（id/状态/退出码/描述） | 作业在 Worker 环境；30 分钟规则；`job_list` 只列本 Runner |
 | `subagent` | eino 子智能体（explorer/verifier）；名字与 DSH 对齐 | 单 Worker 内调用栈，不是多 Session 编排 |
-| `ack` / `handback` / `thread_unrelated` / `request_status` | Worker 域工具：短确认、交回、标记无关、只读状态 | 按 Ticket/Thread 粒度；无 DSH `orchestrator_read` 的分页资源读取 |
+| `read_resource` | DSH `orchestrator_read` 等价：分页读**自己的** ticket/inputs/trigger/thread，只读、redacted、offset/limit（默认 20、上限 200） | 只能读本 Ticket 的 origin trigger/owned thread；路径/归属校验；超限截断 |
+| `ack` / `handback` / `thread_unrelated` / `request_status` | Worker 域工具：短确认、交回、标记无关、只读状态 | 按 Ticket/Thread 粒度；`ack` 无 purpose 元数据 |
 | `AGENTS.md`（非工具，注入） | 工作区根 `AGENTS.md` 包成**不可信仓库内容**信封注入模型输入 | ≤64KB；缺失不报错；内容明确标注 untrusted，不作为权威指令 |
 | `web_fetch` | 抓公网 URL 并转纯文本 | 仅 http(s)、解析后 **pin IP** 拨号、拒绝 localhost/私网、`Proxy:nil`、10s、2MiB；返回带 `<untrusted-web-content>` 信封 |
 | `web_search` | 搜一次，返回标题/URL/摘要前 5 条 | 默认 DuckDuckGo HTML；`execution.web_search_url` 可覆盖；结果同样是不可信内容 |
 | `mcp__browser__*`（per project） | 项目启用的浏览器 MCP（chrome-devtools-mcp） | 只注入该项目 Worker；需 Chrome/Edge + node/npx；关闭项目浏览器即不注入 |
 
 **SuperAgent 聊天不带任何工具**（不是 orchestrator，只有文本回答；`internal/runtime/rc2.go:121-132` 的请求 payload
-不含 tools）。仍缺 DSH 的 `orchestrator_read`（Worker 分页读 ticket/trigger/thread 资源）与 main orchestrator 工具集
-（主 Session 是确定性 assessor，无 tool loop）；这些是**有意缺席/已知缺口**，见 `audit/tool-gap.md`。
+不含 tools）。Worker 已有 `read_resource`（DSH `orchestrator_read` 等价）；DSH main Session 的 orchestrator 工具集
+仍**有意缺席**（主 Session 是确定性 assessor，无 tool loop），见 `audit/tool-gap.md`。
 
-## IM 渠道（2026-11-04 rc.3，DSH 对齐）
+## IM 渠道（2026-11-04 rc.4，DSH 对齐）
 
 完整契约、DWS 命令格式、DSH 对齐与运维步骤见 **[design/im-channels.md](design/im-channels.md)**；要点：
 
-- **DSH 主链（默认）**：admitted 的明确飞书/钉钉消息由 Eval **直接接单 → Ticket**，没有“每条消息先审批”。
-  推断消息按 accept mode：`off` 忽略、`observe` 只记录、`auto` 需要匹配规则才接单；
-  `DecPropose` 只在 Policy 显式打开 `RequireApproval` 且请求是推断时产生（旧式兼容路径），
-  收件箱把它标成「旧式请求（需要批准）」，批准才建单/拒绝无损；明确请求永远不进入审批。
+- **DSH 主链**：admitted 的明确飞书/钉钉消息由 Eval **直接接单 → Ticket**；推断消息按 accept mode：
+  `off` 忽略、`observe` 只记录、`auto` 需要匹配规则才接单。**审批机制已彻底删除**（没有 Approve/Reject/
+  proposal/`RequireApproval`）；旧 DB proposal 只作为历史 ignore 载入，收件箱不显示批准。
 - **连接向导**：来源页每渠道「连接」打开向导；只显示所选 transport 的字段；先校验必填、再**用填写值测试（不保存）**，
   通过后才保存并启用；也可显式「仍然保存（未验证）」。DWS 显示本机版本、登录命令（可复制）与授权链接；
   飞书 401/403 给开放平台授权入口；钉钉有「发送时暂停监听」开关。飞书 `feishu_chats`：ws 可选，longpoll 必填。
@@ -183,7 +202,7 @@ Worker 默认拿到这些内置工具；设置›执行可逐个关闭（`plan_t
 # 从源码构建（需要 Go 1.27.3+；产品构建恒 CGO_ENABLED=0）
 CGO_ENABLED=0 go build -tags mygo_noinspector -o zeokeel ./cmd/zeokeel
 
-# 或用发布包（VERSION 为 1.0.0-rc.3，由发布负责人 bump）
+# 或用发布包（VERSION 为 1.0.0-rc.4，由发布负责人 bump）
 tar -xzf zeokeel-<VERSION>-linux-x86_64.tar.gz   # Linux
 unzip zeokeel-<VERSION>-macos-arm64.zip          # macOS（未签名，右键 → 打开）
 unzip zeokeel-<VERSION>-windows-x86_64.zip       # Windows（zip + install.ps1，无 MSI/NSIS）
@@ -278,9 +297,9 @@ sh scripts/verify-fixes.sh   # 唯一的机械闸门：零 cgo build/test/vet + 
 sh scripts/release-check.sh  # 发布闸门：版本/产物/文档 + 上面的闸门
 ```
 
-**代码最终状态：2026-11-04（P0/P1 + UI/UX 轮 + rc.2 + rc.3 已落地）。** 本轮文档按最终代码同步；**全量闸门由 Lead 在 bump VERSION 后统一跑**
+**代码最终状态：2026-11-04（P0/P1 + UI/UX 轮 + rc.2 + rc.3 + rc.4 已落地）。** 本轮文档按最终代码同步；**全量闸门由 Lead 在 bump VERSION 后统一跑**
 （`sh scripts/verify-fixes.sh` + `sh scripts/release-check.sh`），本文不预称"已全绿"。
-上一轮 2026-11-03 的 2×非 race + 1×-race 全绿是历史快照；后续修复波/UX/rc.2/rc.3 后必须重跑。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.3`；本文不预称全绿。
+上一轮 2026-11-03 的 2×非 race + 1×-race 全绿是历史快照；后续修复波/UX/rc.2/rc.3/rc.4 后必须重跑。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.4`；本文不预称全绿。
 
 ## 依赖
 
@@ -325,13 +344,13 @@ make release   # verify + package + release-check
 可展开/复制/「查看全部」；完整对话在「诊断›对话记录」。
 
 **收件箱是什么？为什么顶栏一直显示「待你决定 N」？**
-收件箱把所有等你的事收在一个地方：旧式 IM opt-in 请求批准（默认明确请求不经过它），以及需要回答/重试/停止的任务。`待你决定 N` 是唯一计数
-（顶栏/侧栏/收件箱同源）。`j/k` 选择、`Enter` 打开；批准才开工，拒绝不建任务。窗口关着时新待办会发系统通知。
+收件箱把等你的事收在一个地方：任务问题/受阻/失败，以及需要回答/重试/停止的任务（**没有任何批准**）。`待你决定 N` 是唯一计数
+（顶栏/侧栏/收件箱同源）。`j/k` 选择、`Enter` 打开。窗口关着时新待办会发系统通知。
 
 **IM 消息会先等我批准吗？**
-默认不会。DSH 对齐后，admitted 的**明确**飞书/钉钉/GitHub 请求由 Eval 直接接单 → Ticket；推断请求按 accept mode
-（off 忽略 / observe 只记录 / auto 需匹配规则）。只有 Policy 显式打开 `RequireApproval` 的旧式配置，推断请求才会
-变成待批项，并在收件箱标「旧式请求（需要批准）」；明确请求永远不进入审批。拒绝无损，10 秒内可撤销。
+不会。审批机制已彻底移除：admitted 的**明确**飞书/钉钉/GitHub 请求由 Eval 直接接单 → Ticket；
+推断请求按 accept mode（off 忽略 / observe 只记录 / auto 需匹配规则）。没有 Approve/Reject/proposal/
+`RequireApproval`；旧数据库里的 proposal 只作为历史 ignore 载入，收件箱只处理任务问题/受阻/失败。
 
 **IM 显示「未启用」/检查失败怎么办？**
 来源页每渠道点「连接」进向导：只填所选连接方式的字段 → 校验 →「检查连接」（测试填写值，不保存）→
@@ -367,10 +386,6 @@ Agent 在**执行副本**里工作，项目目录不会被自动修改。执行�
 **「应用到项目」会覆盖我的文件吗？**
 会先列出要写的相对路径、目标项目目录与覆盖警告；项目里已有同名文件会先备份为 `.bak-<时间戳>`，
 然后才复制。它只复制任务记录过的交付物；绝对路径/越界路径会被跳过。没有真正“原地执行”，这是显式回写。
-
-**拒绝错了怎么办？**
-收件箱拒绝后 10 秒内可点「撤销」恢复待批；拒绝本身无损（保留 proposal 与时间），同一 Thread 有更新决策后不能再撤销；
-撤销不会建任务/启动执行/发回复。
 
 **怎么检查更新？**
 设置›关于显示版本/许可证；「检查更新」只查询 GitHub Releases API 并显示最新版本/发布页，**不下载、不自动安装**。
@@ -409,14 +424,14 @@ Esc 关闭弹层。
   目前没有真正“在原项目里原地执行”的同步/合并。
 - **浏览器自动化**：只检测 Chrome/Edge 默认安装路径；需要 node/npx 才能起 `chrome-devtools-mcp`；
   MCP 工具只在该项目 Worker 内可见；没有浏览器=没有 `mcp__browser__*` 工具。
-- **工具缺口**：`read_image` 只返回元数据（模型端点 text-only，无像素）；无 DSH `orchestrator_read`；
-  DSH main Session 的 orchestrator 工具集有意缺席（主 Session 无 tool loop）。
+- **工具缺口**：`read_image` 只返回元数据（模型端点 text-only，无像素）；`read_resource` 已补（DSH `orchestrator_read` 等价）；
+  仍无 DSH main Session 的 orchestrator 工具集（主 Session 无 tool loop，有意缺席）。
 - **IM**：飞书 webhook/媒体下载未实现；DWS 依赖外部 `dws` CLI，真实 CLI 版本/登录流程与真实租户 E2E 未在本机验证；
   Stream 是 bot 模式（需 app key/secret/robot code）；两者都不下载图片/文件。
 - **设置页**：**来源组**用连接向导配置 IM；**评估组**只读（规则/admission/accept mode 不可编辑）；
   没有 Source 实例表，GitHub 仓库/登录仍只能 `-repo/-gh-login`（改设置需重启）。
 - **系统钥匙串未实现**：API Key 明文存 SQLite（0600）；读取侧已做 redaction（`status --json`/Inspect/health detail 不泄密），
-  worker 的 shell 环境已剥离凭证变量。复制/备份数据库时仍请按密钥保管；**rc.3 仍是这个状态**。
+  worker 的 shell 环境已剥离凭证变量。复制/备份数据库时仍请按密钥保管；**rc.4 仍是这个状态**。
 - **可访问性**：已提高对比度/焦点/标签，并接入系统 TextScale（×`ui.font_scale`）、ReduceMotion、HighContrast、系统 Accent；
   没有操作系统级“屏幕阅读器专用模式”，读屏仍取决于 mygo 控件语义。
 - **平台集成**：已有原生 App/文件/编辑/窗口菜单、设置›关于与“检查更新”；**没有多窗口**；

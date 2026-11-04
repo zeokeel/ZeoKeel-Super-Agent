@@ -172,7 +172,6 @@ func (e *Engine) finishEval(threadKey string, evalID domain.ID, judged AssessOut
 	out.Ticket = applyOut.Ticket
 	out.Workspace = dec.Workspace
 	out.NeedsPerson = applyOut.NeedsPerson
-	out.Proposal = applyOut.Proposal
 	out.Question = applyOut.Question
 	e.finishSlotLocked(slot)
 	return out, nil
@@ -382,14 +381,6 @@ func (e *Engine) applyEvalLocked(slot *evalSlot, judged AssessOutput, now time.T
 		dec.Reasons = append(dec.Reasons, domain.Reason{Code: domain.ReasonHumanStop})
 	}
 
-	// The approval gate is opt-in; the default path is the prototype's Eval
-	// accept creating the Ticket (001:35).
-	if dec.Kind == domain.DecAccept && p.RequireApproval && strength != domain.StrengthExplicit {
-		dec.Kind = domain.DecPropose
-		dec.Proposal = e.proposalLocked(primary, dec)
-		dec.Mandate = nil
-	}
-
 	dec.Reply = e.replyPlanLocked(primary, dec, p)
 
 	switch dec.Kind {
@@ -408,12 +399,6 @@ func (e *Engine) applyEvalLocked(slot *evalSlot, judged AssessOutput, now time.T
 	case domain.DecStop:
 		if toEnd := e.stopTargetLocked(ev); toEnd != nil {
 			e.endTicketLocked(toEnd, "human", domain.OutcomeStopped, domain.ReasonHumanStop, now)
-		}
-	}
-	if dec.Kind == domain.DecPropose {
-		out.Proposal = true
-		if dec.Proposal != nil {
-			out.Question = dec.Proposal.Intent
 		}
 	}
 	e.recordDecisionLocked(dec, ev)
@@ -533,41 +518,6 @@ func matchedRuleIDs(hits []domain.RuleHit) []string {
 		}
 	}
 	return out
-}
-
-// proposalLocked writes the four things a person needs to judge someone else's
-// request (design §4.10); it runs only when RequireApproval is on.
-func (e *Engine) proposalLocked(t *domain.Trigger, dec domain.Decision) *domain.Proposal {
-	w := e.workspaces[dec.Workspace]
-	deliverable := "一个 PR（含变更说明与验证结果）"
-	intent := "在仓库里改代码并提交 PR"
-	var sensitive []string
-	if w != nil {
-		switch w.Kind {
-		case domain.KindData:
-			deliverable = "一份汇总（不含明细）+ 一段结论"
-			intent = "从该工作区取数、汇总，然后把结论回复给 " + t.Actor.ID
-			sensitive = append(sensitive, "客户数据外发")
-		case domain.KindDocs:
-			deliverable = "一份文档改动"
-			intent = "修改文档并回复 " + t.Actor.ID
-		case domain.KindRepo:
-			intent = "在仓库里改代码、提交 PR，然后回复 " + t.Actor.ID
-			if t.Source == "github" {
-				sensitive = append(sensitive, "回复会出现在公开仓库")
-			}
-		}
-	}
-	sensitive = append(sensitive, "来自同事的请求：需要你确认它值不值得做")
-	return &domain.Proposal{
-		From:        t.Actor.ID,
-		Said:        clip(t.Text, 60),
-		Intent:      intent,
-		Plan:        []string{"确认任务与范围", "在 " + string(dec.Workspace) + " 里执行", "整理产出并回复 " + t.Actor.ID},
-		Deliverable: deliverable,
-		Workspace:   string(dec.Workspace),
-		Sensitive:   sensitive,
-	}
 }
 
 // replyPlanLocked decides how to answer a message (design §4.10).

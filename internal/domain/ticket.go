@@ -3,14 +3,10 @@ package domain
 import "time"
 
 // DecisionKind is what Eval decided about a batch of Triggers (001:109).
+// DSH has four outcomes; there is no approval step, so there is no propose kind.
 type DecisionKind string
 
 const (
-	// DecPropose is "I would accept this, but it needs a person's approval first".
-	// It creates no Ticket: work that is not authorized yet is not a Ticket.
-	// It is kept for deployments that opt into the approval gate; the default
-	// path is the prototype one, where Eval's accept creates the Ticket (001:35).
-	DecPropose     DecisionKind = "propose"
 	DecAccept      DecisionKind = "accept"
 	DecStop        DecisionKind = "stop"
 	DecIgnore      DecisionKind = "ignore"
@@ -60,12 +56,6 @@ const (
 	ReasonMandateRevoked = "mandateRevoked"
 	ReasonNotRetryable   = "notRetryable"
 	ReasonPaused         = "paused"
-	// ReasonRejectedByPerson marks a proposal the operator turned down; the
-	// proposal itself is kept so the rejection can be undone until a newer
-	// decision on the same Thread supersedes it.
-	ReasonRejectedByPerson = "rejected_by_person"
-	// ReasonUndoReject marks the audit entry an undone rejection adds.
-	ReasonUndoReject = "undoReject"
 )
 
 // ReplyRoute is who an answer goes to. Design §4.10.
@@ -237,15 +227,7 @@ type Decision struct {
 	// Reply is how the message is answered: to the sender, to the operator, both,
 	// or not at all.
 	Reply ReplyPlan `json:"reply,omitempty"`
-	// Proposal is set when Kind is DecPropose: what the person must judge before
-	// the work may start. A person's rejection keeps it (Kind becomes ignore with
-	// ReasonRejectedByPerson), so UndoReject can restore the same proposal without
-	// re-running an Eval.
-	Proposal *Proposal `json:"proposal,omitempty"`
-	// RejectedAt is when the operator rejected a proposal; UndoReject orders
-	// "a newer decision on the Thread supersedes it" against this instant.
-	RejectedAt time.Time `json:"rejectedAt,omitempty"`
-	At         time.Time `json:"at,omitempty"`
+	At    time.Time `json:"at,omitempty"`
 }
 
 // ReportState is what an Assignment reports back (001:112).
@@ -318,19 +300,6 @@ type Assignment struct {
 	// SessionID is the Executor Session this Assignment ran in, so a retry can
 	// reuse the same Session (003:141).
 	SessionID string `json:"sessionId,omitempty"`
-}
-
-// Proposal is what the agent puts in front of a person before acting on someone
-// else's request. All four parts are required, because a person cannot decide
-// without them. It belongs to a Decision, not a Ticket.
-type Proposal struct {
-	From        string
-	Said        string
-	Intent      string
-	Plan        []string
-	Deliverable string
-	Workspace   string
-	Sensitive   []string
 }
 
 // Attention is a question on a Ticket that waits for a person's answer, from the

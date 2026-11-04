@@ -49,7 +49,6 @@ var _ ui.UpdateChecker = (*runtime.Runtime)(nil)
 var (
 	_ ui.ChatStreamer    = (*runtime.Runtime)(nil)
 	_ ui.ArtifactApplier = (*runtime.Runtime)(nil)
-	_ ui.RejectUndoer    = (*runtime.Runtime)(nil)
 	_ ui.VersionReporter = (*runtime.Runtime)(nil)
 )
 
@@ -62,3 +61,6 @@ var (
 	_ ui.WorkspaceStatsProvider    = (*runtime.Runtime)(nil)
 	_ ui.SkillLibrary              = (*runtime.Runtime)(nil)
 )
+
+// rc5: browser MCP prerequisites (node/npx) for the project panel.
+var _ ui.BrowserPrerequisites = (*runtime.Runtime)(nil)

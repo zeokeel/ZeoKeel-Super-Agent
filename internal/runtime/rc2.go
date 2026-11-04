@@ -434,29 +434,3 @@ func (r *Runtime) currentPlan() *view.PlanVM {
 }
 
 // --- Undo reject ---
-
-// UndoReject puts a rejected proposal back on the approval list within the
-// engine's contract (only rejections, not accepted work; a newer decision on the
-// same thread supersedes it). Nothing is launched and no reply is sent.
-func (r *Runtime) UndoReject(decisionID string) error {
-	r.commandMu.Lock()
-	defer r.commandMu.Unlock()
-	id := domain.ID(strings.TrimSpace(decisionID))
-	if id == "" {
-		return fmt.Errorf("缺少 decision id")
-	}
-	r.mu.Lock()
-	p := r.persist
-	r.mu.Unlock()
-	var err error
-	if p != nil {
-		_, err = p.UndoReject(id)
-	} else {
-		_, err = r.eng.UndoReject(id)
-	}
-	if err != nil {
-		return err
-	}
-	r.Publish()
-	return nil
-}

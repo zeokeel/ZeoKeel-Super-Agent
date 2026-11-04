@@ -28,7 +28,7 @@ func TestModelFailureMarksTheTicketAndReplies(t *testing.T) {
 	eng.Register(domain.Workspace{
 		ID: "ws_web", Name: "web", Root: t.TempDir(), Kind: domain.KindRepo,
 		Brief: domain.Brief{Purpose: "webapp", Keywords: []string{"webapp"}},
-	}, engine.Policy{Version: "v1", RequireApproval: true, Allowed: map[string]map[string]bool{
+	}, engine.Policy{Version: "v1", Allowed: map[string]map[string]bool{
 		"dingtalk": {"colleague": true},
 	}})
 
@@ -49,7 +49,7 @@ func TestModelFailureMarksTheTicketAndReplies(t *testing.T) {
 	}
 	approved := evalNow(eng)
 	if approved.Ticket == "" {
-		approved.Ticket = ticketAfterProposal(t, eng, "model failure")
+		t.Fatalf("the request did not create a ticket: %+v", approved)
 	}
 	out.Ticket = approved.Ticket
 

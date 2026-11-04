@@ -49,10 +49,6 @@ type Policy struct {
 	// ReplyMode decides whether the agent may answer someone other than the
 	// operator. Empty means notify, the safe default (design §4.10).
 	ReplyMode domain.ReplyMode
-	// RequireApproval is the opt-in approval gate: an accepted request becomes a
-	// proposal the operator must approve before a Ticket exists. It defaults to
-	// false because the prototype's Eval creates the Ticket (001:35).
-	RequireApproval bool
 }
 
 // allowed reports whether actor may originate work through source.
@@ -392,7 +388,7 @@ func policyVersion(p Policy) string {
 		Mode    domain.AcceptMode     `json:"mode"`
 		Require bool                  `json:"requireApproval"`
 		Sources map[string]sourcePart `json:"sources"`
-	}{Rules: rules, Mode: acceptMode(p), Require: p.RequireApproval, Sources: parts})
+	}{Rules: rules, Mode: acceptMode(p), Sources: parts})
 	sum := sha256.Sum256(raw)
 	return "pv-" + hex.EncodeToString(sum[:])[:16]
 }
@@ -473,7 +469,6 @@ func mergePolicies(policies []Policy, names []string) Policy {
 			ruleSeen[r.ID] = len(out.Rules)
 			out.Rules = append(out.Rules, r)
 		}
-		out.RequireApproval = out.RequireApproval || p.RequireApproval
 	}
 	sort.Strings(names)
 	out.AcceptMode = mode

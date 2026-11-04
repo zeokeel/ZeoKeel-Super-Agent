@@ -268,7 +268,7 @@ cmd/zeokeel                 ← 唯一装配处
 | `Source` / `SourceKind<C>` | `domain.Source` / `sources.Kind` | 🟡 `sources.Kind` 完整（`internal/sources/source.go:78-104`），但**没有 `domain.Source` 类型**：Source 在领域里是字符串 + `sources.Kind` 实例 |
 | `Trigger` | `domain.Trigger` | ✅ `internal/domain/trigger.go` |
 | `Thread` | `domain.Thread` | 🟡 **无 `domain.Thread` 类型**：Thread 以 `domain.ThreadRef`/`ThreadKey`（`trigger.go:49`、`ids.go:51`）+ engine 内部 thread map（`engine.go:682`）表达；Eval 已按 Thread 批量 |
-| `Decision{kind, reason[], audit}` | `domain.Decision` | ✅ `internal/domain/ticket.go:111`（含 kind/reason/proposal；无独立 audit 字段，审计走 Decision 表） |
+| `Decision{kind, reason[], audit}` | `domain.Decision` | ✅ `internal/domain/ticket.go:111`（kind/reason；proposal 已随 rc.4 删除；无独立 audit 字段，审计走 Decision 表） |
 | `Mandate{strength, policyVersion, basis, actor, scope}` | `domain.Mandate` | ✅ `ticket.go:101`；strength 由确定性 gate 产出（`engine/gate.go:184`），不再来自模型 |
 | `Ticket{stage, ended, assignments, channels, inputs, follows, ...}` | `domain.Ticket` | ✅ `ticket.go:400-470`：`Inputs`/`Delivery`/`Follows`/`FollowupOwners`/`Attention`/`EvalID` 均已落地；`stage` 仍是派生（§4.2） |
 | `Assignment{state, report}` | `domain.Assignment` | ✅ `ticket.go:184` |
@@ -599,7 +599,7 @@ type Workspace struct {
 关键词 acme, ACME, 艾克米, 用量, billing, usage
 数据源  ~/data/acme/exports/*.sqlite（每月 1 日同步）
 取数    ./scripts/query_usage.sh --month YYYY-MM
-约束  只发汇总与趋势，不导出明细行；对外必须经 operator 批准
+约束  只发汇总与趋势，不导出明细行；对外必须经 operator 确认（ask_user_question；无 proposal 审批）
 ```
 
 **修正 3：数据敏感需要「第二道门」——代理授权，这是原型没有的。**
@@ -611,7 +611,7 @@ agent 用的是 operator 的凭据，能读到 operator 能读的一切——同
 
 | 做法 | 说明 |
 | --- | --- |
-| **默认需要 operator 批准** | brief 里 `kind: data` 或 `constraints` 标了敏感 → 每张 Ticket 派发前 `ask_user_question` 给 operator |
+| **默认需要 operator 确认** | brief 里 `kind: data` 或 `constraints` 标了敏感 → Ticket 通过 `ask_user_question`/Attention 让人确认（不是 Decision proposal 审批） |
 | **批准记录进审计** | 「谁要的 / 要什么 / 谁批的 / 什么时候」写进 Ticket，面板可查 |
 | **Worker 无外发工具** | 数据型 Worker 只有 `present`，没有 `reply`——**它自己发不出去**，必须经 Router |
 | **汇总优先** | brief 的约束写死"只发汇总不发明细"，Worker 的提示词里重复一遍 |
@@ -817,7 +817,7 @@ agent 主动通知（"PR 已就绪"、"CI 挂了，已修"）走的是 `Outbox` 
 | 来源 | 执行 | 回复 | 依据 |
 | --- | --- | --- | --- |
 | **你自己**（面板输入，或绑定到自己的钉钉 / 微信 / 飞书） | **无条件执行** | 直接回你 | 你拥有这台机器，你的话就是授权 |
-| **同事**（在该 Source 的允许名单内；明确请求） | **直接执行**（DSH 主链） | 按本节的四条路 | 不能替你做承诺，也不能替你把数据发出去；旧式 opt-in `RequireApproval` 才生成待批单 |
+| **同事**（在该 Source 的允许名单内；明确请求） | **直接执行**（DSH 主链） | 按本节的四条路 | 不能替你做承诺，也不能替你把数据发出去；旧式待批单已删除 |
 | 同事（名单外）/ 机器人 / CI | 不执行 | 不回，或只通知你 | 未获授权 |
 
 **"自己"与"同事"的区分是一个领域事实，不是启发式判断。** 每个 IM Source 在绑定时登记**你自己的账号 id**（`operatorIDs`，可多设备），翻译消息时置 `Trigger.Self`：
@@ -831,10 +831,10 @@ if slices.Contains(cfg.OperatorIDs, ev.Actor.ID) {
 
 同一条消息，"我自己在钉钉里说的" 与 "同事在钉钉里说的" 走完全不同的路径——这是整个应答策略的分水岭。
 
-#### 同事的明确请求：DSH 默认直接接单；旧式 opt-in 才生成待批单
+#### 同事的明确请求：DSH 直接接单；旧式待批单已删除
 
-DSH 默认路径：admitted 的**明确**请求由 Eval 直接接单 → Ticket，不先找你批准；推断请求按 accept mode（off/observe/auto，auto 需匹配规则）。
-只有 Policy 显式 `RequireApproval` 且请求是推断时，才走旧式待批单，并**先把事想清楚，再请你判断**（旧式兼容卡片）：
+DSH 路径：admitted 的**明确**请求由 Eval 直接接单 → Ticket，不先找你批准；推断请求按 accept mode（off/observe/auto，auto 需匹配规则）。
+**rc.4 已删除旧式待批单与 `RequireApproval`**；下面卡片只是历史交互示意，不再产生。旧 DB proposal 载入为 ignore：
 
 ```
 ┌ 🔔 需要你决定 ─────────────────────────────── 钉钉 · 张三 ─┐
@@ -868,16 +868,16 @@ DSH 默认路径：admitted 的**明确**请求由 Eval 直接接单 → Ticket�
 
 这是两件不同的事，混在一起会让"待办列表"失去意义：
 
-| | 旧式审批（opt-in legacy） | 派发（DSH 默认） |
+| | 旧式审批（rc.4 已删除） | 派发（DSH 默认） |
 | --- | --- | --- |
-| 问题 | **这件事该不该做？** | **这件事正在怎么做？** |
-| 有没有 Ticket | **没有**——未授权的工作不是工单 | 有 |
-| 领域位置 | `Decision{kind: propose}` + `Proposal`（仅 `RequireApproval` + inferred） | `Decision{kind: accept}` + `Ticket` |
-| 批准之后 | 才创建 `Ticket` 与 `Mandate` | — |
-| 面板分组 | **旧式请求（需要批准）**（收件箱/总览） | 需要我处理 / 执行中 |
-| 超时行为 | 一直等你，不自动开工 | 按阶段推进 |
+| 问题 | ~~这件事该不该做？~~ | **这件事正在怎么做？** |
+| 有没有 Ticket | ~~没有~~ | 有 |
+| 领域位置 | ~~`Decision{kind: propose}`~~（历史 ignore） | `Decision{kind: accept}` + `Ticket` |
+| 批准之后 | ~~才创建 Ticket~~ | — |
+| 面板分组 | ~~旧式请求（需要批准）~~（已移除） | 需要我处理 / 执行中 |
+| 超时行为 | — | 按阶段推进 |
 
-`propose` 是**旧式 opt-in 兼容路径**：只有 Policy 显式 `RequireApproval` 且请求为推断时才出现；DSH 默认路径是 admitted 明确请求直接 `DecAccept` → Ticket。`propose` 不建 Ticket、不分配 Executor、不占并发槽位。
+`propose` 已不存在：rc.4 删除 proposal/Approval；旧 DB 的 `propose` 行在 load 时转为 `ignore` 并记 `legacyImport`。DSH 路径是 admitted 明确请求直接 `DecAccept` → Ticket。
 
 反之，`Attention`（`ask_user_question`）是**工单已经存在、执行中需要你回答一个问题**，它属于 Ticket，不属于 Decision。两者在面板上是两个不同的分组，在流里是两种不同的卡。
 
@@ -935,7 +935,7 @@ DSH 默认路径：admitted 的**明确**请求由 Eval 直接接单 → Ticket�
 
 #### 学习机制：让信任可以累积
 
-同一类请求被你在面板里批准过 N 次之后，可以一键"以后这类直接回"：
+同一类请求被你在面板里确认/配置过 N 次之后，可以一键"以后这类直接回"：
 - 生成一条 **reply rule**（不是改默认档，而是加一条窄规则）
 - 规则可随时撤销，撤销后立即回到 `operator`
 - 每条规则记录是谁在什么时候批准了它——**审计链要能回答"这个自动回复是谁授权的"**
@@ -957,7 +957,7 @@ type ReplyPlan struct {
     Route   ReplyRoute   // direct | operator | both | none
     Purpose ReplyPurpose // acknowledgement | answer | result | attention
     Reason  []domain.Reason
-    // 谁授权的：policy(档位) / rule(学习出来的规则) / person(本次人工批准)
+    // 谁授权的：policy(档位) / rule(学习出来的规则) / person(本次人工确认)
     AuthorizedBy string
     ApprovedAt   time.Time
 }
@@ -1250,7 +1250,7 @@ Router 是**一个**持续会话，靠压缩管理上下文。所以 UI 不该�
 │    ┌ 钉钉 · 张三 ────────────────────────────────────────── 12:04 ┐      │
 │    │ 帮我把 acme 这个客户上个月的用量数据发我一下                 │      │
 │    └─────────────────────────────────────────────────────────────┘      │
-│      → 派发   #46   acme-data   需要你批准                               │
+│      → 派发   #46   acme-data   已接单                               │
 │      🔔 要把 acme 2026-10 用量摘要发给钉钉的张 three 吗？      [回答]     │
 │                                                                          │
 │    ┌ GitHub · #42 · @lin ─────────────────────────────────── 13:10 ┐    │
@@ -1289,12 +1289,12 @@ Router 是**一个**持续会话，靠压缩管理上下文。所以 UI 不该�
 
 | 类别 | 例子 | 出现在哪 |
 | --- | --- | --- |
-| **工作项动作** | 批准 / 拒绝 / 回答 / 重试 / 停止 | **只在总览**（它回答"我现在要做什么"） |
+| **工作项动作** | 回答 / 重试 / 停止（批准/拒绝已随 rc.4 删除） | **收件箱/执行**（它回答"我现在要做什么"）；无工作项审批动作 |
 | **配置动作** | 保存设置、同步白名单、检查连接 | **只在设置页**（它回答"它该怎么工作"） |
 
 | 页 | 回答 | 动作 |
 | --- | --- | --- |
-| **总览** | 我现在要做什么 | 工作项动作：批准 / 拒绝 / 回答 / 重试 / 停止 |
+| **总览** | 我现在要做什么 | 工作项动作：回答 / 重试 / 停止（无批准/拒绝） |
 | **消息** | 它看到了什么、做了什么 | **没有，只读时间线** |
 | 来源 / 触发 / 评估 / 执行 | 某个概念本身的细节 | **只读**；点行就地展开 |
 | 设置 | 它该怎么工作 | 配置动作：分组表单 + 保存条（有改动才出现） |
@@ -1306,10 +1306,10 @@ Router 是**一个**持续会话，靠压缩管理上下文。所以 UI 不该�
 ```
 钉钉 · 张三
   帮我把 acme 这个客户上个月的用量数据发我一下
-  → 需要你批准 · acme_data
+  → 已接单 · acme_data
 ```
 
-旧式 proposal 的四个字段与批准动作出现在**收件箱**（与总览兼容区），并标「旧式请求（需要批准）」；DSH 默认路径下明确请求直接接单，不经过审批。动作跟着"我现在要做什么"走，记录跟着"发生过什么"走。
+rc.4 已删除 proposal/审批：收件箱只处理任务问题/受阻/失败（attention-only）；历史 proposal 不再显示/不可操作。动作跟着"我现在要做什么"走，记录跟着"发生过什么"走。
 
 #### 与原型 005 的关系
 
@@ -1842,7 +1842,7 @@ echo "check-nocgo: PASS (zero cgo)"
 | 21 | **任务下发的快捷路径绕开领域**（operator 亲手派的活走特殊通道，导致审计/幂等/resume 分叉） | 中 | 高 | 仍产生 Decision+Mandate+Ticket，只跳过语义评估；不加第二条派活通道（§6.9） |
 | 20 | **把通知误判成请求**（尤其群公告、@所有人） | 高 | 高 | `@所有人` 不算 addressed；没 @ 默认不进 Eval；语义层 `ignore(notification/clarify)`；默认 observe + 面板"重新评估"（§4.9） |
 | 19 | **IM 协议碎片化**（每个 IM 的卡片/富文本/限流都不一样，易写出 N 份相似代码） | 高 | 中 | `internal/im` 抽象 + `Capabilities` 描述；先做 Telegram 验证抽象；每个 driver 独立可测 |
-| 18 | **代理授权放大**（agent 用 operator 凭据，把数据发给本无权查看的人） | 中 | 高 | 数据型工作区每张 Ticket 派发前 operator 批准；批准进审计；数据型 Worker 无外发工具，只能 `present`（§4.7） |
+| 18 | **代理授权放大**（agent 用 operator 凭据，把数据发给本无权查看的人） | 中 | 高 | 数据型工作区敏感操作通过 `ask_user_question`/Attention 让人确认；无 Decision 审批；数据型 Worker 无外发工具，只能 `present`（§4.7） |
 | 17 | **Router 对工作区认知失真**（brief 过期/写错 → 派错仓库） | 中 | 高 | brief 带 `observed_at` 与 `stale` 标记；冲突时以 `workspace_read` 为准；拿不准必须 `ask_user_question`；brief 内容是不可信数据，不得改规则（§4.6） |
 
 ---
@@ -1896,7 +1896,7 @@ echo "check-nocgo: PASS (zero cgo)"
 
 ---
 
-## 13. 实现状态对照（2026-11-04 rc.3，按代码重写）
+## 13. 实现状态对照（2026-11-04 rc.4，按代码重写）
 
 > 规则：**✅ 必须能在代码里指到证据行**；指不到就降级 🟡/❌ 并写原因。有冲突以代码为准，
 > 同一提交内改这里。Wave 1 的高报（§4.3/§4.4/§4.8/§5.2/§5.8/§5.10/§7）已在 Wave 2 大部分关闭，
@@ -1908,16 +1908,16 @@ echo "check-nocgo: PASS (zero cgo)"
 | §3.2 分层与依赖规则 | domain→store/engine→runtime→view→ui 单向；cmd 装配 | ✅ | `internal/ui/app.go`（只 import mygo/mui/view）；`cmd/zeokeel/main.go`（唯一装配处） |
 | §4.1 类型映射 | 见 §4.1（目标 vs 现状） | 🟡 | 剩余：无 `domain.Source` / `domain.Thread` / `UserError`；`domain.Actor`/identity 辅助已加入 `internal/domain/actors.go` |
 | §4.2 阶段查表而非状态字段 | `domain.StageOf` | ✅ | `internal/domain/ticket.go:520`（`StageOf`）；面板桶映射 `internal/view/pages.go` |
-| §4.3 gate + admission + accept mode | 确定性 gate、admission 三格、bot list、Rules、AcceptMode、RequireApproval | ✅ | `internal/engine/gate.go:200`（`gate`）、`:27-56`（`Policy`）；Eval 消费 `internal/engine/evaluate.go:294`（`applyEvalLocked`）、`internal/engine/receive.go:360`（`enqueueEvalLocked`） |
+| §4.3 gate + admission + accept mode | 确定性 gate、admission 三格、bot list、Rules、AcceptMode（无 RequireApproval） | ✅ | `internal/engine/gate.go:200`（`gate`）、`:27-56`（`Policy`）；Eval 消费 `internal/engine/evaluate.go:294`（`applyEvalLocked`）、`internal/engine/receive.go:360`（`enqueueEvalLocked`） |
 | §4.4 不变量（12 条） | 内容 ID/workspace 隔离/幂等/提议≠接受/回写由生产代码保证 | 🟡 | 生产证据：`internal/domain/ids.go:39`、`internal/engine/receive.go:17`（同 ID 去重）、`internal/engine/evaluate.go:294`（判定→Decision 校验）、`internal/runtime/reply.go:213`（回写）；测试未作为本表证据 |
 | §4.6 工作区简报 | `internal/brief` + `internal/scan` | ✅ | `internal/brief/brief.go:66`（`RenderAll`）；`internal/scan/scan.go:31`（`Scan`） |
-| §4.8 IM 抽象 | 接口完整；两渠道可独立启停；**DSH 对齐：明确请求直接接单，推断按 accept mode，opt-in RequireApproval 才旧式审批**；飞书 WS/longpoll；钉钉 DWS/Stream | ✅（webhook/媒体下载除外） | 接口 `internal/sources/source.go`；生命周期 `internal/runtime/im.go:33-130`（配置/三态）、`:345-470`（Start/Apply/Stop/重启）；DSH `internal/engine/evaluate.go:348-390`；`design/im-channels.md` |
+| §4.8 IM 抽象 | 接口完整；两渠道可独立启停；**DSH 对齐：明确请求直接接单，推断按 accept mode；旧式审批已删除**；飞书 WS/longpoll；钉钉 DWS/Stream | ✅（webhook/媒体下载除外） | 接口 `internal/sources/source.go`；生命周期 `internal/runtime/im.go:33-130`（配置/三态）、`:345-470`（Start/Apply/Stop/重启）；DSH `internal/engine/evaluate.go:348-390`；`design/im-channels.md` |
 | §4.9 会话类型与意图 | `im.AddressedFor` 三规则 | ✅ | `internal/im/addressing.go:14` |
-| §4.10 应答策略 | `replyPlanLocked` + 按频道 `composeReply` + `deliverReply` 的 Held/direct | ✅ | `internal/engine/evaluate.go:574`（`replyPlanLocked`）；`internal/runtime/reply.go:50`（`composeReply`）、`:213-264`（`deliverReply` 读 ReplyPlan） |
+| §4.10 应答策略 | `replyPlanLocked` + 按频道 `composeReply` + `deliverReply` 的 Held/direct | ✅ | `internal/engine/evaluate.go:524`（`replyPlanLocked`）；`internal/runtime/reply.go:50`（`composeReply`）、`:213-264`（`deliverReply` 读 ReplyPlan） |
 | 003 PR/Issue 生命周期（follows） | GitHub 关闭事件 → `CloseThread` → `ThreadClosed`；Worker `follow` → `BindFollow`；ready 等 PR 关闭 | ✅ | `internal/runtime/github_lifecycle.go:39`（`CloseThread`）、`:88`（`BindThread`）；`cmd/zeokeel/github.go:76`；`internal/runtime/artifacts.go`（`follow` 工具）；`internal/engine/lifecycle.go:48-53,368` |
 | 003 工单准备（`execution.prepare` + 执行变量） | `sh -c`（execution root）、10m、env 剥离后 `ZEOKEEL_*`、失败不重试、提示词展示；bash 同变量 | ✅ | `internal/runtime/prepare.go:28,31,68,104,123`；调用 `internal/runtime/worker.go`；bash env `internal/agent/agent.go` 的 `Config.Env`、`internal/agent/tools.go:236`；设置 `internal/runtime/pages.go:513-525` |
 | 003 30 分钟后台作业规则 | 到上限 kill + `ReportWaiting`（job id/最后输出）、不唤醒；子智能体不适用 | ✅ | `internal/runtime/background.go:22,89,127`；设置 `internal/runtime/pages.go`（`background_timeout`）；提示 `internal/runtime/worker.go` |
-| **DSH 对齐（rc.3 行为变更）** | admitted 明确 IM/GitHub 请求由 Eval 直接接单 → Ticket；推断按 accept mode off/observe/auto（auto 需规则）；`DecPropose` 仅 opt-in `RequireApproval`（非 explicit）；旧式 proposal 在收件箱标「旧式请求（需要批准）」；`AutoApproveIM` 移除 | ✅ | `internal/engine/evaluate.go:348-390`（explicit 直接建单/inferred accept mode/opt-in propose）；`internal/engine/gate.go:52-56`；`internal/ui/inbox.go:106`、`internal/ui/overview.go:109`；`internal/engine/gate.go:52-56` |
+| **DSH 对齐（rc.3/rc.4 行为变更）** | admitted 明确 IM/GitHub 请求由 Eval 直接接单 → Ticket；推断按 accept mode off/observe/auto（auto 需规则）；**旧式审批/提案彻底删除**：Decision 只有 accept/stop/ignore/unavailable，无 Approve/Reject/UndoReject/proposal/`RequireApproval`；旧 DB `propose` 载入为 ignore（`legacyImport`），旧 `requireApproval` 忽略；收件箱 attention-only | ✅ | `internal/engine/evaluate.go:348-390`（explicit 直接建单/inferred accept mode）；`internal/engine/gate.go:52-56`（Policy 无 RequireApproval）；`internal/domain/ticket.go:10-13`；`internal/engine/persist.go:156-162`（legacy import）；`internal/ui/inbox.go:1-140` |
 | **IM 渠道三态与生命周期** | 显式 1/0 优先、缺省按凭据/flag 推导；bool 编码兼容；flag-only bootstrap；每渠道 generation/串行 apply；Stop/Close/sender 注销；切 transport 清 cursor | ✅ | `internal/runtime/im.go:33-130,186-248,345-470,749-760,1045-1075`；`internal/runtime/settingscodec.go:1-70,182-230`；`cmd/zeokeel/main.go:300`、`cmd/zeokeel/imwiring.go:91` |
 | **钉钉 DWS（默认，个人 OAuth）** | 长驻 `dws event +listen-im … -f ndjson`（无 poll/cursor、event id 去重、1s→30s 重连）；`dws chat +messages-send --as user`（隐藏 marker）；`dws auth status --format json`/`auth login [--device]`；短命令串行；无 app-key | ✅ | `internal/im/dingtalk/dws.go:1-28,63-68,90-130,569-700,842-890,970-1032,1069-1240`；`internal/runtime/dws.go:1-205`；设置 `internal/runtime/pages.go:483-500`；文档 `design/im-channels.md` |
 | **飞书官方长连接（新装默认）+ longpoll fallback** | 新装默认 `feishu_transport=ws`（`larkws`+`OnP2MessageReceiveV1`）；旧凭据-only 配置迁移时 pin `longpoll`；面板 Options 只有 `ws`/`longpoll`（无 webhook）；longpoll 保留 cursor；检查 tenant token、401/403 授权入口 | ✅ | `internal/im/feishu/ws.go:1-100`；`go.mod:12`；`internal/runtime/im.go:87,859-873`；`internal/runtime/pages.go:474-476`；`internal/view/channels.go:45-51`；`internal/runtime/settingscodec.go:101-106`（迁移 pin）；`internal/runtime/dws.go`（`checkFeishuAuth`） |
@@ -1929,17 +1929,17 @@ echo "check-nocgo: PASS (zero cgo)"
 | §5.7 可观测性 | 消息流 + 用量/压缩 + slog + health | ✅ | `internal/runtime/runtime.go:483`（`stream`）；`cmd/zeokeel/logging.go:27`；`internal/runtime/supervisor.go:151` |
 | §5.8 崩溃恢复 | `RecoverAssignments` + patchtoolcalls | ✅ | `internal/runtime/recovery.go:21`；`cmd/zeokeel/main.go:265`；`internal/agent/engine_adk.go` |
 | §5.10 能力矩阵 | MCP/skill/定时/目标/⌘K/present/ask/子智能体/后台/plantask/AGENTS.md/web/`read_image`/`job_list`/per-workspace browser MCP | 🟡（仍缺 plan mode 与 agent 可调用 workflow） | 工具 `internal/agent/imageread.go`、`internal/agent/jobs.go:275-309`、`internal/runtime/worker.go:468`；仍缺 plan mode 与 agent 可调用 workflow |
-| **内置工具（rc.3）** | plantask/Task*、AGENTS.md 不可信信封 ≤64KB、web_fetch DNS pin/Proxy:nil/拒私网/2MiB、web_search 前 5；新增 `read_image`（元数据-only，无像素）、`job_list`、`subagent` 命名；Worker 域工具 `ack/handback/thread_unrelated/request_status`；SuperAgent 无工具 | ✅（read_image 无视觉；无 orchestrator_read） | `internal/agent/imageread.go:1-120`、`internal/agent/jobs.go:275-309`、`internal/agent/subagent.go:55`、`internal/runtime/artifacts.go:121-222`；`internal/runtime/rc2.go:121-132`（SuperAgent payload 无 tools）；`internal/agent/builtin.go`、`internal/agent/webtools.go`；`audit/tool-gap.md` |
+| **内置工具（rc.4）** | plantask/Task*、AGENTS.md 不可信信封 ≤64KB、web_fetch DNS pin/Proxy:nil、web_search 前 5；`read_image`（元数据-only，无像素）、`job_list`、`subagent` 命名；`read_resource`（DSH orchestrator_read 等价，分页读自己的 ticket/inputs/trigger/thread，只读/redacted）；Worker 域工具 `ack/handback/thread_unrelated/request_status`；SuperAgent 无工具 | ✅（read_image 无视觉；DSH main orchestrator 工具集缺席） | `internal/agent/imageread.go:1-120`、`internal/agent/jobs.go:275-309`、`internal/agent/subagent.go:55`、`internal/runtime/artifacts.go:121-222,205-214`、`internal/runtime/rc3.go:17-160`、`internal/runtime/worker.go:580`；`internal/runtime/rc2.go:121-132`（SuperAgent payload 无 tools）；`audit/tool-gap.md` |
 | §6.3 界面结构（UX 轮 IA） | 日常五项：超级Agent / 收件箱 / 项目 / 执行 / 设置；工程页（对话记录·消息·连接·触发·评估）收进默认折叠的「诊断（高级）」；UI 用「项目」称呼工作区 | ✅ | `internal/view/vm.go:486-520`（`Nav`/`NavAdvanced`/`SectionLabel`）；`internal/ui/chrome.go:60-110`（rail + 诊断折叠）；`internal/ui/app.go:441-455`（⌘K/⌘//⌘N/⌘,） |
-| **项目面板（概览/设置/统计）+ per-workspace 浏览器/MCP/技能** | 项目页三 tab；设置编辑浏览器（Chrome/Edge、无头、CDP 0=自动、profile 只读）、启停/状态、技能开关（全局默认开/项目可关）；统计显示会话/任务/进行中/等待/完成/失败/最近活动/工具可用性；浏览器每项目独立 profile+唯一 CDP 端口，`chrome-devtools-mcp` 的 `mcp__browser__*` 只注入该项目 Worker | ✅（最近活动 runtime 未投影时为空态） | `internal/view/workspacepanel.go:1-99`；`internal/ui/workspacepanel.go:193-520`；`internal/runtime/workspacesettings.go:75-160,296-333,427-480`；`internal/store/workspacesettings.go`；`internal/browser/detect.go:10-65`、`internal/browser/manager.go:99-107,185-245`、`internal/browser/launch.go:22-56`、`internal/browser/mcp.go:12-15,44-48,118-140`；注入 `internal/runtime/worker.go:468` |
+| **项目面板（概览/设置/统计）+ per-workspace 浏览器/MCP/技能** | 项目页三 tab；设置编辑浏览器（Chrome/Edge、无头、CDP 0=自动、profile 只读）、启停/状态、技能开关（全局默认开/项目可关）；**node/npx 前置检查缺失时显示警告+OS 安装命令+重新检查，启动按钮禁用并说明原因**；统计显示会话/任务/进行中/等待/完成/失败/最近活动/工具可用性；浏览器每项目独立 profile+唯一 CDP 端口，`chrome-devtools-mcp` 的 `mcp__browser__*` 只注入该项目 Worker | ✅（最近活动 runtime 未投影时为空态） | `internal/view/workspacepanel.go:1-99`；`internal/ui/workspacepanel.go:193-520`；`internal/runtime/workspacesettings.go:75-160,296-333,427-480`；`internal/store/workspacesettings.go`；`internal/browser/detect.go:10-65`、`internal/browser/manager.go:99-107,185-245`、`internal/browser/launch.go:22-56`、`internal/browser/mcp.go:12-15,44-48,118-140`；前置 `internal/browser/prereq.go:1-140`、`internal/runtime/rc3.go:170-205`、`internal/ui/workspacepanel.go:613-692`；注入 `internal/runtime/worker.go:468` |
 | **输入条（聊天/派活双 target）** | 多行 TextArea；Enter 换行、⌘/Ctrl+Enter 发送（IME 安全）；target chip「超级Agent（聊天）/项目 X（派活）」决定提交目标；失败保留草稿+再次发送；回答可展开/复制/查看全部 | ✅ | `internal/ui/composer.go:19-220`（target bar/inputBar/context/展开复制）；`internal/ui/commands.go:137-188`（submit/resend/失败保留）；`internal/runtime/ux.go:134-172`（`DispatchTo`）；对话记录 `internal/ui/chat.go`/`internal/view/chat.go` |
-| **收件箱（统一注意力）** | 一个「待你决定 N」（runtime `AttentionCount` 单源）；IM 批准/拒绝卡片 + 任务回答/重试/停止；拒绝后 10s 可撤销；j/k/Enter；pending 与就地错误；窗口隐藏时新待办系统通知 | ✅ | `internal/ui/inbox.go:1-350`；`internal/runtime/ux.go:279-440`（`attentionItems`/`AttentionCount`/`notifyAttention`）；`internal/view/attention.go`；`internal/ui/uxsupport.go:286-300`（hidden notification） |
+| **收件箱（attention-only）** | 一个「待你决定 N」（runtime `AttentionCount` 单源）；**只显示任务问题/受阻/失败**（回答/重试/停止）；没有批准/拒绝/撤销；j/k/Enter；pending 与就地错误；窗口隐藏时新待办系统通知 | ✅ | `internal/ui/inbox.go:1-233`；`internal/runtime/ux.go:314-438`（`attentionItems`/`AttentionCount`/`notifyAttention`）；`internal/view/attention.go`；`internal/ui/uxsupport.go:286-300`（hidden notification） |
 | **超级Agent 聊天+派活双态 / 内联反馈 / 忙碌态** | 提问→模型/确定性回答；派活→「已派发到 项目 #N」；待批→「需要你确认」；回答内联在输入条上方+总览；非失败不标红；发送/保存/重启有 pending；有「对话记录」页 | ✅ | `internal/runtime/chat.go:1-116`；`internal/view/chat.go:1-83`；`internal/ui/chat.go:20-98`；`internal/ui/composer.go:163-220`；`internal/ui/commands.go:1-220`；`internal/ui/settings.go:436-470` |
 | **聊天流式输出 / 停止生成** | OpenAI 兼容 SSE；增量文本 60ms 节流发布；对话显示打字光标；`停止生成` 取消并保留已生成部分（标「已停止生成」）；最终文本只追加一次 | ✅ | `internal/runtime/rc2.go:24-190`（`setChatPartial`/`StopChat`/`chatAnswerStreaming`/`streamChat`）；`internal/runtime/chat.go:38-52`（partial → ChatVM）；`internal/ui/uxsupport.go:232-240`（`ChatStreamer`）；`internal/ui/composer.go:241-305`（光标/停止按钮） |
 | **聊天/历史 Markdown 渲染** | 标题/粗斜体/行内代码/围栏代码块/有序·无序列表/http(s) 链接；不解释 HTML；未匹配标记按字面；链接经系统浏览器 | ✅ | `internal/ui/markdown.go:19-180`（`renderMarkdown`/`parseInline`/`openExternal`）；`internal/ui/chat.go:75`；`internal/ui/composer.go:263-267` |
 | **计划/待办可见** | `.zeokeel/plan/*.json` → `view.PlanVM`；执行详情与对话任务卡显示步骤/状态；`3/5 完成 · 1 进行中 · 1 需要你` 计数 | ✅ | `internal/view/plan.go:1-51`（`PlanVM`/`Counts`）；`internal/runtime/rc2.go:302-433`（`PlanTasks`/`currentPlan`）；`internal/ui/planpanel.go:29-85`；`internal/ui/ticketdetail.go:97-98`；`internal/ui/composer.go:238-239` |
 | **应用到项目（显式回写）** | 只复制记录过的交付物；拒绝绝对/越界路径；同名文件先备份 `.bak-<timestamp>`；返回相对路径；UI 确认列出目标/文件/覆盖警告 | ✅ | `internal/runtime/rc2.go:193-270`（`ApplyArtifacts`/`safeExecPath`/`ArtifactRelPaths`）；`internal/ui/applyproject.go:1-199`；`internal/ui/ticketdetail.go:291-301` |
-| **拒绝无损 / 撤销拒绝** | 拒绝保留 proposal + `RejectedAt`；`UndoReject` 恢复待批（幂等；同一 Thread 更新决策则拒绝；持久化重启安全）；不建 Ticket/不启动/不回复；UI 10s 撤销 toast | ✅ | `internal/engine/lifecycle.go:723-815`（`UndoReject`/superseded）；`internal/engine/persist.go:835-860`；`internal/runtime/rc2.go:436-463`；`internal/ui/inbox.go:59-66`；`internal/ui/uxsupport.go:201-230,307-310`（10s toast） |
+| **旧式审批/提案（rc.4 删除）** | 无 Approve/Reject/UndoReject/proposal/`RequireApproval`；旧 DB `propose` 由 load 转 `ignore`（legacyImport）；收件箱 attention-only | ✅ | `internal/domain/ticket.go:10-13`；`internal/engine/persist.go:156-162`；`internal/engine/gate.go:52-56`；`internal/ui/inbox.go:1-140` |
 | **原生应用菜单** | App/文件/编辑/窗口；新建对话 ⌘N、设置 ⌘,、打开主窗口；标准编辑 roles（撤销/重做/剪切/复制/粘贴/全选） | ✅ | `internal/ui/menu.go:1-72`（`appMenu`）；`internal/ui/app.go:345`（`mygo.App.SetMenu`）；窗口内快捷键 `internal/ui/app.go:441-455` |
 | **系统无障碍偏好** | mygo `Theme.Preferences`：TextScale × `ui.font_scale`、ReduceMotion、HighContrast（强化边框/文字）、系统 Accent | ✅ | `internal/ui/prefs.go:1-61`（`readUIPrefs`/`applyPrefs`/`accentPrefs`）；`internal/ui/app.go:441-462`（合并 scale）；`internal/ui/stream.go:59-62`（ReduceMotion）；`internal/ui/tokens.go:63`（`fs`） |
 | **关于 / 更新检查** | 设置›关于显示版本（runtime `Version`）/MIT 许可证；「检查更新」只查询 GitHub Releases API（15s、不下载），显示最新版本与发布页链接 | ✅ | `internal/ui/about.go:1-117`；`internal/runtime/rc2.go:355-415`（`CheckForUpdate`，仅 GET）；`internal/view/pages.go:469-470,644`（About group）；菜单入口 `internal/ui/app.go:345` |
@@ -1947,7 +1947,7 @@ echo "check-nocgo: PASS (zero cgo)"
 | **项目（工作区）opaque ID / 重命名 / 删除 / 过滤** | UI 称「项目」；`ws_*` 随机 ID、名字可改、根目录绝对化/重复拒绝；选中项目过滤消息/执行；删除空项目（行+策略+engine 路由），有工单拒绝 | ✅ | `internal/runtime/workspaces.go:23-95`（创建/ID/root）、`:111-150`（Rename）、`:155-190`（Delete，`:182` `Unregister`）；`internal/store/store.go:390`（删除行）；`internal/engine/engine.go:157`（路由注销）；过滤 `internal/ui/workspace.go:346-400`、`internal/view/pages.go:419-430`、`internal/view/vm.go:566-580` |
 | **设置 codec / 一次性迁移 / 事务保存 / secret** | UI 开关读写 `1/0`（读兼容旧 true/false）；`LoadSettings` 一次性迁移（bool 归一、IM 启用/transport、`im_self` 拆分）+ schema stamp；SaveSettings 先快照后提交；secret 不回显、Inspect/status/health redaction | ✅ | `internal/ui/channels.go:381-395`、`internal/ui/settings.go:405-414`；`internal/runtime/settingscodec.go:1-70,76-230`；`internal/runtime/pages.go:678-707`（迁移）、`:567-690`（SaveSettings）、`:539-550`（secret）；`internal/store/settings.go:28-55,106-146`；`internal/store/redact.go`；`internal/store/inspect.go:46-117,231,260` |
 | **模型设置与测试连接** | 设置›模型：端点/API Key/模型名；「测试连接」探测已保存配置（401/403/404 分类）；保存后即时生效；未配模型时总览「去配置模型」，任务停在待你决定；模型响应超时在设置›执行 | ✅ | `internal/runtime/pages.go:543-558`（字段）、`:524-526`（超时）；`internal/runtime/ux.go:36-125`（`ApplyModelSettings`/`CheckModel`）；`internal/ui/settings.go:501-535`（测试行）；`internal/ui/overview.go:50-95`（停车卡） |
-| **首跑引导（必填/测试/演示/选择器）** | 四步向导；必填/可选标记；模型「保存并测试」；「稍后设置（演示模式）」；项目根目录原生「浏览…」；完成后落点提示 | ✅ | `internal/ui/onboarding.go:60-180`；`internal/ui/uxsupport.go:100-170`（skip/finish/picker）；`internal/runtime/ux.go:445-452`（`SkipOnboarding`/`DemoMode`）；`internal/runtime/onboarding.go:71-108` |
+| **首跑引导（必填/测试/演示/选择器）** | 四步向导；必填/可选标记；模型「保存并测试」；「稍后设置（演示模式）」；项目根目录原生「浏览…」；完成后落点提示 | ✅ | `internal/ui/onboarding.go:60-180`；`internal/ui/uxsupport.go:100-170`（skip/finish/picker）；`internal/runtime/ux.go:423-438`（`SkipOnboarding`/`DemoMode`）；`internal/runtime/onboarding.go:71-108` |
 | **路径真相（项目 vs 执行副本）** | 详情「位置」分别列项目目录/执行副本，可打开/复制；交付物可打开/复制；提示词明确只在副本工作、不声称改项目；需要回写时用「应用到项目」（显式、带备份） | ✅ | `internal/ui/ticketdetail.go:250-286`；`internal/runtime/ux.go:279-303`（`ExecutionPaths`/`absoluteArtifactPath`）；`internal/runtime/worker.go:570-582`（提示词事实）；`internal/ui/deliverables.go:60-85` |
 | **IM 连接向导** | 按 transport 只显示该方式字段；draft 校验+用填写值检查（不保存）；通过才保存/显式仍保存；DWS 版本/登录命令/授权链接可复制；Feishu chats（ws 可选/longpoll 必填）；暂停监听开关 | ✅ | `internal/ui/channelwizard.go:1-520`；`internal/runtime/ux_im.go:1-95`；`internal/runtime/im.go:1392-1505`（per-transport specs/校验）；`internal/im/dingtalk/dws_setup.go`；`internal/im/feishu/ws_chats.go` |
 | §6.5 主题 / 深色 / 字号 / 最小窗口**与可访问性** | 品牌 token 随 frame theme；`ui.font_scale` 三档可编辑；提高 faint 对比度与 focus token；行 `Focusable/Role/Label/Tooltip`、28px 目标/16px 图标；状态栏去 debug；`StateKey:"main"` 记忆窗口、最小 1100×720；系统 TextScale/ReduceMotion/HighContrast/Accent 已接 | ✅ | `internal/ui/tokens.go:100-145,195`；`internal/ui/app.go:238-264,320-330`；`internal/ui/settings.go:244-300`；`internal/ui/chrome.go:143-160`；`internal/ui/uxsupport.go`；投影 `internal/runtime/pages.go:537-539` |
@@ -1955,14 +1955,14 @@ echo "check-nocgo: PASS (zero cgo)"
 | §7 持久化与 Effects/Outbox | schema v3、Effects、Outbox、会话事件、归档 | ✅ | `internal/store/schema.go:17`（`SchemaVersion=3`）；`internal/effects`；`internal/outbox`；`cmd/zeokeel/ops.go:83` |
 | §7.3 归档 | `archive --before 180d` → archive.db；outbox 保留 | ✅ | `cmd/zeokeel/ops.go:83` |
 | §8.1 模式与 CLI | 桌面 / `-headless` / 演示 / pipeline / 七个子命令 | ✅ | `cmd/zeokeel/cli.go:47`（`cliCommands`）；`cmd/zeokeel/service.go:20` |
-| §8.2 首次配置 | 向导四步落库（必填/测试/演示跳过/原生选择器）；`setup` 非交互；面板可新建项目（原生选择器） | ✅（gh 校验/钥匙串除外） | `internal/runtime/onboarding.go:114`；`cmd/zeokeel/cli.go:216`；`internal/ui/onboarding.go:60-180`；`internal/runtime/ux.go:445-452`；`internal/runtime/workspaces.go:23` |
+| §8.2 首次配置 | 向导四步落库（必填/测试/演示跳过/原生选择器）；`setup` 非交互；面板可新建项目（原生选择器） | ✅（gh 校验/钥匙串除外） | `internal/runtime/onboarding.go:114`；`cmd/zeokeel/cli.go:216`；`internal/ui/onboarding.go:60-180`；`internal/runtime/ux.go:423-438`；`internal/runtime/workspaces.go:23` |
 | §8.3 打包分发 | tar.gz / 未签名 .app zip / Windows zip + install.ps1 | 🟡 | `scripts/package.sh`；缺 `.dmg`/NSIS/deb/PKGBUILD/updater；CI 不出包 |
 | §8.5 可观测性与运维 CLI | status/check/setup/login/backup/archive/stop、日志、supervisor、退出码 0/1/2/3、secret redaction | ✅（自启/唤醒除外） | `cmd/zeokeel/cli.go:76,143,216,354`；`cmd/zeokeel/ops.go:46,83`；`cmd/zeokeel/logging.go:27`；`internal/runtime/status.go:21-26,137`；`internal/runtime/supervisor.go:105`；`internal/store/inspect.go` |
 | §9 零 cgo | `check-nocgo.sh` + CI gate | ✅ | `scripts/check-nocgo.sh`；`scripts/verify-fixes.sh`；CI `check` job |
 | §1.2 + 附录 A 能力清单 | pause/retry/resume/stop、follows、投递三段式、prompt 6 层+历史；DSH 对齐（明确直接接单/推断 accept mode）；steer/inject ❌ | 🟡（仅 steer/inject） | `internal/engine/lifecycle.go`；`internal/runtime/prompts.go`；`internal/runtime/chat.go`；`internal/runtime/im.go` |
 | 008 扩展路径（新增 Source） | Kind/registry/配置/游标/Channel 完整；IM 管理器可参考；无 Source 实例表/面板添加来源 | 🟡 | `internal/sources/`；`cmd/zeokeel/github.go`、`cmd/zeokeel/imwiring.go`；cookbook `design/how-to-add-a-source.md` |
 
-**明确未做（2026-11-04 rc.3）**：
+**明确未做（2026-11-04 rc.4）**：
 - `.dmg`、NSIS/deb/PKGBUILD、自动更新、代码签名与公证、CI 出包。
 - 系统钥匙串（API Key 明文 SQLite 0600）；`UserError{Code,Place,Values}`（错误仍是自由文本）。
 - 领域类型 `domain.Source` / `domain.Thread`；`steer/inject`、已读回执的完整 003 语义；飞书 webhook 与 IM 媒体下载（只保留引用）。
@@ -1970,8 +1970,8 @@ echo "check-nocgo: PASS (zero cgo)"
 - 开机自启、休眠唤醒（委托 systemd/launchd）。
 - 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
 - IM 真实凭据/DWS 租户端到端未验证；连接向导只验证凭据/订阅，不代替真实消息 E2E。
-- **rc.3 明确未做**：真正在原项目执行（执行副本 + 显式 apply-back）、系统钥匙串（SQLite 0600）、多窗口、
-  自动更新只检查不下载、真实飞书/DWS 租户 E2E、`read_image` 无视觉、无 `orchestrator_read`/DSH main orchestrator 工具、
+- **rc.4 明确未做**：真正在原项目执行（执行副本 + apply-back）、系统钥匙串（SQLite 0600）、多窗口、
+  自动更新只检查不下载、真实飞书/DWS 租户 E2E、`read_image` 无像素（需 vision endpoint）、DSH main orchestrator 工具集、
   浏览器需 Chrome/Edge+node/npx；打包仍无 `.dmg`/deb/安装器。
-- **测试/闸门状态**：2026-11-03 快照曾全绿；修复波 + UI/UX 优化轮 + rc.2/rc.3 后由 Lead 在 bump VERSION 后跑最终 `verify-fixes.sh`/`release-check.sh`，本文不预称全绿。
+- **测试/闸门状态**：2026-11-03 快照曾全绿；修复波 + UI/UX 优化轮 + rc.2/rc.3/rc.4 后由 Lead 在 bump VERSION 后跑最终 `verify-fixes.sh`/`release-check.sh`，本文不预称全绿。
 **维护规则**：以后每次改代码，同一提交内改这里；新增 ✅ 必须附 `file:line`，否则按 🟡 处理。

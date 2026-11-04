@@ -99,20 +99,6 @@ func TicketLabel(id string, number int) string {
 	return "#?"
 }
 
-// ApprovalRow is one request waiting for the operator's yes. It is not a Ticket:
-// no work has been authorized yet.
-type ApprovalRow struct {
-	DecisionID  string
-	From        string
-	Source      string
-	Said        string
-	Intent      string
-	Deliverable string
-	Workspace   string
-	Sensitive   []string
-	Age         time.Duration
-}
-
 // HealthItem is one part of the system. A healthy part takes one line; only a
 // problem gets detail.
 type HealthItem struct {
@@ -227,9 +213,7 @@ func (s SystemInfo) Label() string {
 
 // OverviewVM is everything the overview page draws.
 type OverviewVM struct {
-	// Approvals are requests that would start work but need a person first. They
-	// are not Tickets yet, so they are a separate list from NeedsPerson.
-	Approvals   []ApprovalRow
+	// NeedsPerson are the Tickets that wait for a person (answer/review/blocked).
 	NeedsPerson []TicketRow
 	// Recent is what the person handed over lately, newest first. The overview
 	// is where they look right after dispatching, so it must show the hand-off,
@@ -489,7 +473,7 @@ func (o *OverviewVM) PersonCount() int {
 	if o == nil {
 		return 0
 	}
-	return len(o.NeedsPerson) + len(o.Approvals)
+	return len(o.NeedsPerson)
 }
 
 // Nav returns the sidebar model. The counts are the lengths of the lists they

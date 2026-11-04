@@ -62,43 +62,21 @@ func TestEndToEndFromChatToReply(t *testing.T) {
 		Channel:      domain.ChannelRef{Source: "dingtalk", Thread: "dm-e2e"},
 		At:           now,
 	}
-	// The approval gate is for inferred requests (002:101: explicit requests are
-	// accepted in every mode), so this scenario makes the message an inferred one.
-	if err := d.pers.SetPolicy("ws_web", engine.Policy{Version: "v1", RequireApproval: true, AcceptMode: domain.AcceptAuto,
-		Rules:   []domain.Rule{{ID: "implementation", Instruction: "明确的实现请求", Enabled: true, Proactive: true}},
-		Allowed: map[string]map[string]bool{"dingtalk": {"ding": true}}}); err != nil {
-		t.Fatal(err)
-	}
-	tr.Scope = domain.WorkspaceScope("ws_web")
-	tr.Addressed = domain.Addressed{}
-	tr.ScopeReceivesAll = true
+	// DSH flow: the explicit IM request is accepted directly (no approval step).
 	if _, err := d.pers.Receive(tr); err != nil {
 		t.Fatal(err)
 	}
-	// 2. The 2s pass turns the request into a proposal, not a Ticket.
+	// 2. The 2s pass turns the request into a Ticket.
 	out := evalPersistence(d.pers)
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("a colleague request must wait for approval: %+v", out)
-	}
-
-	// 3. The operator approves.
-	var decisionID domain.ID
-	for _, p := range eng.Proposals() {
-		decisionID = p.ID
-	}
-	approved, err := d.pers.Approve(decisionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if approved.Ticket == "" {
-		t.Fatal("approval must create the Ticket")
+	if out.Ticket == "" {
+		t.Fatalf("a colleague request must create a Ticket: %+v", out)
 	}
 
 	// 4. The durable queue launches the Worker; wait for the deliverable.
 	deadline := time.Now().Add(25 * time.Second)
 	var tk domain.Ticket
 	for time.Now().Before(deadline) {
-		got, ok := eng.TicketSnapshot(approved.Ticket)
+		got, ok := eng.TicketSnapshot(out.Ticket)
 		if ok && len(got.Artifacts) > 0 {
 			tk = got
 			if tk.LastReport() != nil && tk.LastReport().State == domain.ReportReady {
@@ -145,7 +123,7 @@ func TestEndToEndFromChatToReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d2.Close()
-	restored, ok := eng2.TicketSnapshot(approved.Ticket)
+	restored, ok := eng2.TicketSnapshot(out.Ticket)
 	if !ok {
 		t.Fatal("the Ticket did not survive the restart")
 	}

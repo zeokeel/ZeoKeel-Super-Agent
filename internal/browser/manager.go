@@ -39,6 +39,11 @@ type Options struct {
 	// MCPDial is a test/embedding seam: when set, the default MCP starter uses it
 	// instead of spawning the real command (no npx, no network).
 	MCPDial func(ctx context.Context, cfg mcp.ServerConfig) (mcpsdk.Transport, error)
+	// RunCommand runs `<name> --version` for the prerequisite check. Tests inject
+	// a fake; the default is exec.CommandContext with PrereqTimeout (no shell).
+	RunCommand func(ctx context.Context, name string, args ...string) (string, error)
+	// PrereqTimeout bounds one `--version` probe (default 3s).
+	PrereqTimeout time.Duration
 	// StartTimeout bounds browser readiness + MCP startup.
 	StartTimeout time.Duration
 	// StopTimeout bounds the graceful (SIGTERM) wait before Kill.
@@ -51,6 +56,10 @@ type Options struct {
 type Manager struct {
 	stateDir string
 	opts     Options
+
+	// usesDefaultMCP is true when this manager owns the npx-based starter (no
+	// test transport/starter injected); only then does Start require node/npx.
+	usesDefaultMCP bool
 
 	mu     sync.Mutex
 	ws     map[string]*workspace
@@ -71,6 +80,13 @@ type workspace struct {
 func NewManager(stateDir string, opts Options) (*Manager, error) {
 	if len(stateDir) == 0 {
 		return nil, fmt.Errorf("%w: state dir is empty", ErrInvalidConfig)
+	}
+	usesDefaultMCP := opts.MCPStarter == nil && opts.MCPDial == nil
+	if opts.RunCommand == nil {
+		opts.RunCommand = runVersionCommand
+	}
+	if opts.PrereqTimeout <= 0 {
+		opts.PrereqTimeout = defaultPrereqTimeout
 	}
 	if opts.Launcher == nil {
 		opts.Launcher = execLauncher{}
@@ -94,10 +110,11 @@ func NewManager(stateDir string, opts Options) (*Manager, error) {
 		opts.Now = time.Now
 	}
 	return &Manager{
-		stateDir: stateDir,
-		opts:     opts,
-		ws:       map[string]*workspace{},
-		ports:    map[int]string{},
+		stateDir:       stateDir,
+		opts:           opts,
+		usesDefaultMCP: usesDefaultMCP,
+		ws:             map[string]*workspace{},
+		ports:          map[int]string{},
 	}, nil
 }
 
@@ -168,6 +185,16 @@ func (m *Manager) Start(ctx context.Context, wsID string, cfg Config) (Status, e
 	}
 	if w.proc != nil && (w.status.State == StateRunning || w.status.State == StateStarting) {
 		return w.status, nil // idempotent: one browser per workspace
+	}
+	if m.usesDefaultMCP {
+		pre := m.Prerequisites(ctx)
+		if !pre.prereqReady() {
+			detail := prereqFailureDetail(pre)
+			w.status = Status{Workspace: wsID, State: StateError, Detail: detail,
+				ProfileDir: m.ProfileDir(wsID), MCPState: "error", MCPDetail: detail}
+			_ = writeStatusFile(m.stateDir, wsID, w.status)
+			return w.status, fmt.Errorf("%w: %s", ErrNodeMissing, detail)
+		}
 	}
 	if w.proc != nil || w.mcp != nil {
 		_ = m.stopLocked(wsID, w)

@@ -168,7 +168,7 @@ func TestSearchJumpToDecisionAndMessageLocates(t *testing.T) {
 	if a.locate == nil || a.locate.DecisionID != "d-2" {
 		t.Fatalf("located %+v, want decision d-2", a.locate)
 	}
-	wantTexts(t, tt, "定位", "提案：等你批准后新建 Ticket")
+	wantTexts(t, tt, "定位", "旧式提案（批准流程已移除）")
 
 	openPalette(t, tt)
 	// A phrase only the message body has, so the first hit is the message.

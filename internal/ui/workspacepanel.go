@@ -43,6 +43,48 @@ type SkillLibrary interface {
 	Skills() []view.SkillInfo
 }
 
+// BrowserPrerequisites reports whether the machine can run the browser MCP
+// (Node.js + npx). Without it the browser is not claimed to work.
+type BrowserPrerequisites interface {
+	BrowserPrerequisites() view.BrowserPrereq
+}
+
+// startPrereqLoad checks Node.js/npx off the frame.
+var startPrereqLoad = func(a *App) {
+	a.runOffMain(func() {
+		provider, ok := a.cmd.(BrowserPrerequisites)
+		var preq view.BrowserPrereq
+		if ok && provider != nil {
+			preq = provider.BrowserPrerequisites()
+		}
+		a.postToUI(func() {
+			a.prereq = preq
+			a.prereqWired = ok
+			a.prereqLoaded = true
+			a.prereqChecking = false
+		})
+	})
+}
+
+// ensurePrereqs loads the Node.js/npx check once per panel session.
+func (a *App) ensurePrereqs() {
+	if a.prereqLoaded || a.prereqChecking {
+		return
+	}
+	a.prereqChecking = true
+	startPrereqLoad(a)
+}
+
+// recheckPrereqs re-runs the check ("重新检查").
+func (a *App) recheckPrereqs() {
+	if a.prereqChecking {
+		return
+	}
+	a.prereqChecking = true
+	a.prereqLoaded = false
+	startPrereqLoad(a)
+}
+
 // startWorkspacePanelLoad gathers one workspace's panel data off the frame.
 var startWorkspacePanelLoad = func(a *App, workspaceID string) {
 	a.runOffMain(func() {
@@ -314,6 +356,8 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			}
 			mui.Text(c, "CDP 端口："+port).FontSize(fs(10)).TextColor(tk.TextFaint)
 		}
+		// Node.js/npx prerequisite: the browser MCP cannot run without it.
+		a.browserPrereqCard(c, true)
 		// Start/stop, only with the controller.
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			_, wired := a.cmd.(BrowserController)
@@ -322,7 +366,11 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			}
 			start := mui.Button(c, "启动浏览器").Label("启动浏览器").Height(28).FontSize(fs(12))
 			stop := mui.Button(c, "停止浏览器").Label("停止浏览器").Height(28).FontSize(fs(12))
-			if !wired || a.wsBrowserPending != "" || a.wsBrowserRunning {
+			reason, blocked := a.browserStartBlocked()
+			if blocked {
+				mui.Text(c, reason).FontSize(fs(10)).TextColor(tk.Amber)
+			}
+			if !wired || a.wsBrowserPending != "" || a.wsBrowserRunning || blocked {
 				start.Disabled(true)
 			} else if start.Clicked() {
 				a.wsBrowserPending = "浏览器启动中…"
@@ -541,4 +589,104 @@ func (a *App) browserFactsSection(c *mui.Context) {
 			}
 		})
 	}
+}
+
+// installCommands are the OS-specific ways to install Node.js (with npx built in).
+// The panel shows the current OS's command and the nodejs.org link for others.
+func installCommands(os string) []struct{ Label, Command string } {
+	switch os {
+	case "darwin":
+		return []struct{ Label, Command string }{
+			{"Homebrew", "brew install node"},
+		}
+	case "windows":
+		return []struct{ Label, Command string }{
+			{"winget", "winget install OpenJS.NodeJS.LTS"},
+		}
+	default:
+		return []struct{ Label, Command string }{
+			{"Debian/Ubuntu", "sudo apt install nodejs npm"},
+		}
+	}
+}
+
+// browserPrereqCard is the Node.js/npx reminder shared by 设置›部署 and the
+// workspace browser section. It never lets "启动浏览器" be clicked while npx is
+// missing without saying why.
+func (a *App) browserPrereqCard(c *mui.Context, compact bool) {
+	tk := a.tk
+	a.ensurePrereqs()
+	if !a.prereqLoaded || a.prereqChecking {
+		spinner(c, tk, "正在检查 Node.js / npx…")
+		return
+	}
+	recheck := func() {
+		if b := mui.Button(c, "重新检查").Label("重新检查 Node.js/npx").Height(24).FontSize(fs(11)); b.Clicked() {
+			a.recheckPrereqs()
+		}
+	}
+	if !a.prereqWired {
+		mui.Text(c, "无法检查 Node.js/npx：运行时还没有接入浏览器前置检查；浏览器可能不可用。").
+			FontSize(fs(11)).TextColor(tk.Amber)
+		return
+	}
+	if a.prereq.Ready() {
+		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+			dot(c, tk.Green, 6)
+			mui.Text(c, "Node.js "+a.prereq.NodeVersion+" · npx "+a.prereq.NpxVersion+" 已就绪").
+				FontSize(fs(11)).TextColor(tk.Green)
+			recheck()
+		})
+		return
+	}
+	// Missing: the prominent reminder.
+	card(c, tk, 10, func() {
+		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+			mui.Icon(c, icBell).FontSize(fs(14)).TextColor(tk.Amber)
+			mui.Text(c, "浏览器 MCP 需要 Node.js（含 npx）").FontSize(fs(13)).Bold().
+				TextColor(tk.Amber)
+			mui.Spacer(c)
+			recheck()
+		})
+		missing := "Node.js 与 npx 都未检测到"
+		switch {
+		case a.prereq.NodeInstalled && !a.prereq.NpxInstalled:
+			missing = "检测到 Node.js，但缺少 npx（通常随 Node.js 一起安装：npm 自带 npx）"
+		case !a.prereq.NodeInstalled && a.prereq.NpxInstalled:
+			missing = "检测到 npx，但没有 Node.js"
+		}
+		mui.Text(c, missing).FontSize(fs(11)).TextColor(tk.TextMuted)
+		if a.prereq.Detail != "" {
+			mui.Text(c, a.prereq.Detail).FontSize(fs(10)).TextColor(tk.TextFaint)
+		}
+		for _, ins := range installCommands(runtimeGOOS) {
+			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+				mui.Text(c, ins.Label).FontSize(fs(10)).Width(90).Shrink(0).TextColor(tk.TextFaint)
+				mui.Text(c, ins.Command).FontSize(fs(11)).Font("monospace").Grow(1).
+					SingleLine().Tooltip(ins.Command).TextColor(tk.Text)
+				if b := mui.Button(c, "复制").Label("复制安装命令").Height(22).FontSize(fs(10)); b.Clicked() {
+					a.copyValue(ins.Command, "安装命令")
+				}
+			})
+		}
+		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
+			mui.Text(c, "其他系统：从 nodejs.org 下载安装包（含 npx）").
+				FontSize(fs(10)).TextColor(tk.TextFaint)
+			if b := mui.Button(c, "打开 nodejs.org").Height(22).FontSize(fs(10)); b.Clicked() {
+				a.openExternal("https://nodejs.org/")
+			}
+			if compact {
+				mui.Spacer(c)
+			}
+		})
+	})
+}
+
+// browserStartBlocked reports the reason "启动浏览器" is disabled: the browser MCP
+// needs npx, and a missing prerequisite must not look like a working button.
+func (a *App) browserStartBlocked() (string, bool) {
+	if a.prereqWired && a.prereqLoaded && !a.prereq.Ready() {
+		return "浏览器 MCP 需要 Node.js（含 npx）：先按上面的命令安装", true
+	}
+	return "", false
 }

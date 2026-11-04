@@ -194,3 +194,15 @@ func (p *Persistence) UndoReject(decisionID domain.ID) (Outcome, error)
   至少一条命中规则；`DecPropose` 仅由显式 `Policy.RequireApproval`（只对 inferred）产生。
 - `UndoReject`/`RestoreProposal` 不变；proposal 来源改为 RequireApproval opt-in。
 - Runtime：IM 消息现在直接产生 Ticket，`Overview.Approvals` 默认应为空；无需为 IM 走 Approve。
+
+
+## rc3：审批机制删除（breaking）
+
+以下 API 已删除，runtime/ui/cmd 不得再引用：
+- domain：`DecPropose`、`Proposal`、`Decision.Proposal`、`Decision.RejectedAt`、`ReasonRejectedByPerson`、`ReasonUndoReject`
+- engine：`Policy.RequireApproval`、`Engine.Approve/Reject/UndoReject/RestoreProposal/Proposals`、`Outcome.Proposal`、
+  `ErrNotRejected`、`ErrUndoSuperseded`
+- persistence：`Persistence.Approve/Reject/UndoReject/RestoreProposal`
+
+替代：explicit（含 IM）→ `DecAccept` 直接建 Ticket；inferred → accept mode（off/observe/auto + 命中规则）。
+旧库兼容：`decision.kind="propose"` 载入为 `ignore` + `legacyImport` reason，proposal/rejectedAt JSON 忽略。

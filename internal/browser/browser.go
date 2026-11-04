@@ -133,6 +133,23 @@ type LaunchSpec struct {
 	DevToolsURL string
 }
 
+// PrereqStatus is the Node.js/npx prerequisite view used by the panel to remind
+// a customer to install Node.js. Checking is local only: LookPath + `<tool>
+// --version` with a timeout; no network, no package install.
+type PrereqStatus struct {
+	NodeFound   bool
+	NodeVersion string
+	NodePath    string
+	NPXFound    bool
+	NPXVersion  string
+	NPXPath     string
+	CheckedAt   time.Time
+	// InstallHints are actionable, ordered sentences (install/repair/PATH).
+	InstallHints []string
+	// InstallURL is the official Node.js download page (never fetched here).
+	InstallURL string
+}
+
 // MCPSpec is one chrome-devtools MCP stdio server request.
 type MCPSpec struct {
 	Workspace  string

@@ -259,8 +259,8 @@ func (r *Runtime) NewConversation(workspaceID, text string) error {
 		return fmt.Errorf("%s", q)
 	}
 	if out.Ticket == "" {
-		// A proposal or a question is a real outcome; a silent ignore is not.
-		if out.Proposal || out.NeedsPerson {
+		// A question is a real outcome; a silent ignore is not.
+		if out.NeedsPerson {
 			r.Publish()
 			return nil
 		}

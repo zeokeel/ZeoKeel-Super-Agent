@@ -2,8 +2,7 @@ package runtime
 
 // DSH flow: IM messages are ordinary requests. An admitted explicit request is
 // accepted directly like GitHub or the panel; inferred candidates follow the
-// accept mode. There is no IM-specific approval step (RequireApproval is a
-// deliberate opt-in on the Policy, not an IM rule).
+// accept mode. There is no approval runtime.
 
 import (
 	"testing"
@@ -41,18 +40,6 @@ func pendingIMTrigger(source, actor, conv, id, text string) domain.Trigger {
 	}
 }
 
-func waitProposals(t *testing.T, eng *engine.Engine, n int) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(eng.Proposals()) == n {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("proposals = %d, want %d", len(eng.Proposals()), n)
-}
-
 func waitTickets(t *testing.T, eng *engine.Engine, n int) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -74,18 +61,11 @@ func TestIMMessagesExecuteDirectly(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitTickets(t, eng, 1)
-	if len(eng.Proposals()) != 0 {
-		t.Fatalf("an explicit IM request must not become a proposal: %d", len(eng.Proposals()))
-	}
 	tk := eng.AllTickets()[0]
 	if tk.Mandate.Strength != domain.StrengthExplicit {
 		t.Fatalf("the mandate must be explicit: %+v", tk.Mandate)
 	}
 	rt.Publish()
-	ov := rt.snap.Overview()
-	if len(ov.Approvals) != 0 {
-		t.Fatalf("no approval should be pending: %+v", ov.Approvals)
-	}
 }
 
 // A sender the policy does not admit stays filtered: no Ticket and no proposal.
@@ -96,9 +76,8 @@ func TestIMStrangerIsFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond) // give the eval pass a chance to run
-	if len(eng.AllTickets()) != 0 || len(eng.Proposals()) != 0 {
-		t.Fatalf("a stranger must be filtered, tickets=%d proposals=%d",
-			len(eng.AllTickets()), len(eng.Proposals()))
+	if len(eng.AllTickets()) != 0 {
+		t.Fatalf("a stranger must be filtered, tickets=%d", len(eng.AllTickets()))
 	}
 }
 

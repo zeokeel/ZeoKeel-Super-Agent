@@ -27,7 +27,7 @@ func TestUnwritableStateDirectoryFailsTheTicket(t *testing.T) {
 	eng.Register(domain.Workspace{
 		ID: "ws_web", Name: "web", Root: t.TempDir(), Kind: domain.KindRepo,
 		Brief: domain.Brief{Purpose: "webapp", Keywords: []string{"webapp"}},
-	}, engine.Policy{Version: "v1", RequireApproval: true, Allowed: map[string]map[string]bool{
+	}, engine.Policy{Version: "v1", Allowed: map[string]map[string]bool{
 		"dingtalk": {"colleague": true},
 	}})
 
@@ -47,7 +47,7 @@ func TestUnwritableStateDirectoryFailsTheTicket(t *testing.T) {
 	// An IM request becomes an approval; approving it authorizes the work.
 	approved := evalNow(eng)
 	if approved.Ticket == "" {
-		approved.Ticket = ticketAfterProposal(t, eng, "disk")
+		t.Fatalf("the IM request did not create a ticket: %+v", approved)
 	}
 
 	// Occupy the session path with a regular file: creating the directory then

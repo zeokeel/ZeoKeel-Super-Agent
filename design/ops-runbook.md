@@ -191,14 +191,14 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - 排障：PR 已合并但工单没结束，先看消息流有没有 "已关注 Thread …"，再看 `Ticket.Follows` 是否绑到了正确的 `owner/repo#N`
   （`domain.ThreadKey` 用 `<scope>|github|<id>`）；重复关闭事件是幂等的。
 
-## 6.10 IM 渠道（飞书 / 钉钉）与审批队列
+## 6.10 IM 渠道（飞书 / 钉钉）与收件箱
 
 完整契约、DWS 命令形状与故障矩阵见 **[im-channels.md](im-channels.md)**；这里只列运维动作：
 
-1. **DSH 对齐（rc.3）**：admitted 的**明确**飞书/钉钉/GitHub 请求由 Eval 直接接单 → Ticket（默认无审批）；
-   推断请求按 accept mode `off`/`observe`/`auto`（auto 需匹配规则）。只有 Policy 显式 opt-in `RequireApproval`
-   且请求为推断时，才产生 `DecPropose`（旧式兼容），收件箱标「旧式请求（需要批准）」；`AutoApproveIM` 已移除。
-   旧式拒绝无损，10 秒内可撤销（不建单/不启动/不回复；同一 Thread 有更新决策后不可撤销）。
+1. **DSH 对齐（rc.4）**：admitted 的**明确**飞书/钉钉/GitHub 请求由 Eval 直接接单 → Ticket；
+   推断请求按 accept mode `off`/`observe`/`auto`（auto 需匹配规则）。**审批/提案机制已彻底删除**
+   （无 Approve/Reject/UndoReject/proposal/RequireApproval）；旧 DB propose 载入为 ignore（legacyImport）；
+   收件箱 attention-only，只处理任务问题/受阻/失败。
 2. **启用/停用（三态）**：设置›来源每渠道有开关。显式 1/0 优先；没写过开关时按凭据/flags 推导；
    flag-only 部署由启动 bootstrap 补写启用。禁用=停止监听、来源"未启用"、health 不假装在线。
    保存后只重启 enable/transport/凭据/self/profile 变化的渠道（`internal/runtime/im.go:345-470`）。
@@ -246,7 +246,8 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - **计划/待办**：执行详情与对话任务卡显示 `.zeokeel/plan/*.json` 的步骤/状态；卡片计数“x/y 完成 · n 进行中 · m 需要你”。
 - **应用到项目**：执行详情→「应用到项目」；确认框列出目标目录、相对路径与覆盖警告；已存在文件先备份
   `.bak-<timestamp>`；越界/绝对路径跳过；不自动执行原地合并。
-- **撤销拒绝**：收件箱拒绝后 10 秒内撤销；超时/同 Thread 新决策后不可撤销。
+- **read_resource**：Worker 可按 offset/limit 分页读自己的 ticket/inputs/trigger/thread（只读/redacted；默认 20、上限 200）；
+  SuperAgent 无工具。
 - **原生菜单**：App/文件/编辑/窗口；⌘N 新建对话、⌘, 设置、打开主窗口；编辑菜单含标准复制/粘贴/全选。
 - **无障碍偏好**：系统 TextScale 与 `ui.font_scale` 相乘；ReduceMotion 关掉平滑动画；HighContrast 强化边框/文字；
   系统 Accent 覆盖品牌色。
@@ -255,14 +256,15 @@ zeokeel archive --state-dir ~/.zeokeel --before 180d
 - **排障新增**：流式不动看模型端点/HTTP/SSE 错误；停止生成卡住看 runtime；应用失败看目标权限/备份是否成功；
   更新检查 403/限流是 GitHub API 侧问题。
 
-## 6.13 项目浏览器 / MCP（rc.3）
+## 6.13 项目浏览器 / MCP（rc.4）
 
 - 项目页›设置：启用浏览器、选 Chrome/Edge（只检测默认安装路径）、无头、CDP 端口（0=自动）、保存；
   再「启动浏览器」。每个项目独立 profile `<stateDir>/workspaces/<ws>/browser-profile`，端口由运行时分配/保留。
 - 启动同时拉起 `npx -y chrome-devtools-mcp@latest --browserUrl http://127.0.0.1:<port>`；`mcp__browser__*`
   只注入该项目的 Worker。浏览器子进程 env 剥离 TOKEN/SECRET/PASSWORD/API_KEY 等。
-- 依赖：本机 Chrome/Edge + Node.js（含 npx）；缺失时面板/启动返回可操作错误，不会假装有浏览器工具。
-  端口冲突/浏览器未就绪/MCP 启动失败会写到项目浏览器状态与 health。
+- 依赖：本机 Chrome/Edge + Node.js（含 npx）；运行前会做 `Prerequisites` 检测（node/npx 版本）。缺失时项目页/设置
+  显示醒目警告 + 当前 OS 安装命令（brew/winget/apt 等）+ nodejs.org + 「重新检查」，「启动浏览器」禁用并说明原因；
+  不自动安装、不会假装有浏览器工具。端口冲突/浏览器未就绪/MCP 启动失败会写到项目浏览器状态与 health。
 - 停止项目浏览器会关闭该项目的 MCP 工具；`CloseBrowserBackend` 在进程退出时统一清理。
 - 统计页的「工具可用性」来自运行时投影；最近活动区无数据时显示空态（不伪造）。
 
@@ -287,8 +289,9 @@ ZEOKEEL_BIN=/usr/local/bin/zeokeel scripts/watchdog-check.sh --restart-cmd "syst
   官方 Stream 是 bot 模式（app key/secret/robot）。
 - 工作区删除只允许空工作区（有工单拒绝）；会话不能重命名/删除；每工作区会话只投影最近 50 条。
 - `ui.font_scale` 已投影并可在设置›部署编辑（0.9/1.0/1.1，保存立即生效）。
-- rc.3 未做：真正原项目执行（当前执行副本+显式 apply-back）、系统钥匙串、多窗口、自动更新只检查不下载、
-  真实飞书/DWS 租户 E2E、read_image 无视觉、无 orchestrator_read；浏览器依赖 Chrome/Edge+node/npx；打包仍无 .dmg/deb/安装器。
+- rc.4 未做：真正原项目执行（当前执行副本+显式 apply-back）、系统钥匙串、多窗口、自动更新只检查不下载、
+  真实飞书/DWS 租户 E2E、read_image 无像素（需 vision endpoint）、DSH main orchestrator 工具集；
+  浏览器依赖 Chrome/Edge+node/npx（前置检查已做）；打包仍无 .dmg/deb/安装器。
 - 升级迁移已接线（`LoadSettings` 的 `migrateSettings` + schema stamp）；历史旧文件仍按读取层兼容。
 - 监控指标导出（Prometheus 等）：没有；只有 `status --json` 与日志。
 - 设置页规则/admission/accept mode 与 GitHub Source 实例：不可编辑（只读事实或 CLI flag）。

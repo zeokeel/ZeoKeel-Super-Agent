@@ -135,21 +135,14 @@ func TestOnboardingAllowlistGrantsAccess(t *testing.T) {
 	if _, err := eng.Receive(withThread(allowed)); err != nil {
 		t.Fatal(err)
 	}
-	// IM messages are approvals: the allowlisted colleague gets a pending
-	// proposal (accepted by the gate), not a running Ticket before a person agrees.
 	out := evalNow(eng)
-	if out.Ticket == "" && !out.Proposal {
+	if out.Ticket == "" {
 		t.Fatalf("the allowlisted colleague was not accepted: %+v", out)
-	}
-	if out.Proposal {
-		if id := approvePending(t, eng); id == "" {
-			t.Fatal("approving the allowlisted proposal created no ticket")
-		}
 	}
 	stranger := allowed
 	stranger.ID = domain.Key(domain.WorkspaceScope(""), "dingtalk", "t-no")
 	stranger.Actor = domain.Actor{ID: "someone-else"}
-	if out, err := eng.Receive(withThread(stranger)); err != nil || out.Ticket != "" || out.Proposal {
+	if out, err := eng.Receive(withThread(stranger)); err != nil || out.Ticket != "" {
 		t.Fatalf("a stranger got through: %+v %v", out, err)
 	}
 }

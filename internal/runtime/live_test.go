@@ -125,16 +125,12 @@ func TestLiveWorkerDelivers(t *testing.T) {
 	if _, err := eng.Receive(withThread(tr)); err != nil {
 		t.Fatal(err)
 	}
-	var decision domain.ID
-	for _, p := range eng.Proposals() {
-		decision = p.ID
+	// The request becomes a Ticket directly; something still has to run it. In the
+	// app that is the durable launch effect, so the test does what the effect does.
+	approved := evalNow(eng)
+	if approved.Ticket == "" {
+		t.Fatalf("the live request did not create a ticket: %+v", approved)
 	}
-	approved, err := eng.Approve(decision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Approval creates the Ticket; something still has to run it. In the app that
-	// is the durable launch effect, so the test does what the effect does.
 	if tk, ok := eng.TicketSnapshot(approved.Ticket); ok {
 		go rt.runTicket(tk)
 	}

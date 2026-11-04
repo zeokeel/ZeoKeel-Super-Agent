@@ -223,7 +223,7 @@ func DemoDecisions(now time.Time) *DecisionVM {
 				Rule:       "Issue 含「可配置 / 默认值」→ ticket",
 				Workspace:  "acme/webapp", Tone: ToneOK, At: at(4*time.Hour + 12*time.Minute)},
 			{ID: "d-2", Kind: "propose", KindLabel: "需要批准", Trigger: "PR #128 CI 失败",
-				Summary: "提案：等你批准后新建 Ticket", ReasonCode: "sensitive_workspace",
+				Summary: "旧式提案（批准流程已移除）", ReasonCode: "sensitive_workspace",
 				ReasonText: "涉及客户数据外发，需要你批准",
 				Rule:       "workspace 敏感 → propose",
 				Workspace:  "acme/data", Tone: ToneWarn, At: at(6 * time.Hour)},

@@ -96,3 +96,18 @@ type WorkspaceStats struct {
 	Recent    []ActivityRow
 	UpdatedAt time.Time
 }
+
+// BrowserPrereq reports whether the machine can run the browser MCP: it needs
+// Node.js and npx. The panel reminds a person to install them instead of letting
+// "启动浏览器" fail silently.
+type BrowserPrereq struct {
+	NodeInstalled bool
+	NpxInstalled  bool
+	NodeVersion   string
+	NpxVersion    string
+	Detail        string
+	CheckedAt     time.Time
+}
+
+// Ready reports that both Node.js and npx are there.
+func (p BrowserPrereq) Ready() bool { return p.NodeInstalled && p.NpxInstalled }

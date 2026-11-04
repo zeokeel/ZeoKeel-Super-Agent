@@ -162,6 +162,7 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 			// the CLI, and the health rows are the live ones.
 			a.deploymentSection(c, *g)
 			a.browserFactsSection(c)
+			a.browserPrereqCard(c, false)
 		}
 		if g.ID == view.SettingsWorker {
 			a.modelTestRow(c)

@@ -425,3 +425,32 @@ Lead 已把 `VERSION` bump 为 `1.0.0-rc.3`；本轮只改文档（README/CHANGE
 
 **检查**：docs 相对链接 0 broken；所有 docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据。未运行全量闸门；README/RELEASE/
 CHANGELOG/发布说明均声明 Lead bump 后跑 `verify-fixes.sh`+`release-check.sh` 并 tag `v1.0.0-rc.3`，不预称全绿。
+
+## 17. rc.4 文档与发布说明（2026-11-04，docs-only）
+
+`VERSION` 已是 `1.0.0-rc.4`（Lead bump）；本轮只改文档（README/CHANGELOG/RELEASE/design §13/im-channels/ops/rejected + 新
+`RELEASE-NOTES-v1.0.0-rc.4.md`），未改代码/go.mod。
+
+**旧式审批/提案彻底删除**
+- Decision 只有 accept/stop/ignore/unavailable；无 Approve/Reject/UndoReject/proposal/`RequireApproval`；
+  `internal/domain/ticket.go:10-13`；旧 DB `propose` load 转 ignore+`legacyImport` `internal/engine/persist.go:156-162`；
+  Policy 无 RequireApproval `internal/engine/gate.go:52-56`；收件箱 attention-only `internal/ui/inbox.go:1-233`。
+- README/CHANGELOG/RELEASE A/H/K/design §13/§4 body/im-channels/ops/rejected 均已删掉旧审批文案与乐观撤销描述。
+
+**浏览器 MCP 前置检查**
+- `browser.Prerequisites` `internal/browser/prereq.go:1-146`（node/npx/版本，不安装不联网）；runtime `internal/runtime/rc3.go:170-205`；
+  UI 警告+安装命令+nodejs.org+重新检查 `internal/ui/workspacepanel.go:613-692`；Start 前置门 `internal/browser/manager.go:189-197`；
+  启动按钮禁用并说明原因 `internal/ui/workspacepanel.go:687-692`。
+
+**read_resource**
+- `internal/runtime/rc3.go:17-160`（分页 ticket/inputs/trigger/<id>/thread/<key>，归属/路径校验、redaction、20/200）；
+  tool 注册 `internal/runtime/artifacts.go:205-214`；worker prompt `internal/runtime/worker.go:580`；
+  SuperAgent 无 tools `internal/runtime/rc2.go:121-132`。
+- 工具/状态文档：read_image 元数据-only、job_list、subagent 命名、ack/handback/thread_unrelated/request_status、browser MCP。
+
+**诚实限制**：真正原项目执行（执行副本+apply-back）、系统钥匙串（SQLite 0600，刻意不做）、多窗口、自动更新只检查、
+真实飞书/DWS E2E、read_image 无像素（需 vision endpoint）、DSH main orchestrator 工具集、浏览器需 Chrome/Edge+node/npx、
+打包无 .dmg/deb/安装器；已写入 README 已知限制/RELEASE F-7+K/design §13/ops §8/发布说明。
+
+**检查**：docs 相对链接 0 broken；所有 docs `file:line` 范围 0 错误；§13 无 `_test.go` 证据。
+未跑全量闸门；README/RELEASE/CHANGELOG/发布说明声明 Lead bump 后跑 verify-fixes/release-check 并 tag v1.0.0-rc.4，不预称全绿。

@@ -78,18 +78,11 @@ func verifyIMInbound(t *testing.T, drv im.Provider, tr *im.Transport, actor, con
 		if _, decisions, tickets := eng.Counts(); decisions > 0 && tickets > 0 {
 			return
 		}
-		// A deployment that opted into RequireApproval still works: approve the
-		// pending request and check that the Ticket appears.
-		for _, d := range eng.Proposals() {
-			if err := rt.Approve(string(d.ID)); err != nil {
-				t.Fatalf("approve pending IM request: %v", err)
-			}
-		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	triggers, decisions, tickets := eng.Counts()
-	t.Fatalf("inbound IM event did not become a pending approval/Ticket: triggers=%d decisions=%d tickets=%d proposals=%d sources=%+v",
-		triggers, decisions, tickets, len(eng.Proposals()), rt.SourceRows(time.Now()))
+	t.Fatalf("inbound IM event did not become a Ticket: triggers=%d decisions=%d tickets=%d sources=%+v",
+		triggers, decisions, tickets, rt.SourceRows(time.Now()))
 }
 
 func TestVerifyFeishuLongPollInboundBecomesTicket(t *testing.T) {

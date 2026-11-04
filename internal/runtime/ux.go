@@ -163,8 +163,6 @@ func (r *Runtime) DispatchTo(workspaceID, text string) error {
 	case out.Ticket != "":
 		r.appendChat(view.ChatSystem, view.ChatOutcome,
 			fmt.Sprintf("已派发到 %s：#%d", workspaceID, ticketNumber(r.eng, out.Ticket)))
-	case out.Proposal:
-		r.appendChat(view.ChatSystem, view.ChatOutcome, "需要你确认：这条请求在等你批准。")
 	default:
 		r.appendChat(view.ChatAssistant, view.ChatAnswer, r.answerChat(text))
 	}
@@ -329,26 +327,6 @@ func (r *Runtime) SetAttentionNotify(fn func(AttentionItem)) {
 func (r *Runtime) attentionItems(seen map[string]bool) []AttentionItem {
 	now := r.clock()
 	var out []AttentionItem
-	for _, d := range r.eng.Proposals() {
-		if d.Proposal == nil {
-			continue // OverviewVM.Approvals skips these too; counts must agree
-		}
-		tr, _ := r.eng.TriggerOf(d.ID)
-		text := d.Proposal.Said
-		if text == "" {
-			text = tr.Text
-		}
-		item := AttentionItem{
-			Kind: "proposal", DecisionID: string(d.ID),
-			Source: tr.Source, Sender: tr.Actor.ID, Text: text,
-			Workspace: string(d.Workspace), At: tr.At,
-			Actions: []string{"approve", "reject"},
-		}
-		out = append(out, item)
-		if seen != nil {
-			seen["proposal:"+item.DecisionID] = true
-		}
-	}
 	for _, t := range r.ticketSnapshots() {
 		if t.Ended != nil {
 			continue

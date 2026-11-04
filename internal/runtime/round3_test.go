@@ -122,12 +122,6 @@ func TestWorkspacePanelListsConversations(t *testing.T) {
 	if _, err := rt.EvaluateDue(time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	// IM requests are approvals now: approve so an "agent" conversation exists.
-	for _, d := range eng.Proposals() {
-		if err := rt.Approve(string(d.ID)); err != nil {
-			t.Fatal(err)
-		}
-	}
 	rt.Publish()
 
 	panel := snap.Workspaces()

@@ -240,19 +240,6 @@ func (r *Runtime) Publish() {
 			Paused: r.Paused(), PausedKnown: true,
 		},
 	}
-	for _, d := range r.eng.Proposals() {
-		tr, _ := r.eng.TriggerOf(d.ID)
-		p := d.Proposal
-		if p == nil {
-			continue
-		}
-		ov.Approvals = append(ov.Approvals, view.ApprovalRow{
-			DecisionID: string(d.ID), From: tr.Actor.ID, Source: tr.Source,
-			Said: p.Said, Intent: p.Intent, Deliverable: p.Deliverable,
-			Workspace: p.Workspace, Sensitive: p.Sensitive,
-			Age: now.Sub(tr.At),
-		})
-	}
 	for _, t := range all {
 		st := domain.StageOf(&t, now)
 		if isPersonStage(st) {
@@ -437,9 +424,6 @@ func (r *Runtime) healthItems(ws []domain.Workspace, running, maxJobs int, now t
 	}
 	items = append(items, exec)
 	items = append(items, r.modelHealth()...)
-	if n := len(r.eng.Proposals()); n > 0 {
-		items = append(items, view.HealthItem{Name: "待审批", Detail: fmt.Sprintf("%d 条 IM/批准待办", n), OK: true})
-	}
 	items = append(items, r.sourceHealth()...)
 	for _, e := range r.healthEntries(now) {
 		if e.State == "error" {
@@ -528,13 +512,6 @@ func (r *Runtime) stream() *view.StreamVM {
 				Badges: []string{"#" + number(itemTicket.Number), shortWorkspace(string(itemTicket.Workspace)), stageWord(st)},
 				Tone:   toneOf(st),
 			})
-		} else if item.Decision != nil && item.Decision.Kind == domain.DecPropose {
-			// History only: what happened to this message. The approval itself is a
-			// to-do, and to-dos live in 总览 with their detail (design §6.3).
-			th.Steps = append(th.Steps, view.Line{
-				Kind: view.LineDecision, Text: "需要你批准", At: t.At,
-				Badges: []string{shortWorkspace(string(item.Decision.Workspace))}, Tone: view.ToneWarn,
-			})
 		} else if t.Source == "local" {
 			// The operator's own message is never left at "未受理": the Super-Agent
 			// answers it in the stream (list workspaces, or say why nothing was
@@ -564,10 +541,7 @@ func (r *Runtime) stream() *view.StreamVM {
 
 		// The operator's own line needs no reply plan line: there is nobody else to
 		// answer, and "replied to the operator" would be noise.
-		// A proposal card says everything the reply line would: that it waits for a
-		// person and why. Two lines saying it is noise (design §6.3).
-		hasProposal := item.Decision != nil && item.Decision.Proposal != nil
-		if item.Decision != nil && !hasProposal && !t.Self && t.Source != "local" {
+		if item.Decision != nil && !t.Self && t.Source != "local" {
 			th.Steps = append(th.Steps, replyLine(item))
 		}
 
@@ -872,8 +846,6 @@ func (r *Runtime) Dispatch(text string) error {
 	case out.Ticket != "":
 		r.appendChat(view.ChatSystem, view.ChatOutcome,
 			fmt.Sprintf("已派发 #%d", ticketNumber(r.eng, out.Ticket)))
-	case out.Proposal:
-		r.appendChat(view.ChatSystem, view.ChatOutcome, "需要你确认：这条请求要等你批准后才会开始。")
 	case out.NeedsPerson || question != "":
 		q := out.Question
 		if q == "" {
@@ -917,9 +889,6 @@ func mergeEvalOutcome(base engine.Outcome, outs []engine.Outcome) engine.Outcome
 			base.NeedsPerson = false
 			base.Question = ""
 		}
-		if o.Proposal {
-			base.Proposal = true
-		}
 		if o.NeedsPerson {
 			base.NeedsPerson = true
 			base.Question = o.Question
@@ -928,48 +897,8 @@ func mergeEvalOutcome(base engine.Outcome, outs []engine.Outcome) engine.Outcome
 	return base
 }
 
-// Approve accepts a proposal: the Ticket is created now, with the approval on
-// record.
-func (r *Runtime) Approve(decisionID string) error {
-	r.mu.Lock()
-	p := r.persist
-	r.mu.Unlock()
-	call := r.eng.Approve
-	if p != nil {
-		call = p.Approve
-	}
-	out, err := call(domain.ID(decisionID))
-	if err != nil {
-		return err
-	}
-	if out.Ticket != "" {
-		if t, ok := r.ticketSnapshot(out.Ticket); ok {
-			if err := r.wakeTicket(t); err != nil {
-				r.slogger().Warn("approved ticket could not be launched", "ticket", t.Number, "error", err)
-			}
-		}
-	}
-	r.Publish()
-	return nil
-}
-
-// Reject turns a proposal down.
-func (r *Runtime) Reject(decisionID string) error {
-	r.mu.Lock()
-	p := r.persist
-	r.mu.Unlock()
-	call := r.eng.Reject
-	if p != nil {
-		call = p.Reject
-	}
-	if err := call(domain.ID(decisionID), "rejected in the panel"); err != nil {
-		return err
-	}
-	r.Publish()
-	return nil
-}
-
-// LastError returns the last dispatch problem, or "".
+// Dispatch submits a line the operator typed. Where it goes is the Router's job,
+// so no workspace is passed: deciding that is the whole reason the agent exists.
 func (r *Runtime) LastError() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()

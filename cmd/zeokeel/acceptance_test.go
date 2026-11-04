@@ -87,45 +87,6 @@ func chat(source, id, actor, text string) domain.Trigger {
 	}
 }
 
-// A2: a colleague's request becomes an approval, and that approval carries the
-// four parts a person needs to decide: what they said, what will happen, what comes
-// out, and why it needs a person (design §4.10).
-func TestA2ColleagueRequestCarriesTheFourParts(t *testing.T) {
-	e := newAcceptanceEngine(t)
-	// Explicit requests are accepted in every mode (002:101); the approval gate is
-	// for inferred ones, which is what this scenario pins.
-	e.SetPolicy("ws_web", engine.Policy{Version: "v1", RequireApproval: true, AcceptMode: domain.AcceptAuto,
-		Rules:   []domain.Rule{{ID: "implementation", Instruction: "明确的实现请求", Enabled: true, Proactive: true}},
-		Allowed: map[string]map[string]bool{"dingtalk": {"colleague": true, "me": true}}})
-	tr := chat("dingtalk", "m1", "colleague", "帮我看看 webapp 登录超时的问题")
-	tr.Scope = domain.WorkspaceScope("ws_web")
-	tr.DefaultWorkspace = "ws_web"
-	tr.Addressed = domain.Addressed{}
-	tr.ScopeReceivesAll = true
-	out, err := e.Receive(tr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out = evalEngine(e)
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("expected a proposal and no ticket: %+v", out)
-	}
-	proposals := e.Proposals()
-	if len(proposals) != 1 || proposals[0].Proposal == nil {
-		t.Fatalf("expected one proposal, got %d", len(proposals))
-	}
-	p := proposals[0].Proposal
-	if p.Said == "" || p.Intent == "" || len(p.Plan) == 0 || p.Deliverable == "" {
-		t.Fatalf("proposal is missing a part: %+v", p)
-	}
-	if len(p.Sensitive) == 0 {
-		t.Fatalf("a colleague request must say why it needs a person: %+v", p)
-	}
-	if p.Workspace == "" {
-		t.Fatal("a proposal must say where the work would run")
-	}
-}
-
 // A3: an admitted IM request runs directly (DSH flow). The gate admits it, Eval
 // accepts and a Ticket exists; there is no IM approval step by default.
 func TestA3OperatorRequestRunsWithoutApproval(t *testing.T) {
@@ -137,14 +98,8 @@ func TestA3OperatorRequestRunsWithoutApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := evalEngine(e)
-	if out.Proposal {
-		t.Fatal("an IM message must not become a proposal by default")
-	}
 	if out.Ticket == "" {
 		t.Fatalf("an explicit IM request must start work: %+v", out)
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatalf("no proposal may exist for an explicit IM request: %d", len(e.Proposals()))
 	}
 }
 
@@ -155,46 +110,17 @@ func TestA6StrangersAndBotsDoNothing(t *testing.T) {
 	// A bot mentioning the agent.
 	bot := chat("dingtalk", "m3", "deploy-bot", "构建失败，请 @agent 看一下")
 	bot.Human = false
-	if out, err := e.Receive(bot); err != nil || out.Ticket != "" || out.Proposal {
+	if out, err := e.Receive(bot); err != nil || out.Ticket != "" {
 		t.Fatalf("a bot message must do nothing: %+v %v", out, err)
 	}
 
 	// A person who is not on the allowlist.
 	stranger := chat("dingtalk", "m4", "someone-else", "帮我把 webapp 的登录改一下")
-	if out, err := e.Receive(stranger); err != nil || out.Ticket != "" || out.Proposal {
+	if out, err := e.Receive(stranger); err != nil || out.Ticket != "" {
 		t.Fatalf("an unknown person must do nothing: %+v %v", out, err)
 	}
-	if len(e.Proposals()) != 0 || len(e.AllTickets()) != 0 {
+	if len(e.AllTickets()) != 0 {
 		t.Fatal("nothing should have been created")
-	}
-}
-
-// A4: outbound to a public channel is a sensitive action and always escalates to a
-// person, even when the request itself was explicit (design §4.10).
-func TestA4SensitiveOutboundEscalates(t *testing.T) {
-	e := newAcceptanceEngine(t)
-	e.SetPolicy("ws_acme_data", engine.Policy{Version: "v1", RequireApproval: true, AcceptMode: domain.AcceptAuto,
-		Rules:   []domain.Rule{{ID: "implementation", Instruction: "明确的实现请求", Enabled: true, Proactive: true}},
-		Allowed: map[string]map[string]bool{"dingtalk": {"colleague": true, "me": true}}})
-	tr := chat("dingtalk", "m5", "colleague", "把 acme 的用量明细发到客户群里")
-	tr.Scope = domain.WorkspaceScope("ws_acme_data")
-	tr.DefaultWorkspace = "ws_acme_data"
-	tr.Addressed = domain.Addressed{}
-	tr.ScopeReceivesAll = true
-	out, err := e.Receive(tr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out = evalEngine(e)
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("sensitive outbound must wait for a person: %+v", out)
-	}
-	proposals := e.Proposals()
-	if len(proposals) == 0 || proposals[0].Proposal == nil {
-		t.Fatal("no proposal was recorded")
-	}
-	if len(proposals[0].Proposal.Sensitive) == 0 {
-		t.Fatalf("the approval must name the sensitive part: %+v", proposals[0].Proposal)
 	}
 }
 
@@ -212,9 +138,6 @@ func TestA7RepeatedDeliveryCreatesOneTicket(t *testing.T) {
 	out := evalEngine(e)
 	if out.Ticket == "" {
 		t.Fatalf("an explicit IM request must start work: %+v", out)
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatalf("no proposal may exist: %d", len(e.Proposals()))
 	}
 	// A redelivery of the already-decided message must not create anything new.
 	if _, err := e.Receive(tr); err != nil && !strings.Contains(err.Error(), "duplicate") {
@@ -239,9 +162,6 @@ func TestOverviewShowsTheTicketThatExists(t *testing.T) {
 	out := evalEngine(e)
 	if out.Ticket == "" {
 		t.Fatalf("an explicit IM request must create a ticket: %+v", out)
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatalf("no approval may be pending: %d", len(e.Proposals()))
 	}
 	_ = view.NewSnapshot() // the projection is the runtime's job; this checks the fact
 	if _, ok := e.TicketSnapshot(out.Ticket); !ok {

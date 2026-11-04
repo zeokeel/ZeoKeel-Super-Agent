@@ -29,10 +29,6 @@ type Commander interface {
 	// Dispatch hands one line to the agent. Where the work goes is the agent's
 	// decision, not a form the person fills in.
 	Dispatch(text string) error
-	// Approve and Reject answer a colleague's request: approval is what creates
-	// the Ticket, so they are not the same as answering a question (design §4.10).
-	Approve(decisionID string) error
-	Reject(decisionID string) error
 	LastError() string
 }
 
@@ -143,11 +139,8 @@ type App struct {
 	// onboarding pending flags.
 	onbSkipping  bool
 	onbFinishing bool
-	// 收件箱 state: chosen row, per-item pending/error, so an action's outcome is
-	// shown where it was taken.
-	inboxSel     int
-	inboxPending map[string]bool
-	inboxErr     map[string]string
+	// 收件箱 state: chosen row.
+	inboxSel int
 	// Execution row actions: per-ticket pending action and its local error.
 	rowPending map[string]string
 	rowErr     map[string]string
@@ -258,6 +251,11 @@ type App struct {
 	wsBrowserPending       string
 	detectedBrowsers       []view.BrowserInfo
 	detectedBrowsersLoaded bool
+	// Node.js/npx prerequisite for the browser MCP.
+	prereq         view.BrowserPrereq
+	prereqLoaded   bool
+	prereqWired    bool
+	prereqChecking bool
 	// The 新建项目 dialog and its draft. pickingFolder is true while the native
 	// directory picker is open, so a second click cannot open a second dialog.
 	wsModal       bool
@@ -586,8 +584,6 @@ func newApp(snap *view.Snapshot, cmd Commander) *App {
 		channelChecks: map[string]channelCheck{},
 		connDrafts:    map[string]*string{},
 		advancedOpen:  true,
-		inboxPending:  map[string]bool{},
-		inboxErr:      map[string]string{},
 		rowPending:    map[string]string{},
 		rowErr:        map[string]string{},
 	}

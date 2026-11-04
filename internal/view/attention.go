@@ -3,8 +3,8 @@ package view
 // AttentionVM is the unified attention inbox: everything that waits for a person
 // (an IM proposal that would start work, or a started task that needs an answer).
 // The runtime publishes it with its own attention count; the panel falls back to
-// OverviewVM.Approvals/NeedsPerson until it does, so 收件箱 is never empty while
-// the topbar badge says there is something.
+// OverviewVM.NeedsPerson until it does, so 收件箱 is never empty while the
+// topbar badge says there is something.
 
 import "time"
 
@@ -33,9 +33,6 @@ func (i AttentionItemVM) Has(action string) bool {
 	}
 	return false
 }
-
-// CanApprove reports a proposal that would start work.
-func (i AttentionItemVM) CanApprove() bool { return i.Kind == "proposal" && i.Has("approve") }
 
 // AttentionVM is the inbox projection.
 type AttentionVM struct {

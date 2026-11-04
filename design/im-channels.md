@@ -1,36 +1,35 @@
-# IM 渠道：飞书 / 钉钉（2026-11-04 rc.3，DSH 对齐）
+# IM 渠道：飞书 / 钉钉（2026-11-04 rc.4，DSH 对齐）
 
 > 规格来源：`audit/fixes/im-channel-spec.md` + `audit/design-review-r2.md`（P0-1/P0-4/P0-6/P0-7/P1-10/P1-11）。
 > 本文写**已实现**行为；结论尽量给生产代码 file:line。行号随代码移动，以函数名为主。
-> 产品策略（rc.3 DSH 对齐）：**admitted 的明确 IM 请求直接由 Eval 接单 → Ticket**；
-> 推断请求按 accept mode off/observe/auto（auto 需匹配规则）；**只有显式 opt-in `Policy.RequireApproval`
-> 且请求为推断时**才产生 `DecPropose`（旧式兼容路径）。`AutoApproveIM` 已移除。
+> 产品策略（rc.4）：**admitted 的明确 IM 请求直接由 Eval 接单 → Ticket**；推断请求按 accept mode off/observe/auto
+> （auto 需匹配规则）。**旧式审批/提案机制已彻底删除**：没有 Approve/Reject/proposal/`RequireApproval`；
+> 旧 DB `propose` 行载入为 ignore（`legacyImport`）。收件箱 attention-only。
 
 ## 0. 一句话
 
 两个渠道各自有生命周期：飞书走官方 SDK 长连接（`larkws`，推荐；HTTP 长轮询保留为显式 fallback），
 钉钉默认走本机 DWS CLI（**操作员个人 OAuth 身份**，长驻 NDJSON consumer，不是 bot/app；官方 Stream SDK 是 bot 模式的可选 transport）。
-明确请求直接进入 Eval 主链；只有旧式 opt-in proposal 才进收件箱的「旧式请求（需要批准）」。
+明确请求直接进入 Eval 主链；**没有审批队列**，收件箱只处理任务问题/受阻/失败（attention-only）。
 `待你决定 N` 仍是统一注意力计数；来源页每渠道的「连接」打开**连接向导**（只测填写的值、通过才保存）。
 
-## 1. DSH 对齐：明确请求直接接单，旧式 opt-in 才审批
+## 1. DSH 对齐：明确请求直接接单（无审批）
 
 - **明确请求（默认路径）**：admitted 的来源（IM/GitHub）被 gate 判为 `DecAccept` 且 `Strength=explicit` 时，
-  Eval **直接建 Ticket**；accept mode / `RequireApproval` 对 explicit 不生效（002:95-101 的 DSH 主链）。
-  代码：`internal/engine/evaluate.go:348-390`（explicit 分支跳过 accept mode 与 approval，只有 `Kind==DecAccept` 才建单）。
+  Eval **直接建 Ticket**；accept mode 对 explicit 不生效（002:95-101 的 DSH 主链）。
+  代码：`internal/engine/evaluate.go:348-390`（explicit 分支跳过 accept mode，只有 `Kind==DecAccept` 才建单）。
 - **推断请求**：`Strength != explicit` 时按 accept mode：
   - `off`：忽略（`ReasonAcceptModeOff`）；
   - `observe`：记录 `ReasonObserved`，不建单；
   - `auto`：必须至少匹配一条 enabled 规则（否则忽略 `ReasonNoRuleMatched`），才 `DecAccept`。
-  代码：`internal/engine/evaluate.go:352-372`、`internal/engine/gate.go:52-56`（`AcceptMode`/`RequireApproval`）。
-- **旧式审批（仅 opt-in）**：Policy 显式 `RequireApproval=true` 且请求是**推断**时，Eval 把 `DecAccept` 改成
-  `DecPropose`（`internal/engine/evaluate.go:385-390`）；Approve 才建 Ticket，Reject 只留 Decision；
-  这是兼容旧配置的 opt-in 路径，**不是默认策略**。explicit 请求永远不会进入 DecPropose。
-- **没有 `AutoApproveIM`**：旧的 IM 专用逃生阀已移除；行为统一由 accept mode + `RequireApproval` 决定。
-- **面板**：旧式 proposal 在收件箱/总览标「旧式请求（需要批准）」并可批准/拒绝；拒绝无损，10s 内可撤销；
-  新请求直接出现在执行/会话里（`internal/ui/inbox.go:106`、`internal/ui/overview.go:109`）。
+  代码：`internal/engine/evaluate.go:352-372`、`internal/engine/gate.go:52-56`。
+- **审批已彻底删除（rc.4）**：没有 `proposal`/`DecPropose`/Approve/Reject/UndoReject/`RequireApproval`；
+  Decision 只有 accept/stop/ignore/unavailable。旧 DB `propose` 行在 load 时转 `ignore` 并记 `legacyImport`；
+  旧 `requireApproval` 字段被忽略（`internal/engine/persist.go:156-162`、`internal/domain/ticket.go:10-13`）。
+- **收件箱 attention-only**：只显示任务问题/受阻/失败，不显示批准；历史 proposal 不再可批准/拒绝
+  （`internal/ui/inbox.go:1-140`）。
 - **重复投递**：同一消息重发仍只产生一个 Ticket（内容派生 ID 幂等；验收 A7 `cmd/zeokeel/acceptance_test.go:207-232`）。
-- **验收语义**：A3 现在是“admitted 的操作员 IM 请求直接执行，不产生 proposal”（`acceptance_test.go:129-160`）；
+- **验收语义**：A3 是“admitted 的操作员 IM 请求直接执行，不产生 proposal”（`acceptance_test.go:129-160`）；
   A7 重复投递只建一个 Ticket。
 
 ## 2. 配置模型（settings group `source`）
@@ -63,7 +62,7 @@
 - **WS（推荐）**：`internal/im/feishu/ws.go:1-100` 用 `github.com/larksuite/oapi-sdk-go/v3 v3.12.2`
   （`go.mod:12`）的 `larkws.Client` + `OnP2MessageReceiveV1`；`Run(ctx)` 阻塞消费，SDK 自带重连；
   无 cursor，channel 停止时 `Close` 关连接（`internal/runtime/im.go:859-873` 构建）。事件经与长轮询相同的
-  `im.RawEvent`/审批入口进入引擎。
+  `im.RawEvent`/同一 Eval 入口进入引擎。
 - **longpoll（显式 fallback）**：`internal/im/feishu/transport.go` 用 `im/v1/messages` 游标增量轮询；
   cursor 以 `<channel>.<transport>` 命名空间持久化（`internal/runtime/im.go:1045-1075`），整批被接受后才推进；
   切换 transport 会清掉旧 cursor（`:500-505`）。
@@ -115,8 +114,7 @@
   飞书：401/403 显示可打开/复制的授权 URL；`feishu_chats` 规则见 §2。
 - 钉钉卡片有「发送时暂停监听」开关（`dingtalk_pause_listen_on_send`，默认关；仅 CLI 要求 profile 独占时打开）。
 - 禁用=未监听，卡片显示「未启用」，health 不假装在线；保存异步（「保存中…」），只重启 enable/transport/凭据/profile 变化的渠道。
-- 明确请求不产生 proposal（见 §1）；只有旧式 `RequireApproval` proposal 才出现在收件箱/总览并标
-  「旧式请求（需要批准）」；旧式拒绝无损，10s toast 可撤销。
+- 明确请求不产生 proposal（见 §1）；审批已删除，收件箱只显示任务问题/受阻/失败（attention-only）。
 - 运行时未接检查/授权接口时，向导显示「暂时不可用」而不是假成功。
 
 ## 6. 秘密与诊断
@@ -135,8 +133,7 @@
    设置›来源›连接：transport=dws，按需填 dws 路径/profile/listen kind/chat-query/暂停监听 → 检查 → 保存。
    向导会显示本机 `dws` 版本与可复制的登录命令；未安装/未登录会明确提示。
 3. 钉钉 Stream（bot）：transport=stream，填 app key/secret/robot code → 检查 → 保存。
-4. 收到消息后：默认**直接成为 Ticket**（明确请求，见 §1）；只有旧式 opt-in proposal 需要到收件箱批准/拒绝。
-   窗口关着时新待办/需要人的任务会发系统通知。
+4. 收到消息后：默认**直接成为 Ticket**（明确请求，见 §1）；没有审批队列。窗口关着时任务问题/受阻/失败会发系统通知。
 5. 排障：`status --json` 看 `im:feishu`/`im:dingtalk` health；日志搜 `IM channel started`/`IM poll failed`/
    `dws`；DWS 自身 `dws auth status --format json`。
 6. 升级：旧配置的 `*_enabled` 缺省时由凭据/flag 推导；flag-only 部署由 `BootstrapIMFlags` 补写启用；
@@ -147,16 +144,16 @@
 
 - 飞书 webhook 未实现（面板不再提供）；飞书媒体只保留引用。
 - DWS 能力受 CLI 契约限制（无成员列表/历史/模板发送）；真实 CLI 版本/登录流程仍需真实租户验证。
-- 旧式审批只由显式 opt-in `Policy.RequireApproval` 触发（仅推断请求）；`AutoApproveIM` 已移除。
+- 旧式审批/提案已彻底删除（无 RequireApproval/Approve/Reject/UndoReject）；旧 DB propose 载入为 ignore。
 - 连接向导只做 draft 校验+凭据/订阅检查，不代替真实消息 E2E；真实 DWS 租户/飞书权限仍需环境验证。
 - 连接向导不使用系统相机/扫码，DWS 登录仍在外部终端完成；系统 TextScale/ReduceMotion/HighContrast/Accent 已在 rc.2 接入面板。
 - `ui.font_scale`/删除工作区/详情 ID/迁移等曾登记为差异，已在 2026-11-04 微调修齐；见 README/设计 §13。
 
 ## 9. 代码证据索引
 
-- DSH 对齐：`internal/engine/evaluate.go:348-390`（explicit 直接接单；inferred accept mode/规则；opt-in RequireApproval 才 propose）；
-  `internal/engine/gate.go:52-56`；`internal/ui/inbox.go:106`、`internal/ui/overview.go:109`（旧式文案）；
-  撤销拒绝：`internal/engine/lifecycle.go:723-815`、`internal/engine/persist.go:835-860`、`internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`；
+- DSH 对齐：`internal/engine/evaluate.go:348-390`（explicit 直接接单；inferred accept mode/规则）；
+  `internal/engine/gate.go:52-56`；`internal/domain/ticket.go:10-13`（Decision kinds）；
+  `internal/engine/persist.go:156-162`（旧 propose → ignore/legacyImport）；`internal/ui/inbox.go:1-140`（attention-only）；
   `cmd/zeokeel/acceptance_test.go:129-160,207-232`。
 - 三态/迁移：`internal/runtime/im.go:33-130,186-248`；`internal/runtime/settingscodec.go:1-70,106-160,182-230`；
   `cmd/zeokeel/main.go:300`、`cmd/zeokeel/imwiring.go:91`。

@@ -202,6 +202,20 @@ func (r *Runtime) workerTools(t domain.Ticket) []tool.BaseTool {
 	if err != nil {
 		return nil
 	}
+	readRes, err := utils.InferTool("read_resource",
+		"Read a bounded page of this ticket's own resources: ticket (status/detail), inputs, "+
+			"trigger/<id> (only this ticket's origin trigger), thread/<key> (only threads this ticket owns). "+
+			"Read-only and redacted; offset/limit page (limit default 20, max 200).",
+		func(_ context.Context, in struct {
+			Resource string `json:"resource" jsonschema:"description=ticket | inputs | trigger/<id> | thread/<key>"`
+			Offset   int    `json:"offset,omitempty" jsonschema:"description=0-based offset"`
+			Limit    int    `json:"limit,omitempty" jsonschema:"description=page size, default 20, max 200"`
+		}) (string, error) {
+			return r.readResource(t, ReadResourceInput{Resource: in.Resource, Offset: in.Offset, Limit: in.Limit})
+		})
+	if err != nil {
+		return nil
+	}
 	status, err := utils.InferTool("request_status",
 		"Read this ticket's current status (stage, last report, running/queued) without changing it.",
 		func(_ context.Context, _ struct{}) (string, error) {
@@ -219,7 +233,7 @@ func (r *Runtime) workerTools(t domain.Ticket) []tool.BaseTool {
 	if err != nil {
 		return nil
 	}
-	out = append(out, ack, handback, unrelated, status)
+	out = append(out, ack, handback, unrelated, status, readRes)
 	out = append(out, r.capabilityTools()...)
 	out = append(out, r.skillTools(t)...)
 	return out

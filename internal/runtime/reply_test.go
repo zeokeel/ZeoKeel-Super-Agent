@@ -52,7 +52,7 @@ func TestDeliverReplyAnswersTheOriginConversation(t *testing.T) {
 	eng.Register(domain.Workspace{
 		ID: "ws_web", Name: "web", Root: "/tmp/web", Kind: domain.KindRepo,
 		Brief: domain.Brief{Purpose: "webapp", Keywords: []string{"webapp"}},
-	}, engine.Policy{Version: "v1", RequireApproval: true, ReplyMode: domain.ReplyModeAuto,
+	}, engine.Policy{Version: "v1", ReplyMode: domain.ReplyModeAuto,
 		Allowed: map[string]map[string]bool{"dingtalk": {"ding": true}}})
 
 	tr := domain.Trigger{
@@ -68,16 +68,9 @@ func TestDeliverReplyAnswersTheOriginConversation(t *testing.T) {
 	if _, err := eng.Receive(withThread(tr)); err != nil {
 		t.Fatal(err)
 	}
-	// IM messages wait for the operator's approval; approving authorizes the
-	// Ticket the reply test needs.
 	out := evalNow(eng)
 	if out.Ticket == "" {
-		if id := approvePending(t, eng); id != "" {
-			out.Ticket = id
-		}
-	}
-	if out.Ticket == "" {
-		t.Fatalf("expected a ticket after approving the colleague request: %+v", out)
+		t.Fatalf("expected a ticket for the colleague request: %+v", out)
 	}
 	tk, ok := eng.TicketSnapshot(out.Ticket)
 	if !ok {

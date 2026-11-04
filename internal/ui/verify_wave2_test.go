@@ -235,13 +235,12 @@ func TestVerifyNoHardcodedOverviewNumbers(t *testing.T) {
 		verifyRow("42", view.StagePersonAnswer, &view.TicketAttention{Question: "q"}),
 		verifyRow("43", view.StagePersonBlocked, nil),
 	})
-	ov.Approvals = []view.ApprovalRow{{DecisionID: "d1", From: "alice", Said: "please"}}
 	ov.Usage = view.Usage{Calls: 7, Total: 12345}
 	snap.PublishOverview(ov)
 	a := verifyApp(t, &verifyActor{}, snap)
 	tt := mui.NewTester(a.view, 1440, 900)
-	if got := ov.PersonCount(); got != 3 {
-		t.Fatalf("PersonCount=%d, want len(NeedsPerson)+len(Approvals)=3", got)
+	if got := ov.PersonCount(); got != 2 {
+		t.Fatalf("PersonCount=%d, want len(NeedsPerson)=2", got)
 	}
 	wantTexts(t, tt, "1/3", "12,345")
 	if tt.HasText("0/2") {

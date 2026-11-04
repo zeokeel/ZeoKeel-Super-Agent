@@ -153,6 +153,13 @@ func (p *Persistence) Load() error {
 		decisionOf[domain.Key(domain.Global, "decision", id)] = id
 	}
 	for _, d := range decisions {
+		// Migration: a pre-DSH row may be a proposal. Approval no longer exists, so
+		// it loads as a historical ignore (its proposal/rejectedAt JSON fields are
+		// ignored by the struct). No new proposal can be created.
+		if d.Kind == domain.DecisionKind("propose") {
+			d.Kind = domain.DecIgnore
+			d.Reasons = append(d.Reasons, domain.Reason{Code: domain.ReasonLegacyImport})
+		}
 		e.decisions[d.ID] = d
 		// The Trigger a Decision is about: the record itself carries the batch for an
 		// Eval's Decisions, and the content-derived key covers the older shape.
@@ -255,36 +262,6 @@ func (p *Persistence) Dispatch(in DispatchInput) (Outcome, error) {
 		return Outcome{}, err
 	}
 	return out, nil
-}
-
-// Approve accepts a proposal and persists the Ticket it creates.
-func (p *Persistence) Approve(decisionID domain.ID) (Outcome, error) {
-	out, err := p.e.Approve(decisionID)
-	if err != nil {
-		p.resync()
-		return Outcome{}, err
-	}
-	if err := p.commit(func() error { return p.saveOutcome(out) }); err != nil {
-		return Outcome{}, err
-	}
-	return out, nil
-}
-
-// Reject turns a proposal down and persists the decision with the reason.
-func (p *Persistence) Reject(decisionID domain.ID, why string) error {
-	if err := p.e.Reject(decisionID, why); err != nil {
-		p.resync()
-		return err
-	}
-	return p.commit(func() error {
-		p.e.mu.Lock()
-		defer p.e.mu.Unlock()
-		dec, ok := p.e.decisions[decisionID]
-		if !ok {
-			return nil
-		}
-		return p.st.PutDecision(dec)
-	})
 }
 
 // RaiseAttention records a question on a Ticket and persists the Ticket.
@@ -829,32 +806,4 @@ func (p *Persistence) MarkUnrelated(ticketID domain.ID, thread, reason string) e
 // Assignment carrying the Session and the recovery note (003:146, design §5.8).
 func (p *Persistence) InterruptAssignment(ticketID domain.ID) error {
 	return p.commitTicket(ticketID, func() error { return p.e.InterruptAssignment(ticketID) })
-}
-
-// UndoReject restores a rejected proposal and persists the change in one
-// transaction, so the restored pending approval survives a restart and can still
-// be approved.
-func (p *Persistence) UndoReject(decisionID domain.ID) (Outcome, error) {
-	out, err := p.e.UndoReject(decisionID)
-	if err != nil {
-		// A refused undo changes nothing; do not reload over the caller's error.
-		return Outcome{}, err
-	}
-	if cerr := p.commit(func() error {
-		p.e.mu.Lock()
-		defer p.e.mu.Unlock()
-		dec, ok := p.e.decisions[decisionID]
-		if !ok {
-			return fmt.Errorf("engine: persist: no decision %q", decisionID)
-		}
-		return p.st.PutDecision(dec)
-	}); cerr != nil {
-		return Outcome{}, cerr
-	}
-	return out, nil
-}
-
-// RestoreProposal is the readable alias of UndoReject.
-func (p *Persistence) RestoreProposal(decisionID domain.ID) (Outcome, error) {
-	return p.UndoReject(decisionID)
 }

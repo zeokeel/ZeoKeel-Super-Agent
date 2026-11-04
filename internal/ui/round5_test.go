@@ -167,65 +167,6 @@ func TestApplyToProjectUnwired(t *testing.T) {
 	}
 }
 
-// undoCmd implements UndoReject.
-type undoCmd struct {
-	fakeCmd
-	undone []string
-}
-
-func (c *undoCmd) UndoReject(decisionID string) error {
-	c.undone = append(c.undone, decisionID)
-	return nil
-}
-
-// approvalSnap publishes the overview with one request waiting for a decision.
-func approvalSnap(t *testing.T) *view.Snapshot {
-	t.Helper()
-	now := time.Now()
-	snap := view.NewSnapshot()
-	snap.PublishOverview(&view.OverviewVM{
-		Approvals: []view.ApprovalRow{{
-			DecisionID: "d-1", From: "张三", Source: "钉钉", Said: "把用量发我",
-			Intent: "跑用量查询", Deliverable: "report.md", Workspace: "acme/data",
-			Age: 2 * time.Minute,
-		}},
-		UpdatedAt: now,
-	})
-	return snap
-}
-
-// Rejecting in the inbox offers a 10s 撤销 when the runtime can undo it.
-func TestRejectOffersUndo(t *testing.T) {
-	cmd := &undoCmd{}
-	a := newApp(approvalSnap(t), &fakeCmd{})
-	a.now = time.Now()
-	a.cmd = cmd
-	tt := mui.NewTester(a.view, 1440, 1400)
-	click(t, tt, "收件箱")
-	click(t, tt, "拒绝")
-	tt.Frame()
-	wantTexts(t, tt, "已拒绝：不会建任务", "撤销")
-	click(t, tt, "撤销")
-	tt.Frame()
-	if len(cmd.undone) != 1 {
-		t.Fatalf("undo called %d times", len(cmd.undone))
-	}
-	wantTexts(t, tt, "已撤销拒绝：这条请求回到收件箱")
-}
-
-// Without UndoReject there is no fake 撤销 button.
-func TestRejectWithoutUndoHasNoFakeAction(t *testing.T) {
-	a := newApp(approvalSnap(t), &fakeCmd{})
-	a.now = time.Now()
-	tt := mui.NewTester(a.view, 1440, 1400)
-	click(t, tt, "收件箱")
-	click(t, tt, "拒绝")
-	tt.Frame()
-	if exactTexts(tt, "撤销") != 0 {
-		t.Fatalf("an unwired undo button appeared; texts: %q", tt.Texts())
-	}
-}
-
 // System preferences: text scale multiplies, high contrast strengthens tokens, the
 // system accent wins, and reduced motion turns off the stream animation.
 func TestSystemAccessibilityPreferences(t *testing.T) {
@@ -319,38 +260,40 @@ func TestMarkdownInlineIsSafe(t *testing.T) {
 	}
 }
 
-// When the runtime publishes the unified attention inbox, 收件箱 renders it —
-// not the overview's fallback lists — and it works even without an OverviewVM.
+// 收件箱 consumes the runtime's attention inbox and shows only attention items:
+// questions, blocked tasks and failures — never an approval card.
 func TestAttentionInboxConsumesPublishedProjection(t *testing.T) {
 	now := time.Now()
 	snap := view.NewSnapshot()
-	snap.PublishOverview(&view.OverviewVM{
-		Approvals: []view.ApprovalRow{{DecisionID: "fallback-1", From: "旧卡片", Said: "不该出现"}},
-		UpdatedAt: now,
-	})
+	snap.PublishOverview(viewtest.DemoOverview(now))
 	snap.PublishAttention(&view.AttentionVM{Items: []view.AttentionItemVM{
-		{Kind: "proposal", DecisionID: "d-1", Sender: "张三",
-			Source: "钉钉", Text: "把用量发我", Workspace: "acme/data",
-			Actions: []string{"approve", "reject"}, At: now},
 		{Kind: "ticket", TicketID: "tk-42", Number: 42, Text: "配置项名用哪个？",
-			Actions: []string{"answer", "retry", "stop", "open"}, At: now.Add(-time.Minute)},
+			Actions: []string{"answer", "retry", "stop", "open"}, At: now},
+		{Kind: "proposal", DecisionID: "d-old", Sender: "旧", Text: "旧式提案不该出现",
+			Actions: []string{"approve", "reject"}, At: now.Add(-time.Minute)},
 	}, UpdatedAt: now})
 	a := newApp(snap, &fakeCmd{})
 	a.now = now
 	tt := mui.NewTester(a.view, 1440, 1400)
 	click(t, tt, "收件箱")
-	wantTexts(t, tt, "把用量发我", "#42", "配置项名用哪个？", "待你决定", "批准", "拒绝", "打开")
-	if tt.HasText("旧卡片") {
-		t.Fatal("the overview fallback was drawn even though AttentionVM is published")
+	wantTexts(t, tt, "#42", "配置项名用哪个？", "回答", "打开")
+	if tt.HasText("旧式提案不该出现") {
+		t.Fatal("a legacy proposal was rendered in the attention inbox")
 	}
-	// No OverviewVM at all: the inbox still works from the attention projection.
+	for _, word := range []string{"批准", "拒绝", "待审批", "旧式请求"} {
+		if tt.HasText(word) {
+			t.Fatalf("approval wording %q is still in the inbox", word)
+		}
+	}
+	// Without an OverviewVM the inbox still works from the attention projection.
 	snap2 := view.NewSnapshot()
 	snap2.PublishAttention(&view.AttentionVM{Items: []view.AttentionItemVM{
-		{Kind: "proposal", DecisionID: "d-2", Sender: "李四", Text: "再看一下", Actions: []string{"approve", "reject"}},
+		{Kind: "ticket", TicketID: "tk-44", Number: 44, Text: "重试还是放弃？",
+			Actions: []string{"answer", "open"}},
 	}, UpdatedAt: now})
 	b := newApp(snap2, &fakeCmd{})
 	b.now = now
 	b.sec = view.SecInbox
 	tt2 := mui.NewTester(b.view, 1440, 1400)
-	wantTexts(t, tt2, "再看一下")
+	wantTexts(t, tt2, "重试还是放弃？")
 }

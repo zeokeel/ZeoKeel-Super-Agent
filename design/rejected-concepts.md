@@ -77,7 +77,7 @@
 
 | 概念 / 实现 | 判定 | 说明与证据 |
 | --- | --- | --- |
-| ~~**IM 入站审批优先**~~ → **DSH 对齐（rc.3 推翻）** | **撤销旧 release policy；改为 DSH 主链** | admitted 明确 IM/GitHub 请求直接 Eval 接单 → Ticket；推断按 accept mode off/observe/auto（auto 需规则）；`DecPropose` 仅 opt-in `RequireApproval` 且非 explicit；`AutoApproveIM` 移除；旧 proposal 仅作兼容并标「旧式请求（需要批准）」（`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`ui/inbox.go:106`、`cmd/zeokeel/acceptance_test.go:129-160`） |
+| ~~**IM 入站审批优先**~~ → **DSH 对齐（rc.3 推翻，rc.4 彻底删除）** | **撤销旧 release policy；改 DSH 主链** | admitted 明确 IM/GitHub 请求直接 Eval 接单 → Ticket；推断按 accept mode off/observe/auto（auto 需规则）；rc.4 删除 proposal/Approval/`RequireApproval`，旧 DB propose 载入为 ignore；收件箱 attention-only（`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`persist.go:156-162`、`ui/inbox.go:1-140`、`cmd/zeokeel/acceptance_test.go:129-160`） |
 | 飞书官方 `larkws` 长连接为推荐接收（longpoll 为显式 fallback） | 接受（替换“只做长轮询”） | 低延迟、无需公网回调；`larksuite/oapi-sdk-go/v3 v3.12.2` + `OnP2MessageReceiveV1`；longpoll 保留 cursor 兼容旧环境（`internal/im/feishu/ws.go`、`go.mod:12`）。webhook 拒绝。 |
 | DWS=操作员个人 OAuth，Stream=bot | 接受，身份模型偏离 | 两者**不是同一身份**：DWS 不用 app key/secret，靠 `dws auth login` 的 profile；Stream 是官方机器人 SDK（app key/secret/robot）。文档与设置字段按身份分开（`internal/im/dingtalk/dws.go:1-28`、`internal/runtime/pages.go:483-500`） |
 | DWS 长驻 NDJSON consumer（无 poll/cursor） | 接受，替换早期“JSON poll 契约” | 真实 CLI 只提供 `event +listen-im … -f ndjson`；event id 去重、断线 1s→30s 重连、短命令串行；发送无 idempotency-key，靠隐藏 marker（`dws.go`、`design/im-channels.md` §4） |
@@ -98,9 +98,9 @@
 | 日常五项导航 + 折叠「诊断」 | **接受，替换“监控”平铺** | 超级Agent / 收件箱 / 项目 / 执行 / 设置；工程页收进默认折叠「诊断（高级）」。原型/DSh 的监控页不再占日常路径（`internal/view/vm.go:486-520`、`internal/ui/chrome.go:60-110`） |
 | UI 叫「项目」而不是「工作区」 | 接受（产品词） | 领域/代码仍是 workspace；UI 文案统一「项目」，减少“工作区/项目/会话/工单”混用（`internal/ui/workspace.go`、`internal/view/vm.go:525-535`） |
 | 多行 composer + target chip（聊天/项目派活） | **接受，替换单行隐式路由** | Enter 换行、⌘/Ctrl+Enter 发送（IME 安全）；chip 明确提交目标；失败保留草稿+再次发送；回答可展开/复制/查看全部（`internal/ui/composer.go:19-220`、`internal/ui/commands.go:137-188`、`internal/runtime/ux.go:134-172`） |
-| 统一收件箱（审批 + 任务动作） | **接受，替换分散在总览/来源** | 一个 `AttentionCount` 单源「待你决定 N」；批准/拒绝/回答/重试/停止；j/k/Enter；隐藏窗口系统通知（`internal/ui/inbox.go:1-350`、`internal/runtime/ux.go:279-440`、`internal/view/attention.go`） |
+| 统一收件箱（审批 + 任务动作） | **接受，替换分散在总览/来源** | 一个 `AttentionCount` 单源「待你决定 N」；批准/拒绝/回答/重试/停止；j/k/Enter；隐藏窗口系统通知（`internal/ui/inbox.go:1-233`、`internal/runtime/ux.go:314-438`、`internal/view/attention.go`） |
 | 模型设置成为一等设置组 + 测试连接 | 接受（替换仅 onboarding/CLI） | 设置›模型端点/API Key/模型名；测试已保存配置（401/403/404 分类）；保存即时生效；未配模型停车卡（`internal/runtime/ux.go:36-125`、`internal/runtime/pages.go:543-558`、`internal/ui/settings.go:501-535`） |
-| 首次运行可「稍后设置（演示模式）」 | 接受 | 不再强制 model+workspace 才能进入；任务停在待你决定，总览说明并给「去配置模型」（`internal/runtime/ux.go:445-452`、`internal/ui/onboarding.go:140-180`、`internal/ui/overview.go:76-95`） |
+| 首次运行可「稍后设置（演示模式）」 | 接受 | 不再强制 model+workspace 才能进入；任务停在待你决定，总览说明并给「去配置模型」（`internal/runtime/ux.go:423-438`、`internal/ui/onboarding.go:140-180`、`internal/ui/overview.go:76-95`） |
 | 路径真相：项目目录 vs 执行副本 | **接受，诚实披露当前语义** | 详情分列两路径、可打开/复制；提示词明确只在副本工作、不修改项目；交付物是副本路径（`internal/ui/ticketdetail.go:250-286`、`internal/runtime/worker.go:570-582`） |
 | 连接向导（draft 校验/测试/通过才保存） | 接受 | 只显示所选 transport 字段；用填写值测试、不保存；DWS 版本/登录命令/授权链接；Feishu chats ws 可选/longpoll 必填；暂停监听（`internal/ui/channelwizard.go:1-520`、`internal/runtime/ux_im.go`、`internal/runtime/im.go:1392-1505`） |
 | 可访问性最小集（对比度/focus/标签/尺寸） | 接受（rc.2 接入系统级） | 提高 faint 对比度与 focus token；`Focusable/Role/Label/Tooltip`；28px 目标/16px 图标；状态栏去 debug（`internal/ui/tokens.go:100-145`、`internal/ui/uxsupport.go`、`internal/ui/chrome.go:143-160`）；rc.2 另接系统 TextScale/ReduceMotion/HighContrast/Accent（§G） |
@@ -115,7 +115,7 @@
 | 聊天 Markdown 渲染 | 接受（安全子集） | 标题/粗斜体/行内代码/围栏代码/列表/http(s) 链接；**不解释 HTML**，避免注入；未匹配标记按字面；链接外部浏览器打开（`internal/ui/markdown.go:19-180`） |
 | 计划/待办可见 | 接受（替换“只有日志”） | `.zeokeel/plan/*.json` → `PlanVM`；执行详情+对话任务卡；只读投影，不是计划编辑器（`internal/view/plan.go`、`internal/runtime/rc2.go:302-433`、`internal/ui/planpanel.go`） |
 | 应用到项目（显式回写） | **接受，替代“自动原地执行”** | 不假装 Agent 改了项目：显式按钮、只复制记录交付物、越界拒绝、同名先 `.bak-<timestamp>`、返回相对路径、确认框列出文件/目标/覆盖警告。真正同步/合并仍拒绝（`internal/runtime/rc2.go:193-270`、`internal/ui/applyproject.go`） |
-| 拒绝无损 + 撤销 | **接受，替换“拒绝即丢”** | 保留 proposal/RejectedAt；10s 撤销 toast；UndoReject 幂等/superseded 保护/持久化重启安全；不建单/不启动/不回复（`internal/engine/lifecycle.go:723-815`、`internal/ui/inbox.go:59-66`） |
+| ~~拒绝无损 + 撤销~~ | **rc.4 随审批机制一起删除** | 没有 Reject/UndoReject/proposal/RejectedAt；旧 DB propose 只作历史 ignore（`internal/engine/persist.go:156-162`） |
 | 原生应用菜单 | 接受（替换只有窗口快捷键） | App/文件/编辑/窗口 + 标准编辑 roles；⌘N/⌘,；托盘保留（`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`） |
 | 系统无障碍偏好 | 接受（系统级接入） | TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent；不新增自有“无障碍模式”（`internal/ui/prefs.go:1-61`、`internal/ui/app.go:441-462`） |
 | 关于 / 更新检查（只查不下载） | 接受 | 版本/许可证；查询 GitHub Releases API，显示最新版本/发布页；**不下载、不安装、不自动更新**（`internal/ui/about.go:1-117`、`internal/runtime/rc2.go:355-415`） |
@@ -125,11 +125,21 @@
 
 | 概念 / 实现 | 判定 | 说明与证据 |
 | --- | --- | --- |
-| **推翻“IM 审批优先”**，回到 DSH 主链 | **接受（推翻 rc.1 的 release policy）** | 明确/admitted 请求直接 Eval→Ticket；推断请求按 accept mode off/observe/auto（auto 需匹配规则）；`DecPropose` 只属于显式 opt-in `RequireApproval`（仅推断）；收件箱旧式文案；`AutoApproveIM` 删除（`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`ui/inbox.go:106`） |
+| **推翻“IM 审批优先”**，回到 DSH 主链 | **接受（rc.4 进一步删除 opt-in 审批）** | 明确/admitted 请求直接 Eval→Ticket；推断请求按 accept mode off/observe/auto（auto 需规则）；rc.4 删除 `DecPropose`/`RequireApproval`/Approve/Reject/UndoReject；旧 DB propose → ignore；收件箱 attention-only（`internal/engine/evaluate.go:348-390`、`gate.go:52-56`、`persist.go:156-162`、`ui/inbox.go:1-140`） |
 | 项目页 概览/设置/统计 | 接受 | 每项目浏览器开关/Chrome·Edge/无头/CDP 端口/profile 只读、启停/状态、技能开关（全局默认开/项目可关）、统计计数/最近活动/工具可用性（`view/workspacepanel.go`、`ui/workspacepanel.go:193-520`、`runtime/workspacesettings.go:75-160`） |
 | per-workspace 浏览器 + `chrome-devtools-mcp` | **接受（单机多项目隔离）** | 默认路径仅检测 Chrome/Edge；独立 profile `<stateDir>/workspaces/<ws>/browser-profile`；唯一 CDP 端口；`npx -y chrome-devtools-mcp@latest --browserUrl ...`；`mcp__browser__*` 只注入该项目 Worker；env scrub；缺依赖可操作错误（`internal/browser/`、`runtime/workspacesettings.go:427-480`） |
 | `read_image` 元数据-only | 接受（诚实偏离） | 模型端点 text-only，不附像素；只报告格式/字节/尺寸，10MB/路径约束；需要视觉用 bash OCR/ImageMagick 或问人；升级路径是多模态 tool result（`internal/agent/imageread.go`） |
 | `job_list` / `subagent` 命名 | 接受 | 补齐 DSH job_output/list/kill；eino 默认 `agent` 改名 `subagent`（`internal/agent/jobs.go:275-309`、`subagent.go:55`） |
 | Worker 域工具 `ack/handback/thread_unrelated/request_status` | 接受 | DSH Executor parity；按 Ticket/Thread 粒度，`ack` 无 purpose 元数据；prompt 已列出（`runtime/artifacts.go:121-222`、`worker.go:580`） |
-| SuperAgent **无工具** | **接受（有意缺席）** | SuperAgent 是问答，不是 orchestrator；请求 payload 无 tools；DSH main orchestrator 工具集没有模型可调用面（主 Session 是确定性 assessor），`orchestrator_read` 仍缺（`runtime/rc2.go:121-132`、`audit/tool-gap.md`） |
-| 仍拒绝假装：原项目原地执行、钥匙串、多窗口、自动更新下载、read_image 视觉、orchestrator_read、浏览器无 Chrome/Edge+node | **明确未做** | 写入 README 已知限制/RELEASE F-7/J：执行副本+apply-back 是真实语义；密钥 SQLite 0600；无多窗口；更新只检查；视觉/资源分页缺失 |
+| SuperAgent **无工具** | **接受（有意缺席）** | SuperAgent 是问答，不是 orchestrator；请求 payload 无 tools；Worker 已有 `read_resource`（orchestrator_read 等价）；DSH main orchestrator 工具集仍没有模型可调用面（主 Session 是确定性 assessor）（`runtime/rc2.go:121-132`、`runtime/rc3.go:17-160`、`audit/tool-gap.md`） |
+| 仍拒绝假装：原项目原地执行、钥匙串、多窗口、自动更新下载、read_image 像素、DSH main orchestrator 工具、浏览器无 Chrome/Edge+node | **明确未做** | 写入 README 已知限制/RELEASE F-7/K：执行副本+apply-back 是真实语义；密钥 SQLite 0600；无多窗口；更新只检查；视觉需 vision endpoint |
+
+## I. rc.4（2026-11-04）去历史包袱与前置检查登记
+
+| 概念 / 实现 | 判定 | 说明与证据 |
+| --- | --- | --- |
+| **旧式审批/提案机制彻底删除** | **接受（去掉历史包袱）** | Decision 只有 accept/stop/ignore/unavailable；无 Approve/Reject/UndoReject/proposal/`RequireApproval`；旧 DB `propose` 行载入为 ignore（`legacyImport`），旧 `requireApproval` 忽略；所有审批 UI/文案移除（`internal/domain/ticket.go:10-13`、`internal/engine/persist.go:156-162`、`internal/ui/inbox.go:1-140`） |
+| 收件箱 = attention-only | 接受 | 只显示任务问题/受阻/失败；历史 proposal 不显示/不可操作；`待你决定 N` 仍单一计数（`internal/ui/inbox.go:1-140`） |
+| Node.js/npx 前置检查 | **接受（不自动安装）** | `browser.Prerequisites` 检测 node/npx 与版本；缺失时警告+OS 安装命令（brew/winget/apt）+nodejs.org+重新检查；启动按钮禁用并说明原因；不自动安装/不假装运行（`internal/browser/prereq.go:1-140`、`internal/runtime/rc3.go:170-205`、`internal/ui/workspacepanel.go:613-692`） |
+| `read_resource`（DSH orchestrator_read 等价） | **接受，替代缺口** | 分页读自己的 ticket/inputs/trigger/thread（只读、归属/路径校验、文本 redaction、默认 20/上限 200）；Worker prompt 列出；SuperAgent 仍无工具（`internal/runtime/rc3.go:17-160`、`internal/runtime/artifacts.go:205-214`、`runtime/worker.go:580`） |
+| 仍拒绝假装：原项目原地执行、钥匙串、多窗口、自动更新下载、read_image 像素、DSH main orchestrator 工具 | **明确未做** | README/RELEASE F-7/K：执行副本+apply-back；密钥 SQLite 0600；更新只检查；视觉需 vision endpoint |

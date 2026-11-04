@@ -26,7 +26,6 @@ func (a *App) overview(c *mui.Context, ov *view.OverviewVM) {
 		heading(c, tk, "总览", fmt.Sprintf("需要你关注的只有 %d 件事，其余都在后台运行", ov.PersonCount()))
 		a.modelParkedCard(c)
 		a.chatPanel(c)
-		a.approvals(c, ov)
 		a.needsPerson(c, ov)
 		a.goalsStrip(c)
 		mui.Row(c).Gap(16).AlignItems(mui.Start).Children(func() {
@@ -91,67 +90,6 @@ func (a *App) modelParkedCard(c *mui.Context) {
 				a.settingsGroup = view.SettingsWorker
 				a.locate = nil
 			}
-		})
-	})
-}
-
-// approvals lists requests that would start work but need the operator first.
-// They are not Tickets, and they are deliberately a different band from
-// "needs me", because the question is different: should this happen at all?
-func (a *App) approvals(c *mui.Context, ov *view.OverviewVM) {
-	tk := a.tk
-	if len(ov.Approvals) == 0 {
-		return
-	}
-	card(c, tk, 0, func() {
-		mui.Row(c).Padding(14, 16).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Icon(c, icBell).FontSize(fs(15)).TextColor(tk.Amber)
-			mui.Text(c, "旧式请求待你决定").FontSize(fs(17)).Bold().TextColor(tk.Text)
-			chip(c, tk, fmt.Sprint(len(ov.Approvals)), tk.Amber, tk.AmberSoft)
-			mui.Spacer(c)
-			mui.Text(c, "旧式流程：批准后才开工；新请求会直接进入任务").FontSize(fs(13)).TextColor(tk.TextFaint)
-		})
-		mui.Box(c).Height(1).Background(tk.BorderSoft)
-		for i, ap := range ov.Approvals {
-			if i > 0 {
-				mui.Box(c).Height(1).Background(tk.BorderSoft)
-			}
-			a.approvalRow(c, ap)
-		}
-	})
-}
-
-// approvalRow is one request: who, what they said, what would be done.
-func (a *App) approvalRow(c *mui.Context, ap view.ApprovalRow) {
-	tk := a.tk
-	mui.Row(c).Padding(14, 16).Gap(12).AlignItems(mui.Start).Children(func() {
-		mui.Row(c).Size(28, 28).Radius(8).Background(tk.AmberSoft).Center().
-			Children(func() { mui.Icon(c, icBell).FontSize(fs(14)).TextColor(tk.Amber) })
-		mui.Column(c).Grow(1).Gap(3).Children(func() {
-			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, ap.From+" 找你").FontSize(fs(15)).TextColor(tk.Text)
-				textChip(c, tk, ap.Source)
-				textChip(c, tk, ap.Workspace)
-			})
-			mui.Text(c, "他说："+ap.Said).FontSize(fs(14)).SingleLine().TextColor(tk.TextMuted)
-			mui.Text(c, "要做："+ap.Intent).FontSize(fs(14)).SingleLine().TextColor(tk.Text)
-			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "产出："+ap.Deliverable).FontSize(fs(13)).TextColor(tk.TextFaint)
-				for _, s := range ap.Sensitive {
-					mui.Text(c, "⚠ "+s).FontSize(fs(13)).TextColor(tk.Red)
-				}
-			})
-		})
-		mui.Column(c).Gap(6).AlignItems(mui.End).Children(func() {
-			mui.Row(c).Gap(6).Children(func() {
-				if mui.PrimaryButton(c, "批准").Label("批准").Height(24).Clicked() {
-					a.approve(ap.DecisionID)
-				}
-				if mui.Button(c, "拒绝").Label("拒绝").Height(24).Clicked() {
-					a.reject(ap.DecisionID)
-				}
-			})
-			mui.Text(c, humanfmt.Ago(ap.Age)).FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 	})
 }

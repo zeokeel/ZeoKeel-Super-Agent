@@ -218,3 +218,38 @@ merged-policy 确定性/最终强度测试仍绿。
   （仍兼容 RequireApproval 的 approve 路径）。runtime `im_approval_test.go` 改为 DSH 语义（直接建单、陌生人过滤、
   两个会话两张任务），rc2 undo 测试改用 RequireApproval opt-in。
 - 未动 VERSION。文档（README/design §13）仍写"IM 审批优先"，需 docs owner 同步（不在本 scope）。
+
+
+## rc3：删除审批/提案机制（历史包袱清理）
+
+DSH 没有审批步骤，opt-in 的 propose 路径整体删除（不是默认关闭）。
+
+**删除的 API（domain）**：
+- `domain.DecPropose`（DecisionKind 只剩 accept/stop/ignore/unavailable）
+- `domain.Proposal`（struct）
+- `domain.Decision.Proposal`、`domain.Decision.RejectedAt`
+- `domain.ReasonRejectedByPerson`、`domain.ReasonUndoReject`
+
+**删除的 API（engine）**：
+- `Policy.RequireApproval`
+- `(*Engine).Approve`、`Reject`、`UndoReject`、`RestoreProposal`、`Proposals`
+- `Outcome.Proposal`
+- `ErrNotRejected`、`ErrUndoSuperseded`
+- 内部：proposal 创建/恢复/复核辅助（`proposalLocked`、`proposalOutcome`、`isRejection`、`supersededByLocked`）；policy version 不再含 requireApproval 位。
+
+**删除的 API（Persistence）**：`Approve`、`Reject`、`UndoReject`、`RestoreProposal` 包装；不再保存 proposal/rejection 字段。
+
+**迁移语义（重要）**：旧库 `decision.kind="propose"` 的行在 `Persistence.Load` 时映射为 `DecisionKind=ignore` 并追加
+`reason=legacyImport`；JSON 里的 `proposal`/`rejectedAt` 字段因结构体不再有该字段而被忽略；不会建 Ticket、不会出现在任何
+待办/审批列表（纯历史）。旧 policy JSON 的 `requireApproval` 被忽略。测试：`TestLegacyProposalRowsLoadAsIgnore`。
+
+**行为**：explicit 请求（含 IM）Eval 直接 accept 建 Ticket；inferred 仅按 accept mode（off 拒绝 / observe 记录 ignore /
+auto 且命中规则才 accept）；stop/ignore 不变。
+
+**测试**：删除全部 proposal/approval/undo 测试；DSH 测试保留（`TestIMExplicitRequestCreatesTicket`、
+`TestIMInferredFollowsAcceptMode`、`TestIMExplicitAdmissionCellAccepts`、`TestIMIgnoreAndStopUnchanged`、
+`TestIMRepeatedDeliveryCreatesOneTicket`）。engine/domain/assess 测试 + engine `-race` 绿。
+
+**跨 scope 遗留（已关闭）**：runtime/ui/cmd 的测试与生产代码均已完成 DSH 改写。复验：全仓 grep 无
+`RequireApproval/Proposals/Approve/Reject/UndoReject/DecPropose/Proposal` 引用；`go build ./...` 绿；
+`go test ./internal/{ui,view,runtime}`、`./cmd/zeokeel` 绿；全仓 `go test ./... -skip Live` 28 包 ok。

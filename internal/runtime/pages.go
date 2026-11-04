@@ -98,20 +98,6 @@ func (r *Runtime) sourcesVM(now time.Time) *view.SourceVM {
 			CursorAt: s.At, LastPoll: s.Last,
 		})
 	}
-	// "待审批 N": approvals are attention items, not notifications. The number is
-	// per Source so the 来源 page can say which channel is waiting on the operator.
-	pending := map[string]int{}
-	for _, d := range r.eng.Proposals() {
-		if tr, ok := r.eng.TriggerOf(d.ID); ok && tr.Source != "" {
-			pending[tr.Source]++
-		}
-	}
-	for i := range vm.Sources {
-		if n := pending[vm.Sources[i].Kind]; n > 0 {
-			vm.Sources[i].Facts = append(vm.Sources[i].Facts, view.Fact{Label: "待审批", Value: fmt.Sprintf("%d 条", n)})
-		}
-	}
-
 	return vm
 }
 
@@ -155,9 +141,6 @@ func (r *Runtime) threadsVM(now time.Time) *view.ThreadVM {
 			if itTicket != nil {
 				ev.Kind = view.EventTrigger
 				ev.Decision = fmt.Sprintf("派发 → #%d %s", itTicket.Number, itTicket.Workspace)
-			} else if it.Decision != nil && it.Decision.Kind == domain.DecPropose {
-				ev.Kind = view.EventDecision
-				ev.Decision = "待你批准"
 			} else {
 				ev.Kind = view.EventDisposition
 				if len(it.Disp.Reason) > 0 {
@@ -212,8 +195,6 @@ func (r *Runtime) decisionsVM(now time.Time) *view.DecisionVM {
 		summary := ""
 		if itTicket != nil {
 			summary = fmt.Sprintf("新建 Ticket #%d · %s", itTicket.Number, itTicket.Workspace)
-		} else if d.Kind == domain.DecPropose {
-			summary = "待你批准 · " + string(d.Workspace)
 		}
 		label := kindLabel(string(d.Kind))
 		counts[label]++
@@ -838,8 +819,6 @@ func clip(s string, n int) string {
 
 func kindLabel(kind string) string {
 	switch kind {
-	case string(domain.DecPropose):
-		return "待批准"
 	case string(domain.DecAccept):
 		return "已接受"
 	case string(domain.DecStop):
@@ -854,8 +833,6 @@ func kindLabel(kind string) string {
 
 func toneOfDecision(kind string) view.Tone {
 	switch kind {
-	case string(domain.DecPropose):
-		return view.ToneWarn
 	case string(domain.DecAccept):
 		return view.ToneOK
 	case string(domain.DecIgnore):
@@ -974,19 +951,17 @@ func (r *Runtime) evalFacts() []view.SettingField {
 		versions  []string
 		accept    = map[string]bool{}
 		reply     = map[string]bool{}
-		approval  bool
 		rules     []string
 		admission int
 	)
 	seen := map[string]bool{}
 	for _, raw := range policies {
 		var p struct {
-			Version         string         `json:"Version"`
-			AcceptMode      string         `json:"AcceptMode"`
-			ReplyMode       string         `json:"ReplyMode"`
-			RequireApproval bool           `json:"RequireApproval"`
-			Admissions      map[string]any `json:"Admissions"`
-			Rules           []domain.Rule  `json:"Rules"`
+			Version    string         `json:"Version"`
+			AcceptMode string         `json:"AcceptMode"`
+			ReplyMode  string         `json:"ReplyMode"`
+			Admissions map[string]any `json:"Admissions"`
+			Rules      []domain.Rule  `json:"Rules"`
 		}
 		if json.Unmarshal([]byte(raw), &p) != nil {
 			continue
@@ -997,9 +972,6 @@ func (r *Runtime) evalFacts() []view.SettingField {
 		}
 		accept[string(p.AcceptMode)] = true
 		reply[string(p.ReplyMode)] = true
-		if p.RequireApproval {
-			approval = true
-		}
 		admission += len(p.Admissions)
 		for _, rule := range p.Rules {
 			if rule.Enabled && !seen["r:"+rule.ID] {
@@ -1014,7 +986,6 @@ func (r *Runtime) evalFacts() []view.SettingField {
 		{Key: "policy", Label: "Policy 版本", Value: strings.Join(versions, ", "), Kind: view.SettingFact},
 		{Key: "accept", Label: "受理档位 accept mode", Value: joinSet(accept, "observe"), Kind: view.SettingFact},
 		{Key: "reply", Label: "回复档位 reply mode", Value: joinSet(reply, "notify"), Kind: view.SettingFact},
-		{Key: "approval", Label: "审批门 RequireApproval", Value: boolWord(approval), Kind: view.SettingFact},
 		{Key: "rules", Label: "启用的团队规则", Value: orNone(strings.Join(rules, ", ")), Kind: view.SettingFact},
 		{Key: "admission", Label: "admission 单元格", Value: fmt.Sprintf("%d 条", admission), Kind: view.SettingFact},
 	}

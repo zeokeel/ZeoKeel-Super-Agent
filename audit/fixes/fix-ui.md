@@ -604,3 +604,27 @@ $ go build ./internal/ui ./internal/view                       → OK
 $ go build ./...  → 失败于 internal/browser（别人 in-flight：launch.go sync unused / undefined Manager），非本 scope
 ```
 未做：项目面板的浏览器 MCP 细节（由 runtime 的 browser 包负责，当前该包在别人手里未编译通过）；VERSION 未改。
+
+---
+
+# Round 7（rc3：删除审批 UI + Node/npx 前置提醒）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime/engine/store/cmd 改动，无 VERSION bump。
+
+## 已完成
+
+1. **审批 UI 彻底删除**：移除 `OverviewVM.Approvals`、`view.ApprovalRow`、`PersonCount` 中的 approvals、`AttentionItemVM.CanApprove`；删除 overview 旧式请求卡、收件箱 proposal 卡/批准/拒绝/撤销、`Commander.Approve/Reject`、`RejectUndoer/startUndoReject`、toast action、inbox approval pending/error 状态、以及所有"旧式请求/待审批/批准后才会开工"文案。收件箱现在只渲染 attention items 的 ticket 类（answer/retry/stop/open）；proposal 类 item 直接忽略；无 OverviewVM 时仍可工作。
+2. **Node.js/npx 前置提醒**：新增 `view.BrowserPrereq{NodeInstalled,NpxInstalled,NodeVersion,NpxVersion,Detail,CheckedAt}` + `Ready()`；可选 `BrowserPrerequisites{BrowserPrerequisites() view.BrowserPrereq}`。
+   - 设置›部署 与 项目›设置›浏览器 都显示：已就绪（版本）/ 未接入（诚实说明）/ 缺失时醒目卡片「浏览器 MCP 需要 Node.js（含 npx）」+ 当前 OS 安装命令（macOS `brew install node`、Windows `winget install OpenJS.NodeJS.LTS`、Linux `sudo apt install nodejs npm`）+ 可复制 + 打开 nodejs.org + 「重新检查」（off-frame）。
+   - `启动浏览器` 在 npx 缺失时禁用并写明原因（仍不谎报运行中）；浏览器配置保存仍可用（提醒不阻塞保存）。
+3. **测试**：删除 approval/undo 相关用例（honest、verify_wave2、round5、workspacepanel 旧审批测试）；新增 `TestBrowserPrereqMissingNpx`（缺 npx 卡片/OS 命令/复制/重新检查成功/启动禁用）、`TestBrowserPrereqReady`（就绪无警告/启动可用）、`TestBrowserPrereqUnwired`（无法检查的诚实提示）、`TestNoLegacyApprovalUI`（overview/inbox 无批准/拒绝/待审批/旧式请求文案）；attention inbox 测试同时验证 proposal items 被忽略。项目面板既有测试保持绿。
+
+## 结果
+
+```
+$ CGO_ENABLED=0 go test ./internal/ui/... ./internal/view/...  → ok
+$ CGO_ENABLED=0 go vet ./internal/ui/... ./internal/view/...   → 干净
+$ gofmt -l internal/ui internal/view                           → 空
+$ go build ./internal/ui ./internal/view                       → OK
+```
+VERSION 未改（ui.Version 仍为 "1.0.0-dev"）。注意：engine/domain 的审批删除由 conf-domain 负责；其提示中提到的 ui 测试残留为旧信息，当前 ui/view 测试已全绿。

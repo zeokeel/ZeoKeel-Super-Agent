@@ -203,87 +203,40 @@ func TestLaunchEffectRerunsAfterRestart(t *testing.T) {
 	}
 }
 
-// Opt-in proposals are Decisions: they survive a restart and can still be approved
-// after it (Approve needs the Decision→Trigger edge, which Load rebuilds).
-func TestRequireApprovalProposalsSurviveRestart(t *testing.T) {
+// Migration: a decision row written by the removed approval mechanism (kind
+// "propose" plus proposal/rejectedAt JSON) must still load, and it loads as a
+// historical ignore. No proposal API exists any more.
+func TestLegacyProposalRowsLoadAsIgnore(t *testing.T) {
 	st := openTestStore(t)
-	_, p1, _ := restart(t, st)
-	if err := p1.Register(repoWS("ws_web"), approvalPolicy()); err != nil {
+	// A row in the old shape, including fields the struct no longer has.
+	raw := `{"ID":"dec-legacy","Kind":"propose","Workspace":"ws_web","Thread":"t-legacy",` +
+		`"Proposal":{"From":"old","Said":"please","Intent":"do it"},` +
+		`"RejectedAt":"2026-11-03T10:00:00Z","At":"2026-11-03T09:00:00Z"}`
+	// The raw value above is intentionally shaped like the pre-DSH JSON; the
+	// columns mirror store.PutDecision.
+	if _, err := st.Exec(`INSERT OR REPLACE INTO decision(id, workspace_id, kind, json) VALUES (?,?,?,?)`,
+		"dec-legacy", "ws_web", "propose", raw); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"ip1", "ip2"} {
-		if _, err := p1.Receive(approvalTrigger(id, "chat-r-"+id)); err != nil {
-			t.Fatal(err)
+	_, p, _ := restart(t, st)
+	dec, ok := p.Engine().Decision("dec-legacy")
+	if !ok {
+		t.Fatal("the legacy decision row did not load")
+	}
+	if dec.Kind != domain.DecIgnore {
+		t.Fatalf("legacy proposal kind = %q, want ignore", dec.Kind)
+	}
+	var migrated bool
+	for _, r := range dec.Reasons {
+		if r.Code == domain.ReasonLegacyImport {
+			migrated = true
 		}
 	}
-	if _, err := p1.EvaluateDue(time.Now()); err != nil {
-		t.Fatal(err)
+	if !migrated {
+		t.Fatalf("the migration must be audited: %+v", dec.Reasons)
 	}
-	if got := len(p1.Engine().Proposals()); got != 2 {
-		t.Fatalf("want two proposals before the restart, got %d", got)
-	}
-
-	e2, p2, _ := restart(t, st)
-	_ = p2
-	ps := e2.Proposals()
-	if len(ps) != 2 {
-		t.Fatalf("the IM approvals must survive a restart, got %d", len(ps))
-	}
-	out, err := e2.Approve(ps[0].ID)
-	if err != nil {
-		t.Fatalf("Approve after restart: %v", err)
-	}
-	if out.Ticket == "" {
-		t.Fatal("Approve after restart must create the Ticket")
-	}
-	if len(e2.Proposals()) != 1 {
-		t.Fatalf("one approval must remain pending, got %d", len(e2.Proposals()))
-	}
-}
-
-// A rejection can be undone across a restart: the proposal content, the rejection
-// instant and the restored kind all live in the decision row.
-func TestUndoRejectSurvivesRestart(t *testing.T) {
-	st := openTestStore(t)
-	_, p1, _ := restart(t, st)
-	if err := p1.Register(repoWS("ws_web"), approvalPolicy()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p1.Receive(approvalTrigger("urr1", "chat-urr")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p1.EvaluateDue(time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if got := len(p1.Engine().Proposals()); got != 1 {
-		t.Fatalf("want one proposal, got %d", got)
-	}
-	id := p1.Engine().Proposals()[0].ID
-	if err := p1.Reject(id, "later"); err != nil {
-		t.Fatal(err)
-	}
-	// Restart after the rejection.
-	e2, p2, _ := restart(t, st)
-	if len(e2.Proposals()) != 0 {
-		t.Fatal("the rejection must survive the restart")
-	}
-	out, err := p2.UndoReject(id)
-	if err != nil {
-		t.Fatalf("undo after restart: %v", err)
-	}
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("restart undo returned %+v", out)
-	}
-	// The restored proposal survives another restart and can be approved.
-	e3, p3, _ := restart(t, st)
-	ps := e3.Proposals()
-	if len(ps) != 1 || ps[0].ID != id {
-		t.Fatalf("the restored proposal must survive a restart: %+v", ps)
-	}
-	if _, err := p3.Approve(id); err != nil {
-		t.Fatalf("approve restored proposal: %v", err)
-	}
-	if len(e3.AllTickets()) != 1 {
-		t.Fatalf("approve must create one ticket, got %d", len(e3.AllTickets()))
+	// It is a historical record only: nothing pending, nothing to approve.
+	if n := len(p.Engine().AllTickets()); n != 0 {
+		t.Fatalf("a legacy proposal created work: %d tickets", n)
 	}
 }

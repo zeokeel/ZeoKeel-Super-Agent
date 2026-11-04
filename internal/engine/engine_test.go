@@ -1214,9 +1214,6 @@ func TestIMExplicitRequestCreatesTicket(t *testing.T) {
 	if out.Kind != domain.DispDecided || out.Ticket == "" {
 		t.Fatalf("an explicit IM request must create a ticket: %+v", out)
 	}
-	if len(e.Proposals()) != 0 {
-		t.Fatal("no proposal may exist for an explicit IM request by default")
-	}
 	tk, ok := e.TicketSnapshot(out.Ticket)
 	if !ok || tk.Mandate.Strength != domain.StrengthExplicit {
 		t.Fatalf("ticket mandate must be explicit: %+v", tk.Mandate)
@@ -1244,7 +1241,7 @@ func TestIMInferredFollowsAcceptMode(t *testing.T) {
 
 	observe := inferred(domain.AcceptObserve)
 	out := evaluateOnce(t, observe, imTrigger("im-o", "outsider", "chat-o", "webapp: change the timeout"))
-	if out.Ticket != "" || len(observe.AllTickets()) != 0 || len(observe.Proposals()) != 0 {
+	if out.Ticket != "" || len(observe.AllTickets()) != 0 {
 		t.Fatalf("observe must only record the inferred candidate: %+v", out)
 	}
 	dec := mustDecision(t, observe, domain.Key(domain.Global, "dingtalk", "im-o"))
@@ -1265,7 +1262,7 @@ func TestIMInferredFollowsAcceptMode(t *testing.T) {
 	if _, err := off.EvaluateDue(time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if len(off.AllTickets()) != 0 || len(off.Proposals()) != 0 {
+	if len(off.AllTickets()) != 0 {
 		t.Fatal("off mode must not admit an inferred IM candidate")
 	}
 }
@@ -1330,172 +1327,5 @@ func TestIMRepeatedDeliveryCreatesOneTicket(t *testing.T) {
 	}
 	if n := len(e.AllTickets()); n != 1 || e.AllTickets()[0].ID != first.ID {
 		t.Fatalf("want exactly the first ticket, got %d", n)
-	}
-}
-
-// A proposal only exists for an explicit opt-in: RequireApproval on an inferred
-// candidate. IM has no longer any special case, so the same policy behaves the
-// same on every Source.
-func TestProposalOnlyViaRequireApproval(t *testing.T) {
-	p := approvalPolicy()
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), p)
-	out := evaluateOnce(t, e, approvalTrigger("opt-1", "chat-opt"))
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("RequireApproval must propose an inferred candidate: %+v", out)
-	}
-	if len(e.Proposals()) != 1 || len(e.AllTickets()) != 0 {
-		t.Fatalf("proposals=%d tickets=%d", len(e.Proposals()), len(e.AllTickets()))
-	}
-	// The proposal machinery is source-agnostic: GitHub behaves the same.
-	gp := basePolicy()
-	gp.RequireApproval = true
-	row := gp.Admissions["github|comment"]
-	row.UnlistedAddressed = domain.CellInferred
-	gp.Admissions["github|comment"] = row
-	ge := New(RuleAssessor{})
-	ge.Register(repoWS("ws_web"), gp)
-	gout := evaluateOnce(t, ge, ghTrigger("gh-opt", "outsider", "webapp: change the timeout", true, true))
-	if !gout.Proposal || len(ge.AllTickets()) != 0 {
-		t.Fatalf("RequireApproval must behave the same on GitHub: %+v", gout)
-	}
-}
-
-// approvalPolicy makes an inferred IM candidate a proposal (RequireApproval is a
-// deliberate opt-in, not an IM rule).
-func approvalPolicy() Policy {
-	p := imPolicy()
-	p.RequireApproval = true
-	p.AcceptMode = domain.AcceptAuto
-	row := p.Admissions["dingtalk|chat"]
-	row.UnlistedAddressed = domain.CellInferred
-	p.Admissions["dingtalk|chat"] = row
-	return p
-}
-
-func approvalTrigger(id, thread string) domain.Trigger {
-	return imTrigger(id, "outsider", thread, "webapp: change the timeout")
-}
-
-func TestUndoRejectRestoresProposal(t *testing.T) {
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), approvalPolicy())
-	evaluateOnce(t, e, approvalTrigger("ur1", "chat-ur"))
-	ps := e.Proposals()
-	if len(ps) != 1 {
-		t.Fatalf("want one proposal, got %d", len(ps))
-	}
-	id := ps[0].ID
-	if err := e.Reject(id, "not now"); err != nil {
-		t.Fatal(err)
-	}
-	if len(e.Proposals()) != 0 {
-		t.Fatal("a rejected proposal must leave the pending list")
-	}
-	// The rejection keeps the proposal data so the undo needs no Eval.
-	if dec, _ := e.Decision(id); dec.Proposal == nil {
-		t.Fatal("Reject must keep the proposal for a later undo")
-	}
-	out, err := e.UndoReject(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !out.Proposal || out.Ticket != "" {
-		t.Fatalf("undo must return a proposal and no ticket: %+v", out)
-	}
-	ps = e.Proposals()
-	if len(ps) != 1 || ps[0].ID != id {
-		t.Fatalf("the restored proposal must be pending again: %+v", ps)
-	}
-	if len(e.AllTickets()) != 0 {
-		t.Fatal("undo must not create a Ticket")
-	}
-	if len(e.Replies()) != 0 {
-		t.Fatal("undo must not queue a reply")
-	}
-	// The restored proposal can be approved normally.
-	if _, err := e.Approve(id); err != nil {
-		t.Fatalf("approve after undo: %v", err)
-	}
-	if len(e.AllTickets()) != 1 {
-		t.Fatalf("approve after undo must create the ticket, got %d", len(e.AllTickets()))
-	}
-	if out, err := e.UndoReject(id); err == nil || out.Ticket != "" {
-		t.Fatal("undo after approve must fail")
-	}
-}
-
-// Undo is idempotent while the proposal is pending, and audited.
-func TestUndoRejectIsIdempotentAndAudited(t *testing.T) {
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), approvalPolicy())
-	evaluateOnce(t, e, approvalTrigger("ur2", "chat-ur2"))
-	id := e.Proposals()[0].ID
-	if err := e.Reject(id, "later"); err != nil {
-		t.Fatal(err)
-	}
-	first, err := e.UndoReject(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := e.UndoReject(id)
-	if err != nil {
-		t.Fatalf("a second undo of an already pending proposal must be idempotent: %v", err)
-	}
-	if !second.Proposal || second.Ticket != "" {
-		t.Fatalf("idempotent undo returned %+v", second)
-	}
-	_ = first
-	dec, _ := e.Decision(id)
-	var rejection, undo bool
-	for _, r := range dec.Reasons {
-		switch r.Code {
-		case domain.ReasonRejectedByPerson:
-			rejection = true
-		case domain.ReasonUndoReject:
-			undo = true
-		}
-	}
-	if !rejection || !undo {
-		t.Fatalf("the decision must audit both the rejection and the undo: %+v", dec.Reasons)
-	}
-	if len(e.AllTickets()) != 0 {
-		t.Fatal("undo must not create a Ticket")
-	}
-}
-
-// Undo fails when a newer decision on the same Thread has superseded the rejection.
-func TestUndoRejectSupersededByNewerDecision(t *testing.T) {
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), approvalPolicy())
-	evaluateOnce(t, e, approvalTrigger("ur3", "chat-ur3"))
-	old := e.Proposals()[0].ID
-	if err := e.Reject(old, "not now"); err != nil {
-		t.Fatal(err)
-	}
-	// Advance the clock so the new decision is unambiguously newer.
-	now := time.Now()
-	e.SetClock(func() time.Time { return now.Add(time.Minute) })
-	evaluateOnce(t, e, approvalTrigger("ur3b", "chat-ur3"))
-	if _, err := e.UndoReject(old); !errors.Is(err, ErrUndoSuperseded) {
-		t.Fatalf("want ErrUndoSuperseded, got %v", err)
-	}
-	// The newer proposal itself is still pending and approvable.
-	if len(e.Proposals()) != 1 {
-		t.Fatalf("want the newer proposal pending, got %d", len(e.Proposals()))
-	}
-}
-
-// Undoing something that was never a rejected proposal fails clearly.
-func TestUndoRejectRejectsNonRejection(t *testing.T) {
-	e := New(RuleAssessor{})
-	e.Register(repoWS("ws_web"), approvalPolicy())
-	evaluateOnce(t, e, approvalTrigger("ur4", "chat-ur4"))
-	id := e.Proposals()[0].ID
-	if _, err := e.UndoReject(id); err != nil {
-		t.Fatalf("undo of a pending proposal is idempotent, got %v", err)
-	}
-	if out, err := e.UndoReject("no-such-decision"); err == nil || out.Proposal {
-		t.Fatal("undo of an unknown decision must fail")
 	}
 }

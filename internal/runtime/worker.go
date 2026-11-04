@@ -577,7 +577,7 @@ func (r *Runtime) systemPromptFor(t domain.Ticket, cfg *WorkerConfig) string {
 	system += "\n\n" + r.promptVars(t, ticketWorkdir(cfg, t))
 	// Framework tools enabled for every Worker (ui2-spec §4/§5): the model needs
 	// to know they exist, not just to have them registered.
-	system += "\n\nDSH 执行器工具：ack（短确认）/ handback（交回）/ thread_unrelated（标记无关）/ request_status（查状态）。" +
+	system += "\n\nDSH 执行器工具：ack（短确认）/ handback（交回）/ thread_unrelated（标记无关）/ request_status（查状态）/ read_resource（分页读自己的 ticket/inputs/trigger/thread，只读脱敏）。" +
 		"\n计划工具：TaskCreate / TaskGet / TaskUpdate / TaskList。" +
 		"\n网络工具：web_fetch / web_search（仅 http/https，拒绝内网地址）。" +
 		"\n工作区根目录的 AGENTS.md 会自动注入；没有该文件不影响执行。"

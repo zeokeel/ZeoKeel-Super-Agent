@@ -4,7 +4,6 @@ package ui
 // the DSH-aligned inbox copy.
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -27,9 +26,20 @@ type wsPanelCmd struct {
 	started     int
 	stopped     int
 	saveErr     error
+	prereq      view.BrowserPrereq
+	prereqCalls int
+	prereqNext  *view.BrowserPrereq
 }
 
 func (c *wsPanelCmd) DetectedBrowsers() []view.BrowserInfo { return c.detected }
+
+func (c *wsPanelCmd) BrowserPrerequisites() view.BrowserPrereq {
+	c.prereqCalls++
+	if c.prereqNext != nil && c.prereqCalls > 1 {
+		c.prereq = *c.prereqNext
+	}
+	return c.prereq
+}
 
 func (c *wsPanelCmd) WorkspaceSettings(workspaceID string) (view.WorkspaceSettings, bool) {
 	return c.settings, c.hasSettings
@@ -167,7 +177,8 @@ func TestWorkspaceStats(t *testing.T) {
 
 // 启动/停止浏览器 is pending then reflects the controller's reported status only.
 func TestWorkspaceBrowserStartStop(t *testing.T) {
-	cmd := &wsPanelCmd{}
+	cmd := &wsPanelCmd{prereq: view.BrowserPrereq{NodeInstalled: true, NpxInstalled: true,
+		NodeVersion: "v20.11.0", NpxVersion: "10.2.4"}}
 	_, tt := openWorkspacePanel(t, cmd, "项目设置")
 	wantTexts(t, tt, "已停止")
 	click(t, tt, "启动浏览器")
@@ -199,21 +210,95 @@ func TestDetectedBrowsersInSettings(t *testing.T) {
 	wantTexts(t, unTT, "没有检测到 Chrome/Edge")
 }
 
-// The inbox is no longer approval-first: attention/questions/failures first, and a
-// legacy approval is still usable when one is present.
-func TestInboxIsNotApprovalFirst(t *testing.T) {
-	a := newApp(approvalSnap(t), &fakeCmd{})
-	a.now = time.Now()
+// No approval UI or wording survives anywhere: no approve/reject controls, no
+// "旧式请求/待审批" copy on the overview or the inbox.
+func TestNoLegacyApprovalUI(t *testing.T) {
+	a := workspaceApp(t, &fakeCmd{})
 	tt := mui.NewTester(a.view, 1440, 1400)
-	click(t, tt, "收件箱")
-	if strings.Contains(strings.Join(tt.Texts(), " "), "批准后才会开工") {
-		t.Fatal("the inbox still leads with approval copy")
+	for _, word := range []string{"批准", "拒绝", "待审批", "旧式请求", "待你批准"} {
+		if tt.HasText(word) {
+			t.Fatalf("approval wording %q is still in the overview", word)
+		}
 	}
-	wantTexts(t, tt, "旧式请求（需要批准）", "批准", "拒绝")
+	click(t, tt, "收件箱")
+	for _, word := range []string{"批准", "拒绝", "待审批", "旧式请求"} {
+		if tt.HasText(word) {
+			t.Fatalf("approval wording %q is still in the inbox", word)
+		}
+	}
+}
 
-	// The overview keeps the legacy card, but not as the default workflow.
-	ov := newApp(approvalSnap(t), &fakeCmd{})
-	ov.now = time.Now()
-	tt2 := mui.NewTester(ov.view, 1440, 1400)
-	wantTexts(t, tt2, "旧式请求待你决定", "旧式流程：批准后才开工；新请求会直接进入任务")
+// The Node.js/npx reminder: missing prerequisite shows OS-specific install
+// commands (copyable), a recheck path, and disables 启动浏览器 with the reason.
+func TestBrowserPrereqMissingNpx(t *testing.T) {
+	cmd := &wsPanelCmd{
+		detected:    []view.BrowserInfo{{ID: "chrome", Name: "Chrome", Path: "/opt/chrome", Available: true}},
+		settings:    view.WorkspaceSettings{Browser: "chrome"},
+		hasSettings: true,
+		prereq:      view.BrowserPrereq{NodeInstalled: true, NpxInstalled: false, NodeVersion: "v20.11.0"},
+		prereqNext: &view.BrowserPrereq{NodeInstalled: true, NpxInstalled: true,
+			NodeVersion: "v20.11.0", NpxVersion: "10.2.4"},
+	}
+	// 设置›部署 shows the prominent reminder and the current OS's command.
+	_, tt := channelApp(t, cmd)
+	click(t, tt, "部署")
+	wantTexts(t, tt, "浏览器 MCP 需要 Node.js（含 npx）", "缺少 npx",
+		"sudo apt install nodejs npm", "打开 nodejs.org")
+
+	copied := ""
+	oldCopy := copyTextToClipboard
+	t.Cleanup(func() { copyTextToClipboard = oldCopy })
+	copyTextToClipboard = func(s string) error { copied = s; return nil }
+	click(t, tt, "复制安装命令")
+	if copied != "sudo apt install nodejs npm" {
+		t.Fatalf("copied %q", copied)
+	}
+
+	// 重新检查 → ready is shown (no more warning).
+	click(t, tt, "重新检查")
+	tt.Frame()
+	wantTexts(t, tt, "Node.js v20.11.0 · npx 10.2.4 已就绪")
+
+	// Workspace browser: start is disabled with the reason while npx is missing.
+	cmd2 := &wsPanelCmd{
+		detected:    []view.BrowserInfo{{ID: "chrome", Name: "Chrome", Available: true}},
+		settings:    view.WorkspaceSettings{Browser: "chrome"},
+		hasSettings: true,
+		prereq:      view.BrowserPrereq{NodeInstalled: true, NpxInstalled: false},
+	}
+	_, wtt := openWorkspacePanel(t, cmd2, "项目设置")
+	wantTexts(t, wtt, "浏览器 MCP 需要 Node.js（含 npx）",
+		"浏览器 MCP 需要 Node.js（含 npx）：先按上面的命令安装")
+	if wtt.HasText("运行中") {
+		t.Fatal("the browser claimed to be running without a controller report")
+	}
+}
+
+// With Node.js and npx present there is no warning and 启动浏览器 is enabled.
+func TestBrowserPrereqReady(t *testing.T) {
+	cmd := &wsPanelCmd{
+		detected:    []view.BrowserInfo{{ID: "chrome", Name: "Chrome", Available: true}},
+		settings:    view.WorkspaceSettings{Browser: "chrome"},
+		hasSettings: true,
+		prereq:      view.BrowserPrereq{NodeInstalled: true, NpxInstalled: true, NodeVersion: "v20.11.0", NpxVersion: "10.2.4"},
+	}
+	_, tt := openWorkspacePanel(t, cmd, "项目设置")
+	wantTexts(t, tt, "Node.js v20.11.0 · npx 10.2.4 已就绪")
+	if tt.HasText("浏览器 MCP 需要 Node.js（含 npx）") {
+		t.Fatal("the reminder is shown even though npx is installed")
+	}
+	click(t, tt, "启动浏览器")
+	tt.Frame()
+	if cmd.started != 1 {
+		t.Fatalf("started %d times with npx present", cmd.started)
+	}
+	wantTexts(t, tt, "运行中")
+}
+
+// Without the prerequisite capability the panel says it cannot check, and does
+// not invent a warning or a running state.
+func TestBrowserPrereqUnwired(t *testing.T) {
+	_, tt := channelApp(t, &fakeCmd{})
+	click(t, tt, "部署")
+	wantTexts(t, tt, "无法检查 Node.js/npx：运行时还没有接入浏览器前置检查；浏览器可能不可用。")
 }

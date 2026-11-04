@@ -216,6 +216,15 @@ $ CGO_ENABLED=1 go test -race ./cmd/zeokeel/ -count=1        → ok（5.0s）
 | UI 契约 | done | 断言 BrowserDetector/WorkspaceSettingsProvider/Saver/BrowserController/WorkspaceStatsProvider/SkillLibrary（view 类型）；plan/model/attention 既有断言保持。 |
 | 验证 | — | build ok；全仓 `go test ./... -skip Live` **28 ok/0 FAIL**；`-race ./internal/runtime ./cmd/zeokeel` ok（40.8s/5.8s，无 DATA RACE）；gofmt/vet 干净；VERSION 未改。 |
 
+## 4decies. 移除审批运行时 + read_resource + 浏览器前置检查
+
+| 条目 | 状态 | 说明 |
+| --- | --- | --- |
+| 移除 legacy approval | done | runtime 删除 `Approve/Reject/UndoReject`、proposal 投影（Overview.Approvals/decisions propose 分支/attention proposal items/source「待审批」/health「待审批 N」/Dispatch·DispatchTo·NewConversation proposal 分支/mergeEvalOutcome Proposal）；cmd 删除 `ui.RejectUndoer` 断言并清理 acceptance/e2e/verify 的 RequireApproval/Proposal/Approve；runtime 测试同步删除 approvePending/undo/approval 断言，改直接 Ticket（engine 已删 proposal API，legacy DB 由 engine 导入为 ignore）。Inbox 仅剩 attention/question/failure。 |
+| `read_resource` | done | worker 新工具：`resource` = ticket / inputs / trigger/<id> / thread/<key>，`offset/limit`（默认 20，最大 200）；只读、只允许本 ticket 的 origin trigger 与自有 thread，文本脱敏（sk-/bearer/token=/secret= → [redacted]）；返回有界 JSON 页。已加入 workerTools + prompt；测试分页/越权/未知资源/脱敏。 |
+| 浏览器前置检查 | done | `BrowserPrerequisites() view.BrowserPrereq`：node/npx 是否安装+版本（`prereqLookPath/prereqCommand` 可注入），按 OS 给安装提示，`CheckedAt`；缺依赖时 Detail 可操作且不声称可用；`ui.BrowserPrerequisites` 编译断言。 |
+| 验证 | — | build ok；全仓 `go test ./... -skip Live` **28 ok/0 FAIL**；`-race ./internal/runtime ./cmd/zeokeel` ok（41.2s/5.7s，无 DATA RACE）；gofmt/vet 干净；VERSION 未改。 |
+
 ## 5. 跨 scope 待办 / 未完成
 
 1. **engine（conf-domain）**：缺“把 running Assignment 标记 interrupted”的 API。`RecoverAssignments` 目前只能补 note + 新 Assignment，旧 running 记录仍留在 `Ticket.Assignments`（`runtime/recovery.go`；期望 `Engine.InterruptAssignment(ticketID, assignmentID, reason)` 或 `RecoverAssignments` 内建实现）。

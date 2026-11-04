@@ -3,6 +3,32 @@
 本文件记录用户可见的变化。版本号遵循语义化版本；1.0.0 之前的 `-rc.N` / `-dev` 后缀表示
 发布清单（RELEASE.md）尚未全部通过——`1.0.0-rc.N` 不表示功能完成。
 
+## [1.0.0-rc.4] — 发布候选（2026-11-04）
+
+rc.4 去掉历史包袱：旧式审批/提案机制彻底删除，补上浏览器 MCP 前置检查与 Worker `read_resource`。
+`VERSION` 由发布负责人 bump 为 `1.0.0-rc.4`；发布说明见 [RELEASE-NOTES-v1.0.0-rc.4.md](RELEASE-NOTES-v1.0.0-rc.4.md)。
+不预称闸门全绿，由 Lead bump 后重跑。
+
+- **旧式审批/提案机制彻底移除**：Decision 只有 `accept`/`stop`/`ignore`/`unavailable`；删除
+  Approve/Reject/UndoReject/proposal/`RequireApproval` 及所有审批 UI/文案；旧 DB 的 `propose` 行载入为 `ignore`
+  并记 `legacyImport`，旧 `requireApproval` 被忽略；收件箱改为 **attention-only**（任务问题/受阻/失败）。
+  （`internal/domain/ticket.go:10-13`、`internal/engine/persist.go:156-162`、`internal/engine/gate.go:52-56`、
+  `internal/ui/inbox.go:1-140`）
+- **浏览器 MCP 前置检查**：`browser.Prerequisites` 检测 node/npx 与版本；缺失时设置/项目页显示醒目警告、
+  当前 OS 安装命令（brew/winget/apt 等）、nodejs.org 链接、「重新检查」；「启动浏览器」禁用并说明原因；
+  不自动安装、不假装运行（`internal/browser/prereq.go:1-140`、`internal/runtime/rc3.go:170-205`、
+  `internal/ui/workspacepanel.go:613-692`、`internal/browser/manager.go:189-197`）。
+- **`read_resource`（DSH `orchestrator_read` 等价）**：分页读自己的 ticket/inputs/trigger/thread（只读、redacted、
+  offset/limit 默认 20/上限 200）；Worker prompt 已列出；SuperAgent 仍无工具
+  （`internal/runtime/rc3.go:17-160`、`internal/runtime/artifacts.go:205-214`、`internal/runtime/worker.go:580`、
+  `internal/runtime/rc2.go:121-132`）。
+- **工具/状态**：`read_image`（元数据-only，无像素）、`job_list`、`subagent` 命名、Worker 域工具
+  `ack/handback/thread_unrelated/request_status`、per-project `mcp__browser__*`。
+
+**rc.4 诚实限制**：真正在原项目执行未实现（执行副本 + apply-back）；系统钥匙串未实现（SQLite 0600）；多窗口未实现；
+自动更新只检查不下载；真实飞书/DWS 租户 E2E 未验证；`read_image` 无像素（需 vision endpoint）；
+打包仍只有 tar/zip（无 `.dmg`/deb/安装器）。
+
 ## [1.0.0-rc.3] — 发布候选（2026-11-04）
 
 rc.3 对齐 DSH 主链，并把项目级配置/浏览器/工具补齐。`VERSION` 由发布负责人 bump 为 `1.0.0-rc.3`；
@@ -46,8 +72,8 @@ rc.2 在修复波 + UI/UX 优化轮之上补齐交互审计剩余项。`VERSION`
 - **应用到项目**：只复制记录过的交付物；拒绝绝对/越界路径；同名文件先备份 `.bak-<timestamp>`；返回相对路径；
   UI 确认列出目标/文件/覆盖警告（`internal/runtime/rc2.go:193-270`、`internal/ui/applyproject.go:1-199`）。
 - **撤销拒绝**：拒绝无损（保留 proposal + `RejectedAt`）；10s 内可恢复待批（幂等；同一 Thread 有更新决策则拒绝；
-  重启安全）；不建 Ticket/不启动/不回复（`internal/engine/lifecycle.go:723-815`、`internal/engine/persist.go:835-860`、
-  `internal/runtime/rc2.go:436-463`、`internal/ui/inbox.go:59-66`）。
+  重启安全）；不建 Ticket/不启动/不回复（`internal/engine/lifecycle.go`、`internal/engine/persist.go`、
+  `internal/runtime/rc2.go`、`internal/ui/inbox.go:59-66`）。
 - **原生应用菜单**：App/文件/编辑/窗口；新建对话 ⌘N、设置 ⌘,、打开主窗口、标准编辑 roles
   （`internal/ui/menu.go:1-72`、`internal/ui/app.go:345`）。
 - **系统无障碍偏好**：TextScale×`ui.font_scale`、ReduceMotion、HighContrast、系统 Accent
