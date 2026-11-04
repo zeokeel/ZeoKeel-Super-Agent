@@ -1,0 +1,28 @@
+flowchart LR
+  subgraph S["来源 Source"]
+    F["飞书\nlark-cli event consume\n+ 历史/线程轮询"]
+    G["GitHub\ngh notifications\n+ 仓库流/PR/CI/线程轮询"]
+  end
+  F --> T["归一化为 Trigger\n确定性 ID + Thread + Actor +\naddressed + text + channel"]
+  G --> T
+  T --> I["Engine Intake\n去重 / scope 过滤 / 存 Thread\n分发给订阅 Ticket"]
+  I --> FAN{"Thread 有\n订阅 Ticket?"}
+  FAN -- "人的消息" --> IN["Ticket Input\n唤醒/恢复 Worker"]
+  FAN -- "无主消息" --> EV["等待 Eval\n每 2s EvaluateDue"]
+  EV --> GATE["Gate 判强度\nexplicit / inferred / not admitted\n(名单、@/私聊、admission 表、bot、accept mode)"]
+  GATE --> DEC["Main Session 决策\nexplicit: orchestrator_route\ninferred: 规则评估 observe/auto"]
+  DEC -->|accept| TK["Ticket + Mandate\n+ Subscription + Assignment\n+ ack"]
+  DEC -->|attach| IN
+  DEC -->|stop/ignore| NO["停止 / 忽略"]
+  TK --> EX["Executor\nworker session + workspace"]
+  IN --> EX
+  EX --> RP["Report\nprogress / ready / blocked / failed / question"]
+  RP --> MS["Main Session\n报告/问题/通知"]
+  RP --> CLO{"ready / PR merged / issue closed?"}
+  CLO -->|是| END["Ticket 结束\n释放 follow-up"]
+  CLO -->|否| WAIT["继续等待新 Input"]
+  MS --> OB["Outbox\nreceipt + effect\n顺序/重试/去重"]
+  OB --> R1["飞书回复\n+ idempotency-key"]
+  OB --> R2["GitHub 评论\nHTML marker 去重"]
+  R1 -.回复进入原 Thread.-> F
+  R2 -.回复进入原 Thread.-> G

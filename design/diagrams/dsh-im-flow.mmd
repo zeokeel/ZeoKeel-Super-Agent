@@ -1,0 +1,60 @@
+flowchart TB
+  subgraph SRC["来源层 Source（只做接收与归一化）"]
+    F1["飞书 · 实时事件\nlark-cli event consume\nim.message.receive_v1 --as bot"]
+    F2["飞书 · 补收\n群/话题历史 backfill\n订阅 Thread 轮询"]
+    G1["GitHub · 通知\nnotifications?all=true&since=…"]
+    G2["GitHub · 仓库流\nIssue/PR/评论/Review\n打开工单的 PR/CI\n订阅 Thread 轮询"]
+  end
+
+  F1 --> FT["feishuTrigger\n消息 → Trigger\nid / thread / actor / human /\naddressed(mention|direct) / at / text / channel / meta"]
+  F2 --> FT
+  G1 --> GT["github trigger\nIssue/PR/comment/review/CI → Trigger\nid / thread #N / actor / human /\naddressed(mention) / at / text / channel"]
+  G2 --> GT
+
+  FT --> RCV["SourceContext.receive\n→ Passes.receive\n→ Engine.receive (Intake)"]
+  GT --> RCV
+
+  RCV --> DUP{"Trigger ID 已存在？"}
+  DUP -- 是 --> DROP["duplicate：直接丢弃"]
+  DUP -- 否 --> SCOPE{"SourceScope\nlisten(thread/scope)？"}
+  SCOPE -- 否 --> FILTER["记录 filtered\n（不进入 Eval）"]
+  SCOPE -- 是 --> SAVE["保存 Trigger + Thread\n记录 disposition / 关联 Thread"]
+
+  SAVE --> FAN{"该 Thread 有订阅 Ticket？"}
+  FAN -- "有 · 人的消息" --> INPUT["加入 Ticket Input\n必要时唤醒/恢复 Ticket\n由该 Ticket 的 Worker 决定是否为 follow-up"]
+  FAN -- "无 / 无人拥有" --> QUEUE["排队等待 Eval\n（同 Thread 批量）"]
+
+  INPUT --> WORKER["Worker（Executor Session）\n在自己的 Ticket 范围内处理"]
+  WORKER --> REPORT["Report：progress / ready /\nblocked / failed / question"]
+
+  QUEUE --> PASS["Passes：每 2 秒或收到新 Trigger\nEngine.evaluateDue"]
+  PASS --> GATE["Gate\nsender 是否在名单 / 是否 addressed /\nadmission 表 / bot 名单 / accept mode\n→ strength：explicit / inferred / not admitted"]
+  GATE --> ADMIT{"存在可受理的\n最强 Trigger？"}
+  ADMIT -- 否 --> IGNORE["Decision：ignore\n（记录原因）"]
+  ADMIT -- 是 --> EVAL["创建 Eval（batch）\n候选卡送 Main Session\n有 deadline / requeue / unavailable"]
+
+  EVAL --> MAIN["Main Session（编排 Agent）\n读候选卡、rules、Thread 上的 Tickets"]
+  MAIN --> KIND{"候选强度"}
+  KIND -- explicit --> ROUTE["orchestrator_route\naccept / attach / stop / ignore"]
+  KIND -- inferred --> ASSESS["按启用规则评估\nobserve：记录 would accept\nauto：可接受；off：不受理"]
+  ASSESS --> ROUTE
+
+  ROUTE -- accept --> TICKET["创建 Ticket + Mandate\n（强度、rules、basis）\n+ Subscriptions + 首个 Assignment\n+ acknowledgement"]
+  ROUTE -- attach --> ATTACH["把消息交给已有 Ticket\n（Worker 处理 follow-up）"]
+  ROUTE -- stop --> STOP["撤回 Mandate / 停止 Ticket"]
+  ROUTE -- ignore --> IGNORE
+
+  TICKET --> EXEC["Executor（DshExecutor）\nworker session + workspace\n投递 Inputs / 启动"]
+  ATTACH --> EXEC
+  EXEC --> REPORT
+
+  REPORT --> MAIN2["Main Session\n（报告/通知/问题转交）"]
+  REPORT --> CLOSE{"ready / merged / closed？"}
+  CLOSE -- 是 --> TICKETEND["Ticket 结束\n解除 Subscriptions\n释放未处理的 follow-ups"]
+  CLOSE -- 否 --> WAIT["继续等待 / 新 Input"]
+  MAIN2 --> OUT["Outbox\n持久化 receipt + reply effect\n顺序、重试、去重、频道允许性"]
+
+  OUT --> SEND_F["飞书回复\nlark-cli im +messages-reply\n--message-id --reply-in-thread\n--idempotency-key"]
+  OUT --> SEND_G["GitHub 回复\ngh api issues/N/comments\n（review thread 回复到 root）\nHTML marker 去重"]
+  SEND_F --> F1
+  SEND_G --> G1
