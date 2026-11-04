@@ -9,17 +9,18 @@ import (
 	"github.com/zeokeel/super-agent/internal/view/viewtest"
 )
 
-// 待处理 is one number: the topbar chip, the sidebar badge and the overview's
-// heading all read view.OverviewVM.PersonCount, so they cannot disagree (audit
-// F-04 / design §6.5 "诚实状态").
 func TestPersonCountAgreesAcrossTheSurfaces(t *testing.T) {
-	a := newTestApp(t, false)
+	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
-	// Three Tickets wait for a person: three on the chip, three in the heading,
-	// three on the nav badge that links to this page.
-	wantTexts(t, tt, "待你决定 3", "需要你关注的只有 3 件事")
+	// The panel badge carries the one number.
+	if n := a.attentionCount(); n != 3 {
+		t.Fatalf("attention count %d, want 3", n)
+	}
+	click(t, tt, "超级Agent")
+	wantTexts(t, tt, "需要你关注的只有 3 件事")
+	// The navigation model is the same derivation (one count, no second one).
 	if got := view.Nav(a.snap.Overview())[1].Count; got != 3 {
-		t.Fatalf("the sidebar badge says %d, the chip says 3", got)
+		t.Fatalf("nav badge says %d, want 3", got)
 	}
 }
 

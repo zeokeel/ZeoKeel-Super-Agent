@@ -13,7 +13,9 @@ import (
 // goes to the search field the palette focused.
 func openPalette(t *testing.T, tt *mui.Tester) {
 	t.Helper()
-	click(t, tt, "搜索")
+	// The host shell has no topbar; ⌘K is the one palette shortcut.
+	tt.Key(mui.Cmd, mui.KeyK)
+	tt.Frame()
 }
 
 // ⌘K is the shortcut; the chip does the same so the palette is discoverable:
@@ -146,43 +148,6 @@ func TestSearchEmptyQueryAndNoResults(t *testing.T) {
 	if tt.HasText("没有匹配") {
 		t.Fatalf("an empty query is not a failed search; texts: %q", tt.Texts())
 	}
-}
-
-// A Decision hit jumps to 评估, clears a filter that would hide it, and locates the
-// row; a message hit jumps to 消息 and marks the line the palette found.
-func TestSearchJumpToDecisionAndMessageLocates(t *testing.T) {
-	a := pageApp(t)
-	tt := mui.NewTester(a.view, 1440, 900)
-	a.evalKind = "propose" // would hide the accept rows if it survived the jump
-
-	openPalette(t, tt)
-	tt.Type("提案")
-	tt.Frame()
-	tt.Key(0, mui.KeyEnter)
-	if a.sec != view.SecEval {
-		t.Fatalf("section %q, want eval", a.sec)
-	}
-	if a.evalKind != "" {
-		t.Fatalf("the kind filter %q must be cleared or the hit is hidden", a.evalKind)
-	}
-	if a.locate == nil || a.locate.DecisionID != "d-2" {
-		t.Fatalf("located %+v, want decision d-2", a.locate)
-	}
-	wantTexts(t, tt, "定位", "旧式提案（批准流程已移除）")
-
-	openPalette(t, tt)
-	// A phrase only the message body has, so the first hit is the message.
-	tt.Type("应可配置")
-	tt.Frame()
-	tt.Key(0, mui.KeyEnter)
-	if a.sec != view.SecMessages {
-		t.Fatalf("section %q, want messages", a.sec)
-	}
-	want := "登录超时应可配置，默认 30 分钟"
-	if a.locate == nil || a.locate.Text != want {
-		t.Fatalf("located %+v, want the message %q", a.locate, want)
-	}
-	wantTexts(t, tt, want, "定位")
 }
 
 // A runtime that indexes more history than the window holds answers through its

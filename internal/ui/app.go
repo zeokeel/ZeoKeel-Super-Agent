@@ -84,6 +84,15 @@ type App struct {
 	quit  bool
 	now   time.Time
 
+	// Host shell state: mode is home | session | panel | settings | project; the
+	// panel has its own tab and header search; a session has a conversation id.
+	mode         string
+	panelTab     int
+	panelSearch  string
+	sessionConv  string
+	sessionTitle string
+	sessionSeg   int
+
 	// onb is the first-run wizard's state; nil until the wizard is shown.
 	onb *onboardingState
 	// artifactsOpen is the deliverables panel; artifactWS is its filter.
@@ -242,6 +251,7 @@ type App struct {
 	wsSaving               bool
 	wsSaveErr              string
 	wsPort                 float64
+	wsPortText             string
 	wsStats                view.WorkspaceStats
 	wsStatsReady           bool
 	wsStatsWired           bool
@@ -482,8 +492,21 @@ func (a *App) view(c *mui.Context) {
 	a.tk = tokensFrom(a.theme)
 	a.applyPrefs(prefs)
 	a.accentPrefs(prefs)
+	// DSH's checked controls (Switch) and primary accents are dark, not the OS
+	// blue accent; the blue brand belongs to send/link accents only.
+	if a.theme.Dark {
+		a.theme.Accent = mui.Hex("#E6E6E6")
+		a.theme.AccentHover = mui.Hex("#F2F2F2")
+		a.theme.AccentPressed = mui.Hex("#DADADA")
+		a.theme.AccentText = mui.Hex("#111111")
+	} else {
+		a.theme.Accent = mui.Hex(dsDark)
+		a.theme.AccentHover = mui.Hex("#2A2A2A")
+		a.theme.AccentPressed = mui.Hex("#000000")
+		a.theme.AccentText = mui.Hex("#FFFFFF")
+	}
+	a.tk.Accent = a.theme.Accent
 	mui.Themed(c, a.theme)
-	tk := a.tk
 
 	// The drain finished on its goroutine; the window may only be touched here.
 	if a.drainFinished() {
@@ -507,11 +530,8 @@ func (a *App) view(c *mui.Context) {
 		a.newConversationShortcut()
 	}
 	if c.Shortcut(mui.Cmd, mui.KeyComma) {
-		a.sec = view.SecSettings
-		a.locate = nil
+		a.openSettings()
 	}
-
-	a.inboxKeys(c)
 
 	// A fresh install opens on the wizard, not on a dashboard that says "0 things
 	// to do": the agent has to be told what it is for first (design §6.7).
@@ -520,39 +540,7 @@ func (a *App) view(c *mui.Context) {
 		return
 	}
 
-	mui.Column(c).Fill().AlignItems(mui.Stretch).Background(tk.Bg).Children(func() {
-		a.topbar(c)
-		mui.Box(c).Height(1).Background(tk.Border)
-		mui.Row(c).Grow(1).AlignItems(mui.Stretch).Children(func() {
-			a.sidebar(c)
-			mui.Box(c).Width(1).Background(tk.Border)
-			mui.Column(c).Grow(1).MinWidth(0).AlignItems(mui.Stretch).Children(func() {
-				// A page loads its own snapshot once and owns its scrolling: a
-				// virtual list needs a bounded height, a form needs its own
-				// scroll. The workbench is the exception, it scrolls as one.
-				if a.sec == view.SecMessages {
-					a.streamPage(c)
-					return
-				}
-				a.page(c, a.snap.Overview())
-			})
-		})
-		mui.Box(c).Height(1).Background(tk.Border)
-		// The dispatch entry is always here, on every page: this is the entry the
-		// dashboard was missing.
-		mui.Column(c).Padding(10, 16).AlignItems(mui.Center).Background(tk.Surface).
-			Children(func() {
-				mui.Column(c).Width(maxStreamWidth).Gap(6).Children(func() {
-					// The latest 超级Agent answer (or 发送中…) above the composer on
-					// every page: a message never disappears into another page.
-					a.toastsView(c)
-					a.composerContext(c)
-					a.inputBar(c)
-				})
-			})
-		mui.Box(c).Height(1).Background(tk.Border)
-		a.statusbar(c)
-	})
+	a.dshView(c)
 
 	// The overlays paint last: above every page, below nothing. The dialogs
 	// only draw when their state says they are open.
@@ -569,12 +557,17 @@ func (a *App) view(c *mui.Context) {
 	a.helpDialog(c)
 }
 
+// initialMode is the shell view a new app starts in. Production starts on the host
+// home (DSH); tests of the panel's page internals start on the panel unless they
+// say otherwise.
+var initialMode = "home"
+
 // newApp builds the window state. The two lists' chosen row is a field of the
 // app, so their choice survives frames without storing an element: only an index
 // and a pure-data list cross frames (design §6.1, rule 2).
 func newApp(snap *view.Snapshot, cmd Commander) *App {
 	a := &App{
-		snap: snap, cmd: cmd, sec: view.SecOverview,
+		snap: snap, cmd: cmd, sec: view.SecOverview, mode: initialMode,
 		threadSel: 0, ticketSel: -1,
 		onb:           nil,
 		settingsGroup: view.SettingsSource,
@@ -601,8 +594,6 @@ func (a *App) page(c *mui.Context, ov *view.OverviewVM) {
 		mui.Scroll(c).Grow(1).Children(func() { a.overview(c, ov) })
 	case view.SecInbox:
 		a.inboxPage(c)
-	case view.SecChat:
-		a.chatPage(c)
 	case view.SecWorkspace:
 		a.workspacePage(c)
 	case view.SecSource:

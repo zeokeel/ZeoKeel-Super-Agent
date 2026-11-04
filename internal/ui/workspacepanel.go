@@ -8,6 +8,7 @@ package ui
 import (
 	"fmt"
 	mui "github.com/egoist/mygo/ui"
+	"strconv"
 
 	"github.com/zeokeel/super-agent/internal/humanfmt"
 	"github.com/zeokeel/super-agent/internal/view"
@@ -123,6 +124,7 @@ var startWorkspacePanelLoad = func(a *App, workspaceID string) {
 			a.wsSkillsWired = libraryOK
 			a.wsSettings = settings
 			a.wsPort = float64(settings.Port)
+			a.wsPortText = strconv.Itoa(settings.Port)
 			a.wsSettingsReady = hasSettings
 			a.wsSettingsWired = providerOK
 			a.wsStats = stats
@@ -281,16 +283,16 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			for _, br := range a.wsDetected {
 				br := br
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, br.Name).FontSize(fs(11)).Width(64).Shrink(0).TextColor(tk.TextMuted)
-					mui.Text(c, br.Path).FontSize(fs(10)).Font("monospace").SingleLine().
+					mui.Text(c, br.Name).FontSize(fs(12)).Width(64).Shrink(0).TextColor(tk.TextMuted)
+					mui.Text(c, br.Path).FontSize(fs(12)).Font("monospace").SingleLine().
 						Tooltip(br.Path).Grow(1).TextColor(tk.TextFaint)
 					if br.Version != "" {
-						mui.Text(c, br.Version).FontSize(fs(10)).TextColor(tk.TextFaint)
+						mui.Text(c, br.Version).FontSize(fs(12)).TextColor(tk.TextFaint)
 					}
 					if br.Available {
 						textChip(c, tk, "可用")
 					} else {
-						mui.Text(c, "不可用").FontSize(fs(10)).TextColor(tk.TextFaint)
+						mui.Text(c, "不可用").FontSize(fs(12)).TextColor(tk.TextFaint)
 					}
 				})
 			}
@@ -299,7 +301,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 		if a.wsSettingsWired {
 			on := a.wsSettings.BrowserEnabled
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				if mui.Switch(c.Key("ws:browser-enabled"), &on).Label("为这个项目启用浏览器").Changed() {
+				if a.dshSwitch(c, "ws:browser-enabled", "为这个项目启用浏览器", &on) {
 					a.wsSettings.BrowserEnabled = on
 				}
 				mui.Text(c, "为这个项目启用浏览器").FontSize(fs(12)).TextColor(tk.Text)
@@ -307,7 +309,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 					FontSize(fs(10)).TextColor(tk.TextFaint)
 			})
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "浏览器").FontSize(fs(11)).TextColor(tk.TextFaint)
+				mui.Text(c, "浏览器").FontSize(fs(12)).TextColor(tk.TextFaint)
 				for _, br := range a.wsDetected {
 					br := br
 					on := a.wsSettings.Browser == br.ID
@@ -315,7 +317,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 					if !br.Available {
 						label += "（不可用）"
 					}
-					b := mui.Button(c, label).Label("浏览器 " + br.Name).Height(26).FontSize(fs(11))
+					b := mui.Button(c, label).Label("浏览器 " + br.Name).Height(28).FontSize(fs(12))
 					if !br.Available || !a.wsDetectedWired {
 						b.Disabled(true)
 					} else if on {
@@ -325,28 +327,28 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 					}
 				}
 				if len(a.wsDetected) == 0 {
-					mui.Text(c, "（未检测无可用浏览器）").FontSize(fs(10)).TextColor(tk.TextFaint)
+					mui.Text(c, "（未检测无可用浏览器）").FontSize(fs(12)).TextColor(tk.TextFaint)
 				}
 			})
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 				headless := a.wsSettings.Headless
-				if mui.Switch(c.Key("ws:browser-headless"), &headless).Label("无头模式").Changed() {
+				if a.dshSwitch(c, "ws:browser-headless", "无头模式", &headless) {
 					a.wsSettings.Headless = headless
 				}
 				mui.Text(c, "无头模式（不显示窗口）").FontSize(fs(12)).TextColor(tk.TextMuted)
 				mui.Spacer(c)
 			})
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "CDP 端口").FontSize(fs(11)).TextColor(tk.TextFaint)
+				mui.Text(c, "CDP 端口").FontSize(fs(12)).TextColor(tk.TextFaint)
 				mui.NumberInput(c.Key("ws:browser-port"), &a.wsPort, 0, 65535, 1).
 					Label("CDP 端口").Width(100)
-				mui.Text(c, "0 = 自动").FontSize(fs(10)).TextColor(tk.TextFaint)
+				mui.Text(c, "0 = 自动").FontSize(fs(12)).TextColor(tk.TextFaint)
 			})
 			profile := a.wsSettings.ProfileDir
 			if profile != "" {
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, "Profile").FontSize(fs(11)).TextColor(tk.TextFaint)
-					mui.Text(c, profile).FontSize(fs(10)).Font("monospace").SingleLine().
+					mui.Text(c, "Profile").FontSize(fs(12)).TextColor(tk.TextFaint)
+					mui.Text(c, profile).FontSize(fs(12)).Font("monospace").SingleLine().
 						Tooltip(profile).Grow(1).TextColor(tk.TextMuted)
 				})
 			}
@@ -354,7 +356,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			if a.wsSettings.Port > 0 {
 				port = fmt.Sprint(a.wsSettings.Port)
 			}
-			mui.Text(c, "CDP 端口："+port).FontSize(fs(10)).TextColor(tk.TextFaint)
+			mui.Text(c, "CDP 端口："+port).FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 		// Node.js/npx prerequisite: the browser MCP cannot run without it.
 		a.browserPrereqCard(c, true)
@@ -368,7 +370,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			stop := mui.Button(c, "停止浏览器").Label("停止浏览器").Height(28).FontSize(fs(12))
 			reason, blocked := a.browserStartBlocked()
 			if blocked {
-				mui.Text(c, reason).FontSize(fs(10)).TextColor(tk.Amber)
+				mui.Text(c, reason).FontSize(fs(12)).TextColor(tk.Amber)
 			}
 			if !wired || a.wsBrowserPending != "" || a.wsBrowserRunning || blocked {
 				start.Disabled(true)
@@ -395,7 +397,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			mui.Icon(c, icSpark).FontSize(fs(13)).TextColor(tk.Accent)
 			mui.Text(c, "技能").FontSize(fs(15)).Bold().TextColor(tk.Text)
 			mui.Spacer(c)
-			mui.Text(c, "全局默认开启；这个项目可以单独关掉").FontSize(fs(10)).TextColor(tk.TextFaint)
+			mui.Text(c, "全局默认开启；这个项目可以单独关掉").FontSize(fs(12)).TextColor(tk.TextFaint)
 		})
 		if !a.wsSkillsWired {
 			mui.Text(c, "暂时不可用：运行时还没有提供技能库（SkillLibrary）").
@@ -410,15 +412,14 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			sk := sk
 			enabled := a.wsSettings.SkillEnabled(sk.ID, true)
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				sw := mui.Switch(c.Key("ws:skill:"+sk.ID), &enabled).
-					Label("技能 " + sk.Name).Changed()
+				sw := a.dshSwitch(c, "ws:skill:"+sk.ID, "技能 "+sk.Name, &enabled)
 				if sw {
 					a.wsSettings.SetSkillEnabled(sk.ID, enabled, sk.EnabledByDefault)
 				}
 				mui.Column(c).Grow(1).Gap(1).Children(func() {
 					mui.Text(c, sk.Name).FontSize(fs(13)).TextColor(tk.Text)
 					if sk.Description != "" {
-						mui.Text(c, sk.Description).FontSize(fs(10)).SingleLine().
+						mui.Text(c, sk.Description).FontSize(fs(12)).SingleLine().
 							TextColor(tk.TextFaint)
 					}
 				})
@@ -450,7 +451,7 @@ func (a *App) workspaceSettingsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 				FontSize(fs(10)).TextColor(tk.Amber)
 		}
 		if a.wsSaveErr != "" {
-			mui.Text(c, "保存失败："+a.wsSaveErr).FontSize(fs(11)).TextColor(tk.Red)
+			mui.Text(c, "保存失败："+a.wsSaveErr).FontSize(fs(12)).TextColor(tk.Red)
 		}
 	})
 }
@@ -463,7 +464,7 @@ func (a *App) browserStatusLine(c *mui.Context, ws *view.WorkspaceEntryVM) {
 		return
 	}
 	if !a.wsBrowserWired {
-		mui.Text(c, "状态未知（运行时没有浏览器控制）").FontSize(fs(10)).TextColor(tk.TextFaint)
+		mui.Text(c, "状态未知（运行时没有浏览器控制）").FontSize(fs(12)).TextColor(tk.TextFaint)
 		return
 	}
 	fg := tk.TextMuted
@@ -472,9 +473,9 @@ func (a *App) browserStatusLine(c *mui.Context, ws *view.WorkspaceEntryVM) {
 		fg, word = tk.Green, "运行中"
 	}
 	dot(c, fg, 6)
-	mui.Text(c, word).FontSize(fs(11)).TextColor(fg)
+	mui.Text(c, word).FontSize(fs(12)).TextColor(fg)
 	if a.wsBrowserDetail != "" {
-		mui.Text(c, a.wsBrowserDetail).FontSize(fs(10)).SingleLine().TextColor(tk.TextFaint)
+		mui.Text(c, a.wsBrowserDetail).FontSize(fs(12)).SingleLine().TextColor(tk.TextFaint)
 	}
 	_ = ws
 }
@@ -514,7 +515,7 @@ func (a *App) workspaceStatsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 			for _, it := range items {
 				mui.Column(c).Gap(0).Children(func() {
 					mui.Text(c, fmt.Sprint(it.Value)).FontSize(fs(20)).Bold().TextColor(tk.Text)
-					mui.Text(c, it.Label).FontSize(fs(10)).TextColor(tk.TextFaint)
+					mui.Text(c, it.Label).FontSize(fs(12)).TextColor(tk.TextFaint)
 				})
 			}
 		})
@@ -532,7 +533,7 @@ func (a *App) workspaceStatsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 				dot(c, tk.TextFaint, 5)
 				mui.Text(c, ev.Text).FontSize(fs(12)).Grow(1).TextColor(tk.Text)
 				if !ev.At.IsZero() {
-					mui.Text(c, humanfmt.Ago(a.age(ev.At))).FontSize(fs(10)).TextColor(tk.TextFaint)
+					mui.Text(c, humanfmt.Ago(a.age(ev.At))).FontSize(fs(12)).TextColor(tk.TextFaint)
 				}
 			})
 		}
@@ -552,9 +553,9 @@ func (a *App) workspaceStatsTab(c *mui.Context, ws *view.WorkspaceEntryVM) {
 				if tool.Available {
 					textChip(c, tk, "可用")
 				} else {
-					mui.Text(c, "未启用").FontSize(fs(10)).TextColor(tk.TextFaint)
+					mui.Text(c, "未启用").FontSize(fs(12)).TextColor(tk.TextFaint)
 				}
-				mui.Text(c, tool.Description).FontSize(fs(10)).Grow(1).SingleLine().
+				mui.Text(c, tool.Description).FontSize(fs(12)).Grow(1).SingleLine().
 					TextColor(tk.TextFaint)
 			})
 		}
@@ -582,10 +583,10 @@ func (a *App) browserFactsSection(c *mui.Context) {
 		br := br
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Text(c, br.Name).FontSize(fs(12)).Width(80).Shrink(0).TextColor(tk.Text)
-			mui.Text(c, br.Path).FontSize(fs(10)).Font("monospace").SingleLine().
+			mui.Text(c, br.Path).FontSize(fs(12)).Font("monospace").SingleLine().
 				Tooltip(br.Path).Grow(1).TextColor(tk.TextFaint)
 			if br.Version != "" {
-				mui.Text(c, br.Version).FontSize(fs(10)).TextColor(tk.TextFaint)
+				mui.Text(c, br.Version).FontSize(fs(12)).TextColor(tk.TextFaint)
 			}
 		})
 	}
@@ -621,7 +622,7 @@ func (a *App) browserPrereqCard(c *mui.Context, compact bool) {
 		return
 	}
 	recheck := func() {
-		if b := mui.Button(c, "重新检查").Label("重新检查 Node.js/npx").Height(24).FontSize(fs(11)); b.Clicked() {
+		if b := mui.Button(c, "重新检查").Label("重新检查 Node.js/npx").Height(28).FontSize(fs(12)); b.Clicked() {
 			a.recheckPrereqs()
 		}
 	}
@@ -655,16 +656,16 @@ func (a *App) browserPrereqCard(c *mui.Context, compact bool) {
 		case !a.prereq.NodeInstalled && a.prereq.NpxInstalled:
 			missing = "检测到 npx，但没有 Node.js"
 		}
-		mui.Text(c, missing).FontSize(fs(11)).TextColor(tk.TextMuted)
+		mui.Text(c, missing).FontSize(fs(12)).TextColor(tk.TextMuted)
 		if a.prereq.Detail != "" {
-			mui.Text(c, a.prereq.Detail).FontSize(fs(10)).TextColor(tk.TextFaint)
+			mui.Text(c, a.prereq.Detail).FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 		for _, ins := range installCommands(runtimeGOOS) {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, ins.Label).FontSize(fs(10)).Width(90).Shrink(0).TextColor(tk.TextFaint)
-				mui.Text(c, ins.Command).FontSize(fs(11)).Font("monospace").Grow(1).
+				mui.Text(c, ins.Label).FontSize(fs(12)).Width(90).Shrink(0).TextColor(tk.TextFaint)
+				mui.Text(c, ins.Command).FontSize(fs(12)).Font("monospace").Grow(1).
 					SingleLine().Tooltip(ins.Command).TextColor(tk.Text)
-				if b := mui.Button(c, "复制").Label("复制安装命令").Height(22).FontSize(fs(10)); b.Clicked() {
+				if b := mui.Button(c, "复制").Label("复制安装命令").Height(28).FontSize(fs(12)); b.Clicked() {
 					a.copyValue(ins.Command, "安装命令")
 				}
 			})
@@ -672,7 +673,7 @@ func (a *App) browserPrereqCard(c *mui.Context, compact bool) {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Text(c, "其他系统：从 nodejs.org 下载安装包（含 npx）").
 				FontSize(fs(10)).TextColor(tk.TextFaint)
-			if b := mui.Button(c, "打开 nodejs.org").Height(22).FontSize(fs(10)); b.Clicked() {
+			if b := mui.Button(c, "打开 nodejs.org").Height(28).FontSize(fs(12)); b.Clicked() {
 				a.openExternal("https://nodejs.org/")
 			}
 			if compact {

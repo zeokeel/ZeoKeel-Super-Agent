@@ -432,7 +432,7 @@ func (a *App) connField(c *mui.Context, spec *view.ChannelSpec, transport view.C
 		switch f.Kind {
 		case "switch":
 			on := settingBool(*ptr)
-			if mui.Switch(c.Key("conn:"+spec.Name+":"+f.Key), &on).Label(f.Label).Changed() {
+			if a.dshSwitch(c, "conn:"+spec.Name+":"+f.Key, f.Label, &on) {
 				*ptr = boolText(on)
 			}
 		case "select":
@@ -535,7 +535,7 @@ func (a *App) dingtalkPauseSwitch(c *mui.Context, g *view.SettingsGroup) {
 	p := a.settingsPtr(g.ID, f)
 	mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 		on := settingBool(*p)
-		if mui.Switch(c.Key("channel:pause-listen"), &on).Label("发送时暂停监听").Changed() {
+		if a.dshSwitch(c, "channel:pause-listen", "发送时暂停监听", &on) {
 			*p = boolText(on)
 		}
 		mui.Text(c, "发送时暂停监听").FontSize(fs(12)).TextColor(tk.TextMuted)

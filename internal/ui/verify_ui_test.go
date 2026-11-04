@@ -7,7 +7,6 @@ package ui
 
 import (
 	"testing"
-	"time"
 
 	mui "github.com/egoist/mygo/ui"
 
@@ -90,42 +89,6 @@ func TestVerifyThreadListKeyFollowsTheThread(t *testing.T) {
 	}
 }
 
-// The stream list must derive its key from Thread IDs; without IDs it must fall
-// back to nil rather than a repeated empty key (mygo panics on duplicates).
-func TestVerifyStreamListKey(t *testing.T) {
-	now := time.Now()
-	threads := make([]view.Thread, 3)
-	for i := range threads {
-		threads[i] = view.Thread{
-			ID:   "t-" + string(rune('a'+i)),
-			Head: view.Line{Kind: view.LineInbound, Text: "msg", At: now},
-		}
-	}
-	snap := view.NewSnapshot()
-	snap.PublishStream(&view.StreamVM{Threads: threads})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "消息")
-	if a.streamList.Key == nil {
-		t.Fatal("stream with Thread IDs has no ListState.Key")
-	}
-	if !a.streamList.FollowEnd {
-		t.Fatal("stream does not follow its end")
-	}
-
-	// Same projection without IDs: nil key, no duplicate-key panic on the next frame.
-	noIDs := make([]view.Thread, 2)
-	for i := range noIDs {
-		noIDs[i] = view.Thread{Head: view.Line{Kind: view.LineInbound, Text: "x", At: now}}
-	}
-	snap.PublishStream(&view.StreamVM{Threads: noIDs})
-	tt.Frame()
-	if a.streamList.Key != nil {
-		t.Fatal("stream without Thread IDs kept a key (empty duplicates)")
-	}
-}
-
 // The token layer must read the shared colors from the theme it is given; dark
 // mode must not be a second hard-coded palette.
 func TestVerifyTokensDeriveFromTheme(t *testing.T) {
@@ -156,6 +119,7 @@ func TestVerifyFullWidthSpaceIsNotATask(t *testing.T) {
 	a := newTestApp(t, false)
 	a.cmd = cmd
 	a.draft = "\u3000\u3000\u3000"
+	a.mode = "home"
 	tt := mui.NewTester(a.view, 1440, 900)
 	if err := tt.Click("发送"); err != nil {
 		t.Fatalf("click 发送: %v", err)

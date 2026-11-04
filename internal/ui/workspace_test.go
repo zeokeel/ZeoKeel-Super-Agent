@@ -51,47 +51,6 @@ func workspaceApp(t *testing.T, cmd Commander) *App {
 	return a
 }
 
-// The sidebar is 超级Agent above, the workspace tree in the middle, the monitoring
-// pages and 设置 at the bottom, and the machine in the footer.
-func TestSidebarStructure(t *testing.T) {
-	a := pageApp(t)
-	tt := mui.NewTester(a.view, 1440, 900)
-
-	wantTexts(t, tt, "超级Agent", "收件箱", "项目", "＋ 新建项目", "执行", "设置",
-		"诊断", "对话记录", "消息", "连接", "触发", "评估",
-		"linux/amd64 · Asia/Shanghai (UTC+08:00)")
-	if a.sec != view.SecOverview {
-		t.Fatalf("home section %q, want overview", a.sec)
-	}
-	// No workspace projection: the tree says so instead of drawing an empty
-	// group as if no workspace existed.
-	wantTexts(t, tt, "等待运行时发布工作区…")
-}
-
-// A workspace row expands to its conversations, grouped by who created them, and
-// collapses again.
-func TestSidebarWorkspaceTreeExpands(t *testing.T) {
-	a := workspaceApp(t, &fakeCmd{})
-	tt := mui.NewTester(a.view, 1440, 900)
-	wantTexts(t, tt, "acme/webapp", "acme/data")
-	// Collapsed: the conversations are not on screen.
-	if got := exactTexts(tt, "修改登录超时配置"); got != 0 {
-		t.Fatalf("collapsed workspace shows %d conversation titles", got)
-	}
-
-	click(t, tt, "展开项目 acme/webapp")
-	wantTexts(t, tt, "我创建的", "超级Agent 创建的", "＋ 新建会话",
-		"把登录超时改成可配置", "修改登录超时配置")
-	if got := exactTexts(tt, "修改登录超时配置"); got != 1 {
-		t.Fatalf("%d conversation titles, want 1; texts: %q", got, tt.Texts())
-	}
-
-	click(t, tt, "展开项目 acme/webapp")
-	if got := exactTexts(tt, "修改登录超时配置"); got != 0 {
-		t.Fatalf("collapsing left %d conversation titles", got)
-	}
-}
-
 // A workspace row opens 工作区: what it is for, where its root is, and its
 // conversations in their groups.
 func TestWorkspaceRowOpensTheWorkspacePage(t *testing.T) {
@@ -106,26 +65,6 @@ func TestWorkspaceRowOpensTheWorkspacePage(t *testing.T) {
 		"我创建的", "超级Agent 创建的", "2 个会话",
 		"把登录超时改成可配置", "修改登录超时配置",
 	)
-}
-
-// Clicking a conversation opens its Ticket on 执行 (navigation, not an action).
-func TestConversationOpensItsTicket(t *testing.T) {
-	a := workspaceApp(t, &fakeCmd{})
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "项目 acme/webapp")
-	click(t, tt, "会话 修改登录超时配置")
-
-	if a.sec != view.SecExecution {
-		t.Fatalf("section %q, want execution", a.sec)
-	}
-	rows := ticketRowsOf(a)
-	if a.ticketSel < 0 || a.ticketSel >= len(rows) {
-		t.Fatalf("no row selected (%d of %d)", a.ticketSel, len(rows))
-	}
-	if got := rows[a.ticketSel].ID; got != "tk-42" {
-		t.Fatalf("opened ticket %q, want 42", got)
-	}
-	wantTexts(t, tt, "step 7 · 正在补 SessionTimeout 默认值")
 }
 
 // 新建项目 asks for name, root, purpose and kind, and hands them to the runtime.
@@ -182,27 +121,6 @@ func TestNewWorkspaceDialogKeepsTheError(t *testing.T) {
 	wantTexts(t, tt, "根目录不存在")
 }
 
-// 新建会话 asks for the message and hands workspace+text to the runtime.
-func TestNewConversationDialogWithCreator(t *testing.T) {
-	creator := &fakeWorkspaceCmd{}
-	a := workspaceApp(t, creator)
-	tt := mui.NewTester(a.view, 1440, 900)
-
-	click(t, tt, "展开项目 acme/webapp")
-	click(t, tt, "＋ 新建会话")
-	wantTexts(t, tt, "新建会话", "acme/webapp", "会话内容")
-	click(t, tt, "输入会话内容")
-	tt.Type("把登录超时改成可配置")
-	click(t, tt, "创建会话")
-
-	if len(creator.convs) != 1 || creator.convs[0] != "ws_webapp|把登录超时改成可配置" {
-		t.Fatalf("created %v", creator.convs)
-	}
-	if a.convModal {
-		t.Fatal("the dialog stayed open after the runtime accepted it")
-	}
-}
-
 // Without the two channels the dialogs still show what they ask for, and the
 // create button is disabled with the reason: no silent no-op.
 func TestWorkspaceActionsUnwired(t *testing.T) {
@@ -217,8 +135,14 @@ func TestWorkspaceActionsUnwired(t *testing.T) {
 	}
 	click(t, tt, "取消")
 
-	click(t, tt, "展开项目 acme/webapp")
-	click(t, tt, "＋ 新建会话")
+	// A conversation is created from the selected project (⌘N), and the modal
+	// stays honest without ConversationCreator.
+	click(t, tt, "项目 acme/webapp")
+	tt.Key(mui.Cmd, mui.KeyN)
+	tt.Frame()
+	if !a.convModal {
+		t.Fatal("⌘N did not open the new-conversation dialog")
+	}
 	wantTexts(t, tt, "暂时不可用：运行时还没有接入 ConversationCreator")
 	click(t, tt, "创建会话")
 	if !a.convModal {
@@ -227,35 +151,6 @@ func TestWorkspaceActionsUnwired(t *testing.T) {
 	if a.convErr != "" {
 		t.Fatalf("an unwired create reported %q", a.convErr)
 	}
-}
-
-// The machine: OS/arch and timezone in the sidebar footer, and the same facts
-// (from the projection) in 设置 › 部署. No projection says so instead of guessing.
-func TestSystemFacts(t *testing.T) {
-	a := pageApp(t)
-	tt := mui.NewTester(a.view, 1440, 900)
-	wantTexts(t, tt, "linux/amd64 · Asia/Shanghai (UTC+08:00)")
-
-	click(t, tt, "设置")
-	a.settingsGroup = view.SettingsDeploy
-	tt.Frame()
-	wantTexts(t, tt, "运行环境", "操作系统", "linux/amd64", "时区", "Asia/Shanghai (UTC+08:00)")
-
-	// A window whose runtime has not projected the facts: both places say so.
-	now := time.Now()
-	snap := view.NewSnapshot()
-	snap.PublishSettings(&view.SettingsVM{
-		Groups: []view.SettingsGroup{{ID: view.SettingsDeploy, Label: "部署", Note: "运维"}},
-		Source: "mygo.json", Revision: 1, UpdatedAt: now,
-	})
-	a = newApp(snap, &fakeCmd{})
-	a.now = now
-	tt = mui.NewTester(a.view, 1440, 900)
-	wantTexts(t, tt, "系统信息未投影")
-	click(t, tt, "设置")
-	a.settingsGroup = view.SettingsDeploy
-	tt.Frame()
-	wantTexts(t, tt, "还没有数据操作系统与时区（Runtime.System）")
 }
 
 // The font scale is one token: +2 on the panel's 13, and a theme derived from it.
@@ -286,76 +181,6 @@ func TestFontScaleToken(t *testing.T) {
 	// the smallest text size after the bump is 11.
 	if tk := tokensFrom(brandFor(false).theme(mui.LightTheme())); tk.Bg == (mui.Color{}) {
 		t.Fatal("tokens stopped deriving from the theme")
-	}
-}
-
-// The agent's answer to an operator message replaces a bare "未受理": the panel
-// draws the answer, not the agent's failure to parse it.
-func TestAgentAnswerReplacesBareUnaccepted(t *testing.T) {
-	now := time.Now()
-	snap := view.NewSnapshot()
-	snap.PublishOverview(viewtest.DemoOverview(now))
-	snap.PublishStream(&view.StreamVM{Threads: []view.Thread{{
-		ID:   "t-1",
-		Head: view.Line{Kind: view.LineOperator, Who: "你", Source: "本地面板", Text: "这里有哪些工作区？", At: now},
-		Steps: []view.Line{
-			{Kind: view.LineDecision, Text: "未受理", Tone: view.ToneNeutral, At: now},
-			{Kind: view.LineNotice, Tone: view.ToneInfo, At: now,
-				Text: "超级Agent：目前有 2 个工作区：acme/webapp（前端）、acme/data（数据）。"},
-		},
-	}}})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "消息")
-	wantTexts(t, tt, "超级Agent", "目前有 2 个工作区")
-	if got := exactTexts(tt, "未受理"); got != 0 {
-		t.Fatalf("a bare 未受理 is still drawn beside the answer (%d); texts: %q", got, tt.Texts())
-	}
-}
-
-// Without an answer the bare outcome stays: it is the outcome.
-func TestBareUnacceptedStaysWhenNoAnswer(t *testing.T) {
-	now := time.Now()
-	snap := view.NewSnapshot()
-	snap.PublishOverview(viewtest.DemoOverview(now))
-	snap.PublishStream(&view.StreamVM{Threads: []view.Thread{{
-		ID:   "t-2",
-		Head: view.Line{Kind: view.LineInbound, Who: "@lin", Source: "GitHub · #42", Text: "随便说说", At: now},
-		Steps: []view.Line{
-			{Kind: view.LineDecision, Text: "未受理", Tone: view.ToneNeutral, At: now},
-		},
-	}}})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "消息")
-	if got := exactTexts(tt, "未受理"); got != 1 {
-		t.Fatalf("%d 未受理 lines, want 1; texts: %q", got, tt.Texts())
-	}
-}
-
-// A reply line the runtime addresses to a colleague is not the operator's answer:
-// it stays a quiet line and does not hide a decision.
-func TestSomeoneElsesReplyIsNotTheAnswer(t *testing.T) {
-	now := time.Now()
-	snap := view.NewSnapshot()
-	snap.PublishOverview(viewtest.DemoOverview(now))
-	snap.PublishStream(&view.StreamVM{Threads: []view.Thread{{
-		ID:   "t-3",
-		Head: view.Line{Kind: view.LineInbound, Who: "@lin", Source: "GitHub · #42", Text: "帮我看下 CI", At: now},
-		Steps: []view.Line{
-			{Kind: view.LineReply, Text: "已在评论里回复 @lin", At: now},
-			{Kind: view.LineDecision, Text: "未受理", Tone: view.ToneNeutral, At: now},
-		},
-	}}})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "消息")
-	wantTexts(t, tt, "已在评论里回复 @lin")
-	if got := exactTexts(tt, "未受理"); got != 1 {
-		t.Fatalf("%d 未受理 lines, want 1; texts: %q", got, tt.Texts())
 	}
 }
 

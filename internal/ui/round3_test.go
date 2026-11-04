@@ -5,7 +5,6 @@ package ui
 // polish (transport truth, per-group save effects, one text scale).
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -70,6 +69,8 @@ func TestDispatchShowsPendingAndGuardsDoubleSubmit(t *testing.T) {
 	cmd := &fakeCmd{}
 	a.cmd = cmd
 	a.draft = "把登录超时改成可配置"
+	_ = a
+	a.mode = "home"
 	tt := mui.NewTester(a.view, 1440, 1600)
 	click(t, tt, "发送")
 
@@ -109,6 +110,8 @@ func TestDispatchClearsDraftOptimistically(t *testing.T) {
 	a := newTestApp(t, false)
 	a.cmd = &fakeCmd{}
 	a.draft = "今天中午吃什么"
+	_ = a
+	a.mode = "home"
 	tt := mui.NewTester(a.view, 1440, 1600)
 	click(t, tt, "发送")
 	if a.draft != "" {
@@ -215,62 +218,6 @@ func TestSaveSettingsShowsPending(t *testing.T) {
 
 // ---- P0-7: the 超级Agent chat ----
 
-// The overview carries the conversation, and the last answer sits above the
-// composer on every page: a message never disappears into another page.
-func TestChatIsOnOverviewAndAboveTheComposer(t *testing.T) {
-	_, tt := round3App(t, &fakeCmd{})
-	wantTexts(t, tt,
-		"超级Agent", "问点什么，它回答；派一件事，它去做",
-		"登录超时能改成可配置吗？", "已派发 #42 · acme/webapp · 等待执行",
-	)
-	last := "目前有 3 个工作区：acme/webapp（前端与登录流程）、acme/api（后端 API）、acme/data（用量数据）。想让我在哪个工作区里做事？"
-	// The newest agent line is the composer's context line, on 总览…
-	wantTexts(t, tt, last)
-	// … and on another page.
-	click(t, tt, "执行")
-	wantTexts(t, tt, last)
-}
-
-// Chat answers are not errors: the answer renders and no red composer error is
-// set. A genuine failure is the only red kind (view test pins IsFailure).
-func TestChatAnswerIsNotAnError(t *testing.T) {
-	now := time.Now()
-	snap := view.NewSnapshot()
-	snap.PublishOverview(viewtest.DemoOverview(now))
-	snap.PublishChat(&view.ChatVM{Messages: []view.ChatMessage{
-		{Role: view.ChatUser, Text: "跑一下", At: now},
-		{Role: view.ChatAssistant, Kind: view.ChatError, Text: "连不上模型", At: now},
-	}, UpdatedAt: now})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 1600)
-	wantTexts(t, tt, "连不上模型")
-	if a.composerErr != "" {
-		t.Fatalf("a chat line set the composer's red error: %q", a.composerErr)
-	}
-}
-
-// The chat panel keeps its bounded history: only the last 8 turns draw.
-func TestChatPanelIsBounded(t *testing.T) {
-	now := time.Now()
-	msgs := make([]view.ChatMessage, 0, 12)
-	for i := 0; i < 12; i++ {
-		msgs = append(msgs, view.ChatMessage{Role: view.ChatUser, Text: fmt.Sprintf("第%d句", i), At: now})
-	}
-	snap := view.NewSnapshot()
-	snap.PublishOverview(viewtest.DemoOverview(now))
-	snap.PublishChat(&view.ChatVM{Messages: msgs, UpdatedAt: now})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 1600)
-	wantTexts(t, tt, "第11句")
-	for _, hidden := range []string{"第0句", "第3句"} {
-		if exactTexts(tt, hidden) != 0 {
-			t.Fatalf("the chat drew %q beyond its last 8", hidden)
-		}
-	}
-}
-
 // ---- P0-3: identity ----
 
 // Rows read "#42", but every lookup uses the domain id: the rich detail arrives
@@ -287,62 +234,20 @@ func TestRowsShowNumberAndLookUpByDomainID(t *testing.T) {
 	}
 }
 
-// The workspace row opens the conversation's Ticket by the conversation's domain
-// id (P0-3 for conversations: they already carry domain ids).
-func TestConversationOpensTicketByDomainID(t *testing.T) {
+func TestConversationOpensHostSession(t *testing.T) {
 	a, tt := round3App(t, &fakeCmd{})
 	click(t, tt, "项目 acme/webapp")
 	click(t, tt, "会话 修改登录超时配置")
-	if a.sec != view.SecExecution {
-		t.Fatalf("section %q, want execution", a.sec)
+	tt.Frame()
+	if a.mode != "session" {
+		t.Fatalf("mode %q, want session", a.mode)
 	}
-	rows := ticketRowsOf(a)
-	if got := rows[a.ticketSel].ID; got != "tk-42" {
-		t.Fatalf("opened %q, want tk-42", got)
+	if a.sessionConv != "tk-42" {
+		t.Fatalf("session %q, want the conversation id", a.sessionConv)
 	}
-	wantTexts(t, tt, "step 7 · 正在补 SessionTimeout 默认值")
 }
 
 // ---- P1-7: the workspace context ----
-
-// Selecting a workspace filters 执行, says so, and 全部 restores every workspace.
-func TestWorkspaceFilterOnExecution(t *testing.T) {
-	a, tt := round3App(t, &fakeCmd{})
-	click(t, tt, "项目 acme/webapp") // selects it as the context (P1-7)
-	click(t, tt, "执行")
-
-	wantTexts(t, tt, "下面的列表只显示这个工作区；点「全部」恢复")
-	if exactTexts(tt, "#42") == 0 {
-		t.Fatalf("the filtered list lost the workspace's own Ticket; texts: %q", tt.Texts())
-	}
-	// tk-46 belongs to acme/data: it must not show under the webapp filter.
-	if exactTexts(tt, "#46") != 0 {
-		t.Fatalf("the filter leaked another workspace's Ticket; texts: %q", tt.Texts())
-	}
-	click(t, tt, "全部工作区")
-	if a.filterWorkspace != "" {
-		t.Fatalf("filter %q after 全部", a.filterWorkspace)
-	}
-	if exactTexts(tt, "#46") == 0 {
-		t.Fatal("全部 did not restore the other workspace's rows")
-	}
-}
-
-// 消息 filters too, with an honest empty state when the workspace has no thread.
-func TestWorkspaceFilterOnMessages(t *testing.T) {
-	a, tt := round3App(t, &fakeCmd{})
-	click(t, tt, "项目 acme/data")
-	click(t, tt, "消息")
-	wantTexts(t, tt, "整理 acme 上月用量摘要")
-	if tt.HasText("登录超时应可配置，默认 30 分钟") {
-		t.Fatal("the filtered stream shows another workspace's message")
-	}
-	click(t, tt, "全部工作区")
-	if !tt.HasText("登录超时应可配置，默认 30 分钟") {
-		t.Fatal("全部 did not restore the stream")
-	}
-	_ = a
-}
 
 // ---- P1-6: workspace management ----
 
@@ -436,16 +341,16 @@ func TestTransportOptionsFollowTheBuild(t *testing.T) {
 	a.settingsGroup = view.SettingsSource
 	tt := mui.NewTester(a.view, 1440, 1600)
 
-	wantTexts(t, tt, "传输方式 HTTP 长轮询", "传输方式 官方长连接", "传输方式 DWS 长连接", "传输方式 官方 Stream")
+	wantTexts(t, tt, "HTTP 长轮询", "官方长连接", "DWS 长连接", "官方 Stream")
 	// Feishu's official larkws long connection is a real transport now, not a
 	// placeholder: selecting it writes the stored id.
-	click(t, tt, "传输方式 官方长连接")
+	click(t, tt, "官方长连接")
 	ptr := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "feishu_transport"})
 	if *ptr != "ws" {
 		t.Fatalf("official long connection wrote %q", *ptr)
 	}
 	// A known transport is selectable and writes the stored id.
-	click(t, tt, "传输方式 官方 Stream")
+	click(t, tt, "官方 Stream")
 	dt := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "dingtalk_transport"})
 	if *dt != "stream" {
 		t.Fatalf("dingtalk stream wrote %q", *dt)

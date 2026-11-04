@@ -25,7 +25,6 @@ func (a *App) overview(c *mui.Context, ov *view.OverviewVM) {
 	mui.Column(c).Fill().Padding(24).Gap(16).Children(func() {
 		heading(c, tk, "总览", fmt.Sprintf("需要你关注的只有 %d 件事，其余都在后台运行", ov.PersonCount()))
 		a.modelParkedCard(c)
-		a.chatPanel(c)
 		a.needsPerson(c, ov)
 		a.goalsStrip(c)
 		mui.Row(c).Gap(16).AlignItems(mui.Start).Children(func() {

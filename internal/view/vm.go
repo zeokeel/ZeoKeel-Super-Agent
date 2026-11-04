@@ -498,7 +498,6 @@ func Nav(o *OverviewVM) []NavItem {
 // below a separator and out of the daily path (interaction audit §III).
 func NavAdvanced() []NavItem {
 	return []NavItem{
-		{Section: SecChat, Label: "对话记录"},
 		{Section: SecMessages, Label: "消息"},
 		{Section: SecSource, Label: "连接"},
 		{Section: SecTrigger, Label: "触发"},
@@ -521,8 +520,6 @@ func SectionLabel(s Section) string {
 	switch s {
 	case SecWorkspace:
 		return "项目"
-	case SecChat:
-		return "对话记录"
 	case SecInbox:
 		return "收件箱"
 	}

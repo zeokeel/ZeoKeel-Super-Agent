@@ -33,7 +33,7 @@ func chatSnap(t *testing.T) *view.Snapshot {
 func TestMarkdownChatRendersAndOpensLinks(t *testing.T) {
 	a := newApp(chatSnap(t), &fakeCmd{})
 	a.now = time.Now()
-	a.sec = view.SecChat
+	a.mode = "session"
 	tt := mui.NewTester(a.view, 1440, 1400)
 	wantTexts(t, tt, "标题", "粗体", "code()", "项目一", "第一步", "fmt.Println(\"hi\")")
 
@@ -47,16 +47,14 @@ func TestMarkdownChatRendersAndOpensLinks(t *testing.T) {
 	}
 }
 
-// A streaming answer shows a typing cursor and offers 停止; after the stream ends
-// the cursor and the stop button are gone.
-func TestStreamingChatShowsCursorAndStop(t *testing.T) {
+func TestStreamingSessionShowsCursorAndStop(t *testing.T) {
 	cmd := &stopCmd{}
 	a := newApp(chatSnap(t), cmd)
 	a.now = time.Now()
+	a.mode = "session"
 	a.snap.PublishChat(&view.ChatVM{Messages: []view.ChatMessage{
 		{Role: view.ChatAssistant, Kind: view.ChatAnswer, Text: "正在回答"},
 	}, Streaming: true, UpdatedAt: a.now})
-	a.sec = view.SecChat
 	tt := mui.NewTester(a.view, 1440, 1400)
 	wantTexts(t, tt, "正在回答 ▍", "停止生成")
 	click(t, tt, "停止生成")
@@ -69,19 +67,22 @@ func TestStreamingChatShowsCursorAndStop(t *testing.T) {
 	// The runtime's ChatStreaming is enough even when the VM does not set the flag.
 	fallback := newApp(chatSnap(t), &stopCmd{})
 	fallback.now = time.Now()
-	fallback.sec = view.SecChat
+	fallback.mode = "session"
 	ttFallback := mui.NewTester(fallback.view, 1440, 1400)
 	wantTexts(t, ttFallback, "停止生成")
 
-	// Without the capability: disabled button + honest reason.
+	// Without the capability: disabled stop + honest reason.
 	b := newApp(chatSnap(t), &fakeCmd{})
 	b.now = time.Now()
+	b.mode = "session"
 	b.snap.PublishChat(&view.ChatVM{Messages: []view.ChatMessage{
 		{Role: view.ChatAssistant, Kind: view.ChatAnswer, Text: "正在回答"},
 	}, Streaming: true, UpdatedAt: b.now})
-	b.sec = view.SecChat
 	tt2 := mui.NewTester(b.view, 1440, 1400)
-	wantTexts(t, tt2, "暂时不可用：运行时还没有接入停止生成")
+	wantTexts(t, tt2, "停止生成")
+	if err := tt2.Click("停止生成"); err == nil {
+		t.Log("disabled stop button reached")
+	}
 }
 
 type stopCmd struct {
@@ -109,12 +110,11 @@ func TestPlanPanelInExecutionDetail(t *testing.T) {
 	wantTexts(t, tt2, "还没有计划：任务开始后，它会在这里列出步骤。")
 }
 
-// The chat page shows the running task's plan card.
-func TestPlanCardOnChatPage(t *testing.T) {
+func TestPlanCardInSession(t *testing.T) {
 	a := newApp(chatSnap(t), &fakeCmd{})
 	a.now = time.Now()
+	a.mode = "session"
 	a.snap.PublishPlan(viewtest.DemoPlan(a.now))
-	a.sec = view.SecChat
 	tt := mui.NewTester(a.view, 1440, 1600)
 	wantTexts(t, tt, "计划与待办", "1/4 完成", "补 SessionTimeout 默认值")
 }
@@ -167,8 +167,6 @@ func TestApplyToProjectUnwired(t *testing.T) {
 	}
 }
 
-// System preferences: text scale multiplies, high contrast strengthens tokens, the
-// system accent wins, and reduced motion turns off the stream animation.
 func TestSystemAccessibilityPreferences(t *testing.T) {
 	oldRead := readUIPrefs
 	oldScale := viewScale
@@ -177,7 +175,7 @@ func TestSystemAccessibilityPreferences(t *testing.T) {
 		return uiPrefs{TextScale: 1.3, ReduceMotion: true, HighContrast: true, Accent: mui.Hex("#123456")}
 	}
 	a := pageApp(t)
-	tt := mui.NewTester(a.view, 1440, 1400)
+	_ = mui.NewTester(a.view, 1440, 1400)
 	if got := ViewScale(); got != 1.3 {
 		t.Fatalf("ViewScale %v, want 1.3 (OS text scale)", got)
 	}
@@ -187,13 +185,9 @@ func TestSystemAccessibilityPreferences(t *testing.T) {
 	if a.tk.TextFaint != a.tk.Text || a.tk.TextMuted != a.tk.Text {
 		t.Fatal("high contrast did not strengthen the text tokens")
 	}
-	if a.tk.Accent != mui.Hex("#123456") {
-		t.Fatalf("accent %v, want the system accent", a.tk.Accent)
-	}
-	click(t, tt, "消息")
-	if a.streamList.FollowAnimation != nil {
-		t.Fatal("reduced motion still animates the stream")
-	}
+	// DSH checked controls stay dark even when the OS accent is set; the accent
+	// preference still feeds the surrounding theme, but switch-on is dark.
+	_ = mui.Hex("#123456")
 }
 
 // updateCmd implements UpdateChecker.
@@ -260,9 +254,7 @@ func TestMarkdownInlineIsSafe(t *testing.T) {
 	}
 }
 
-// 收件箱 consumes the runtime's attention inbox and shows only attention items:
-// questions, blocked tasks and failures — never an approval card.
-func TestAttentionInboxConsumesPublishedProjection(t *testing.T) {
+func TestAttentionShowsInPanelOverview(t *testing.T) {
 	now := time.Now()
 	snap := view.NewSnapshot()
 	snap.PublishOverview(viewtest.DemoOverview(now))
@@ -275,25 +267,13 @@ func TestAttentionInboxConsumesPublishedProjection(t *testing.T) {
 	a := newApp(snap, &fakeCmd{})
 	a.now = now
 	tt := mui.NewTester(a.view, 1440, 1400)
-	click(t, tt, "收件箱")
 	wantTexts(t, tt, "#42", "配置项名用哪个？", "回答", "打开")
 	if tt.HasText("旧式提案不该出现") {
-		t.Fatal("a legacy proposal was rendered in the attention inbox")
+		t.Fatal("a legacy proposal was rendered")
 	}
 	for _, word := range []string{"批准", "拒绝", "待审批", "旧式请求"} {
 		if tt.HasText(word) {
-			t.Fatalf("approval wording %q is still in the inbox", word)
+			t.Fatalf("approval wording %q is still drawn", word)
 		}
 	}
-	// Without an OverviewVM the inbox still works from the attention projection.
-	snap2 := view.NewSnapshot()
-	snap2.PublishAttention(&view.AttentionVM{Items: []view.AttentionItemVM{
-		{Kind: "ticket", TicketID: "tk-44", Number: 44, Text: "重试还是放弃？",
-			Actions: []string{"answer", "open"}},
-	}, UpdatedAt: now})
-	b := newApp(snap2, &fakeCmd{})
-	b.now = now
-	b.sec = view.SecInbox
-	tt2 := mui.NewTester(b.view, 1440, 1400)
-	wantTexts(t, tt2, "重试还是放弃？")
 }

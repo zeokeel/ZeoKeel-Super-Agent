@@ -3,11 +3,9 @@ package ui
 // The composer: a multiline input with a visible target. Enter writes a new line,
 // ⌘/Ctrl+Enter sends — so an IME's Enter commits the composition instead of
 // sending half a sentence (interaction audit P0-1, P0-6). The target chip says
-// where the line goes: the 超级Agent chat, or a project (派活).
+// where the line goes: the selected project, or general task intake.
 
 import (
-	"strings"
-
 	mui "github.com/egoist/mygo/ui"
 
 	"github.com/zeokeel/super-agent/internal/humanfmt"
@@ -18,7 +16,7 @@ import (
 // the same chip. It never guesses: whatever it shows is what submit() uses.
 func (a *App) composerTargetBar(c *mui.Context) {
 	tk := a.tk
-	label := "发给 超级Agent（聊天）"
+	label := "选择项目"
 	target := a.targetWS
 	if ws := a.workspaceEntry(target); ws != nil && ws.Name != "" {
 		label = "项目 " + ws.Name + "（派活）"
@@ -44,7 +42,7 @@ func (a *App) composerTargetBar(c *mui.Context) {
 		mui.Spacer(c)
 		if a.targetWS != "" {
 			clear := mui.Row(c).Height(26).Padding(0, 10).Radius(6).Border(1, tk.Border).
-				Background(tk.Surface).AlignItems(mui.Center).Label("切换回超级Agent（聊天）").
+				Background(tk.Surface).AlignItems(mui.Center).Label("切换回任务接收").
 				OnClick(func() { a.targetWS = "" })
 			clear.Children(func() {
 				mui.Text(c, "切回聊天").FontSize(fs(11)).TextColor(tk.TextMuted)
@@ -168,11 +166,11 @@ func (a *App) chatContextLine(c *mui.Context, m view.ChatMessage) {
 		fg = tk.Red
 		icon = icBell
 	}
-	who := "超级Agent："
+	who := "Agent："
 	if m.Role == view.ChatSystem {
 		who = ""
 	}
-	text := strings.TrimSpace(m.Text)
+	text := stripAgentPrefix(m.Text)
 	long := len([]rune(text)) > 90
 	mui.Column(c).Gap(2).Children(func() {
 		mui.Row(c).Padding(0, 2, 2, 2).Gap(8).AlignItems(mui.Center).Children(func() {
@@ -195,10 +193,6 @@ func (a *App) chatContextLine(c *mui.Context, m view.ChatMessage) {
 			if cp := mui.Button(c, "复制").Height(22).FontSize(fs(11)); cp.Clicked() {
 				a.copyValue(text, "回答")
 			}
-			if all := mui.Button(c, "查看全部").Height(22).FontSize(fs(11)); all.Clicked() {
-				a.sec = view.SecChat
-				a.locate = nil
-			}
 			mui.Spacer(c)
 			if !m.At.IsZero() && !a.answerExpanded {
 				mui.Text(c, humanfmt.Ago(a.age(m.At))).FontSize(fs(10)).TextColor(tk.TextFaint)
@@ -218,113 +212,4 @@ func ifStr(cond bool, yes, no string) string {
 func spinner(c *mui.Context, tk Tokens, label string) {
 	dot(c, tk.Accent, 6)
 	mui.Text(c, label).FontSize(fs(12)).TextColor(tk.Accent)
-}
-
-// chatPage is the full 超级Agent conversation (对话记录): bounded history, each
-// line copyable, and the last request sendable again.
-func (a *App) chatPage(c *mui.Context) {
-	tk := a.tk
-	chat := a.snap.Chat()
-	mui.Column(c).Fill().Padding(24).Gap(12).Children(func() {
-		heading(c, tk, "对话记录", "超级Agent 的回答与派发结果；最近的 20 条")
-		if chat == nil || len(chat.Messages) == 0 {
-			card(c, tk, 14, func() {
-				mui.Text(c, "还没有对话").FontSize(fs(15)).Bold().TextColor(tk.Text)
-				mui.Text(c, "在下面输入一句，开始和超级Agent 说话。").
-					FontSize(fs(13)).TextColor(tk.TextMuted)
-			})
-			return
-		}
-		if plan := a.snap.Plan(); plan != nil && plan.TicketID != "" {
-			a.planPanel(c, plan, true)
-		}
-		streaming := a.chatStreaming(chat)
-		lastIdx := len(chat.Messages) - 1
-		mui.Scroll(c).Grow(1).Children(func() {
-			mui.Column(c).Gap(8).Children(func() {
-				for i, m := range chat.Messages {
-					i, m := i, m
-					card(c, tk, 12, func() {
-						mui.Row(c).Gap(8).AlignItems(mui.Start).Children(func() {
-							role := "你"
-							fg := tk.TextMuted
-							if m.Role == view.ChatAssistant {
-								role, fg = "超级Agent", tk.Accent
-							} else if m.Role == view.ChatSystem {
-								role, fg = "记录", tk.TextFaint
-							}
-							if m.IsFailure() {
-								fg = tk.Red
-							}
-							mui.Text(c, role).FontSize(fs(11)).Bold().Width(64).Shrink(0).TextColor(fg)
-							mui.Column(c).Grow(1).Children(func() {
-								if m.Role == view.ChatAssistant || m.Role == view.ChatSystem {
-									// Streamed answers render as Markdown while they arrive;
-									// the cursor says "still writing".
-									if streaming && i == lastIdx {
-										a.renderMarkdown(c, m.Text+" ▍", 13)
-									} else {
-										a.renderMarkdown(c, m.Text, 13)
-									}
-								} else {
-									mui.Text(c, m.Text).FontSize(fs(13)).TextColor(tk.Text)
-								}
-							})
-							if cp := mui.Button(c, "复制").Height(22).FontSize(fs(10)); cp.Clicked() {
-								a.copyValue(m.Text, "这条对话")
-							}
-						})
-					})
-				}
-			})
-		})
-		// While the answer streams: 停止. Afterwards: send the last request again.
-		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			if streaming {
-				_, wired := a.cmd.(ChatStreamer)
-				label := "停止生成"
-				if a.chatStopping {
-					label = "停止中…"
-				}
-				stop := mui.Button(c, label).Label(label).Height(28).FontSize(fs(12))
-				if !wired || a.chatStopping {
-					stop.Disabled(true)
-				} else if stop.Clicked() {
-					a.chatStopping = true
-					startStopChat(a)
-				}
-				if !wired {
-					mui.Text(c, "暂时不可用：运行时还没有接入停止生成").
-						FontSize(fs(10)).TextColor(tk.Amber)
-				}
-			}
-			if lastUser, ok := lastUserMessage(chat); ok {
-				if again := mui.Button(c, "再次发送上一条").Label("再次发送上一条").Height(26); again.Clicked() {
-					a.draft = lastUser
-					a.submit()
-				}
-			}
-			mui.Spacer(c)
-		})
-	})
-}
-
-// newConversationShortcut is ⌘N: a new conversation in the selected project (or
-// the first one), or a new project when none exists.
-func (a *App) newConversationShortcut() {
-	wsID := a.targetWS
-	if wsID == "" {
-		wsID = a.workspaceSel
-	}
-	if wsID == "" && a.filterWorkspace != "" {
-		wsID = a.filterWorkspace
-	}
-	if vm := a.snap.Workspaces(); vm != nil && wsID == "" && len(vm.Workspaces) > 0 {
-		wsID = vm.Workspaces[0].ID
-	}
-	if wsID != "" {
-		a.openConversationModal(wsID)
-		return
-	}
-	a.openWorkspaceModal()
 }

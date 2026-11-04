@@ -60,7 +60,7 @@ func promptApp(t *testing.T) (*App, *fakePromptSaver, *mui.Tester) {
 	a := pageApp(t)
 	saver := &fakePromptSaver{snap: a.snap, rev: 7}
 	a.cmd = saver
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1400)
 	click(t, tt, "设置")
 	click(t, tt, "提示词")
 	if a.settingsGroup != view.SettingsPrompt {
@@ -166,7 +166,7 @@ func TestPromptReloadFallsBackToThePublishedProjection(t *testing.T) {
 	// published projection, and says which revision it shows.
 	a := pageApp(t)
 	a.cmd = &fakeSaver{rev: 7}
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1400)
 	click(t, tt, "设置")
 	click(t, tt, "提示词")
 	next := viewtest.DemoPrompts(a.now)
@@ -190,7 +190,7 @@ func TestPromptReloadFallsBackToThePublishedProjection(t *testing.T) {
 // edits, the save is disabled, and both the group and the bar say why.
 func TestPromptEditorSaysWhenUnwired(t *testing.T) {
 	a := pageApp(t) // fakeCmd does not implement SettingsSaver
-	tt := mui.NewTester(a.view, 1440, 900)
+	tt := mui.NewTester(a.view, 1440, 1400)
 	click(t, tt, "设置")
 	click(t, tt, "提示词")
 	wantTexts(t, tt, "暂时不可用：运行时还没有接入保存设置")

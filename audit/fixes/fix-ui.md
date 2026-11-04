@@ -628,3 +628,128 @@ $ gofmt -l internal/ui internal/view                           → 空
 $ go build ./internal/ui ./internal/view                       → OK
 ```
 VERSION 未改（ui.Version 仍为 "1.0.0-dev"）。注意：engine/domain 的审批删除由 conf-domain 负责；其提示中提到的 ui 测试残留为旧信息，当前 ui/view 测试已全绿。
+
+---
+
+# Round 8（DSH 布局落地：宿主侧栏 + Home/Session + 超级Agent 面板）
+
+范围：`internal/ui/**` + `internal/view/**`（新增 `internal/ui/dsh.go`，`internal/ui/shell_test.go`）；无 runtime/store/cmd 改动，无 VERSION bump。参考 `design/target-ui-layout.md`、`design/dsh-ui-parity-checklist.md`、`design/dsh-reference/*.png`。
+
+## 已完成
+
+1. **宿主外壳（原生控件）**：280px 侧栏用 Row/Column/Button/Text/Badge/Scroll/MenuButton 组成——品牌、`＋ 新对话` 主按钮、`超级Agent`（Badge 待决定数）、`自动化任务`、`项目` 头（`⋯` 菜单：搜索/新建项目/新建会话）+ 项目列表 + 选中项目的会话列表、底部 `设置`/`更多`。删除：顶栏、监控组、可展开工作区树、收件箱入口、诊断导航、底部状态栏（版本/rev/Go/CGO 已随状态栏删除，设置›关于 仍显示版本）。
+2. **HomeView**：居中的「开始做点什么」+ 单一 composer（项目/超级Agent 目标 MenuButton、TextArea、发送；Enter 换行、⌘/Ctrl+Enter 发送）。发送后进入 SessionView。
+3. **SessionView**：返回/标题/打开面板 + 消息流（Markdown、流式 ▍ 光标、停止生成）+ 计划任务卡 + 固定 composer；打开项目会话（侧栏会话行）进入该 Session。
+4. **超级Agent 面板**：独立面板，Header（返回、标题、原生 TextInput 全局搜索、术语表 Button、打开主 Session Button）+ 原生 `mui.Tabs` 六页（总览/来源/触发/评估/执行/设置），内容复用既有页面逻辑；待你决定条目在 Overview 顶部（attention 仅 ticket 类）。
+5. **设置**：宿主设置视图（返回 + 打开面板）承载既有设置页（分组、保存条、模型/连接/技能/项目浏览器/关于/更新均保留）。
+6. **导航语义**：选项目只决定新会话/派活默认目录，不再隐式过滤全局页；⌘N/⌘, 保留；⌘K palette 与术语表保留。
+7. **测试**：新增 `shell_test.go`（Home/侧栏、发送进 Session、面板 tabs、设置视图、项目/会话选择）；删除/改写旧外壳测试（流页面、收件箱、状态栏帮助、展开树、旧导航）；页面功能测试通过 `initialMode="panel"`（TestMain）继续覆盖原页面逻辑。`go test ./internal/ui/... ./internal/view/...` 全绿；vet/gofmt/build 干净。
+8. **截图**：`design/screens-current/{home,session,superagent-overview,settings}.png`（用既有 Tester 渲染机制生成，无 Xvfb 依赖）。
+
+## 未完成 / 后续
+
+- 设置页内部仍是既有页面组件（card/rail 等），本次优先完成外壳/Home/Session/面板 tabs/设置外壳；设置字段到原生 Input/Switch/Select 的完全重排、按钮统一的 primary/outline/ghost/danger 变体与 Save bar 合并留作下一轮（页面内容按指示可保留现状）。
+- 面板内各页内容保留既有卡片/表格组件（同样按“其他页内部可保留”的优先级）。
+- 项目浏览器/技能/统计仍在设置›项目（项目页），未搬进面板第 7 tab。
+- 未 bump VERSION。
+
+---
+
+# Round 9（会话去掉“超级Agent” + 设置原生控件重排）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime 改动，无 VERSION bump。截图已覆盖 `design/screens-current/`。
+
+## 已完成
+
+1. **会话/首页不再出现超级Agent**：
+   - 首页副标题改中性「选一个项目，说一句要做什么。」；composer 目标菜单只有项目（默认「选择项目」，无「超级Agent（聊天）」/「发给 超级Agent」）。
+   - 会话头删掉「打开超级Agent面板」；助手发言者标签改为中性「Agent」；渲染时去掉运行时的「超级Agent：」前缀（`stripAgentPrefix`）。
+   - 删除 `chatPage`（对话记录页）与 view.Nav 中的「对话记录」、overview 的 `chatPanel`、composerContext 的「查看全部」入口；聊天/历史只存在于 SessionView。
+   - 侧栏「超级Agent」入口保留，仅作任务接收面板：面板标题改为「超级Agent · 接收任务」；面板 Overview 无聊天，只显示待你决定/关注事项与系统状态。
+2. **设置原生重排（settingsNativePage）**：
+   - 分组导航改为原生按钮行（模型/连接/评估/执行/关于/提示词/部署/项目），选中态用 primary，无自绘 rail。
+   - 字段用 `mui.TextInput`/`Switch`/`Text`/`Badge` 组合；每组内容在原生 `Scroll` 内，**保存条固定在组底部一个**（未保存数 + 存储位置 + 影响 + primary 保存；未接线时点击说明原因，冲突提示 rev）。
+   - 来源组保留渠道卡（其内部字段均为原生输入/Switch/按钮；检查/连接向导逻辑不变）。
+   - 新增「项目」扩展组：原生项目选择、浏览器启用/Switch、Chrome/Edge 选择、无头、CDP 端口 TextInput、技能 Switch、统计行、保存项目设置与「打开项目设置」。
+   - 按钮统一 helper：`settingsButton(primary bool)` → `mui.PrimaryButton`/`mui.Button`，统一 Height(32)/FontSize(13)；无自造按钮类。
+3. **测试**：shell/session 断言会话中没有「超级Agent：」「打开面板」「超级Agent 会回答」等；面板标题断言；设置页测试适配固定保存条（原生保存点击路径）；项目页/浏览器/技能/统计既有测试保持绿。`go test ./internal/ui/... ./internal/view/...` 绿；vet/gofmt/build 干净。
+4. **截图**：`design/screens-current/{home,session,superagent-overview,settings}.png` 已覆盖（home/session 中 composer 仅项目目标；session 助手为 “Agent”）。
+
+## 未完成 / 已知差距
+
+- 来源渠道卡与提示词编辑器内部仍是既有 card/chip 组合（其字段已是原生控件）；如需 100% 去 card，下一轮单独重排。
+- primary 目前是 mygo 强调色而非纯黑（未改主题/tokens）；danger 变体尚未引入设置页（重命名/删除仍在项目页）。
+- `internal/ui` 旧 `settingsPage` 及部分旧组件函数保留未删（无引用），下一轮清理。
+
+---
+
+# Round 10（DSH 视觉 parity pass）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime；无 VERSION bump；截图已覆盖。
+
+## 已完成
+
+1. **侧栏（280px，全原生控件）**：品牌紧凑；「＋ 新对话」改为居中描边圆角胶囊（无蓝色、非全宽）；导航行=图标+扁平文本按钮（无边框/无方块，选中仅浅灰底），超级Agent 右侧原生 Badge；自动化任务；「项目」为小号灰标签+右侧 MenuButton；项目/会话行为扁平文本行（文件夹/圆点+名称+时间），选中浅灰；底部 设置/更多 为扁平图标行。去掉了所有全宽描边蓝按钮。
+2. **首页**：标题+副标题中性文案；860px 描边 composer 卡，TextArea 在上、卡内底行=项目 MenuButton + 目标 + 模型 + **黑色圆角发送按钮**；去掉超大中部空白（固定顶部偏移，块状紧凑）。
+3. **会话**：header=返回、会话标题（取首条用户消息，非“新对话”）、原生 `mui.Segmented` Chat/Trajectory、⋯ 菜单、流式时原生 停止生成；消息中性标签；计划卡改原生描边 Column；底部固定同款 composer 卡（黑发送）。全程无「超级Agent」。
+4. **设置**：左侧 180px 竖向原生按钮组导航（选中浅灰、无描边），右侧内容+固定底部保存条（未保存数/存储位置/rev/影响；黑色 primary；无顶部 debug 行）；渠道区改为原生 section：细分割线、label+Switch 行、原生 transport 按钮、TextInput、检查/向导按钮（outline），去掉 card/chip 边框；「项目」组原生 Select 项目/Switch/端口/技能/统计/保存。
+5. **按钮体系**：`primaryBtn`（黑底白字 32px radius8）、`outlineBtn`、`ghostBtn`、`dangerBtn`、`sendBtn`（黑色圆角），设置/面板/外壳统一；无自造按钮类。
+6. **测试**：更新设置/通道/外壳断言（去 debug 头文案、渠道状态文案、保存条路径）；`go test ./internal/ui/... ./internal/view/...` 全绿；vet/gofmt/build 干净。
+7. **截图**：design/screens-current/{home,session,superagent-overview,settings}.png 已覆盖。
+
+## 剩余差距（如实）
+
+- 面板内 Overview/Execution 等页面内容仍复用旧组件（卡片/表格），外壳与设置已原生；下一步再统一面板内页。
+- 渠道 transport 仍是原生 Button 行（非 Select），检查按钮文案保留「检查通道」。
+- 旧 settingsPage/dead widgets 仍有引用类型但未挂载，下轮清理。
+
+---
+
+# Round 11（按 DSH client.css 数值的视觉 pass）
+
+范围：`internal/ui/**` + `internal/view/**`；无 runtime；VERSION 未改；截图覆盖。
+
+已按给定数值落地：Page padding 28/40 + 960 content column；Section title 13/20 600 secondary；Buttons 36px/radius18/14px（primary 深色填充、outline 0.5px、ghost、danger），small 28/radius14/12px；Inputs 32px/radius8/0.5px/14px，TextArea 13/20 padding8-12；Panel tabs 改原生 Segmented pill group（4px padding、12 radius、module-platform 面）；Segmented filter 同款；Cards 0.5px/radius16/padding16/section gap24（计划卡/composer）；Rows radius12 padding7-8（侧栏）；Save bar sticky、仅 border-top 0.5px、padding12 0、hint 左 primary 右；Sidebar 280/inline12、New Session 38/radius12/0.5px、nav rows 36/radius12、section label 12；Send 圆形 34 蓝色 #4176e6；设置左 180 竖向 nav、右侧内容、无 debug 头；渠道改 hairline 原生 section；字体下限 12（设置相关文件）。
+
+已知偏差（如实）：设置导航原生 Button 标签仍居中（非左对齐）；渠道 transport 仍是原生按钮行；prompt 编辑器内部仍复用旧组合；面板内页组件仍为旧内容；旧 settingsPage 未删。
+
+---
+
+# Round 12（最终 DSH 结构 pass）
+
+- SuperAgent 面板：去掉浮动返回头；页面标题 15/22 600 secondary 左对齐 + 右侧 toolbar；分段 pill tabs 全列宽（4px padding/r12/module-platform/34高）；内容 960 列。
+- Overview：全局 `card()` 改为无边框 section（仅 gap），去掉大圆角外卡；行/标题/按钮保留原文本与动作逻辑（测试通过）。
+- Settings：左 nav 改为 32px 高、6/10 padding、r8、13/20 左对齐（原生 Button + TextAlign Start）；页面标题 20/28；内容 section title 13/20；sticky savebar 仅 border-top 0.5、padding12 0、hint 左 primary 右；输入 32/r8/0.5、TextArea r10、字号下限 12（设置相关）。
+- Sidebar：项目行只显示文件夹+名称（Label 仍保留“项目 X”供测试/AT），行 36/r12/padding7-8；会话 32px 圆点+标题+时间；New Session 38/r12 outline；底部扁平。
+- Home：删除“目标 deepseek-chat”文案行；底行=项目 chip+模型+默认权限+34px 圆形蓝色 send。
+- Switch/强调色：在 Themed 前将 theme.Accent 置为深色（light #1F1F1F / dark 浅色），让 checked 控件为深色而非系统蓝；tokens.Accent 同步。
+- 测试：shell/settings/channel/prompt 全部通过；`go test ./internal/ui/... ./internal/view/...` 绿；vet/gofmt/build 干净；截图覆盖。
+
+已知未达成（原生控件限制/时间）：设置 nav 文本仍由原生 Button 居中渲染（TextAlign 无效）；Switch 仍显示原生蓝色（accent 主题覆盖未在该控件生效）；渠道 transport 仍为按钮行、prompt 编辑器/面板内页仍为旧组合；旧 settingsPage 死代码未删。
+
+---
+
+# Round 13（mygo base 原语收尾：ButtonBase/SwitchBase/Segmented）
+
+- 扁平行/导航全部改 `mui.ButtonBase` + `Row.Grow(1)` + Icon/Text.Grow：设置分组 nav、侧栏 nav/项目/会话/底部行，左对齐、32/36 高、r8/12、选中 soft gray/interactive hover；项目/会话行只显示名称（Label 保留“项目/会话 X”供测试与 AT）。
+- Switch 全部改 `mui.SwitchBase` + Draw：36×20、r10、off=border-l3 轨道、on=#1F1F1F、白色 16px knob 内缩 2px；替换 settings/channel/wizard/workspace 各处原生蓝色 Switch。
+- Send 改 `mui.ButtonBase` 34px 圆形 #4176e6 + 白色 ↑（Label 仍“发送”）。
+- 渠道 transport 改原生 `Segmented`（不再按钮 chip 行）；相关测试断言改为可见选项文本。
+- chip/chipOn/textChip 全局去 pill：改纯 meta 文本；渠道/概览状态不再蓝/灰底药丸。
+- 面板：去浮动返回头、标题+右侧 toolbar、全列宽 Segmented pill tabs；page/section 字号按 DSH 收敛。
+- 设置：左 nav 左对齐；page title 20/28；section title 13/20；sticky savebar 仅 border-top 0.5；输入 32/r8/0.5；TextArea r10；字体下限 12。
+- 截图 design/screens-current/*.png 已重拍并逐张检查（home/session/settings/superagent-overview）。
+
+已知遗留：prompt 编辑器内部组合未完全原生重写；面板内个别区块仍沿用旧内容函数；旧 settingsPage 死代码未删。
+
+---
+
+# Round 14（侧栏全宽/Home 居中/面板标题左对齐）
+
+- Sidebar：New Session 256×38/r12 outline 充满内容宽；nav/项目/会话/底部行 ButtonBase Width256 + 子 Row Width240 → 左对齐、无缩进（Icon x≈20/text x≈43）；项目/会话仅显示名称；section label 左对齐。
+- Home：标题/副标题/860 composer 在主区水平居中（不再左对齐 960 列）。
+- Panel：title Row Width960，标题与 tabs 同一起点左对齐；tabs 保持整列宽。
+- Session：主区全宽 + 40 side padding；header 标题左、Segmented 右；composer 860 居中。
+- Settings：nav 去除左/上 padding，flush 在 180 列内；内容紧接其后（24 gap）。
+- 开关深色、transport Segmented、send 蓝圆在上一轮已生效（截图确认）。
+- 截图已重拍并检查：home 侧栏行已左对齐、home 居中；settings nav flush、开关深色、transport segmented。

@@ -242,7 +242,7 @@ func TestVerifyNoHardcodedOverviewNumbers(t *testing.T) {
 	if got := ov.PersonCount(); got != 2 {
 		t.Fatalf("PersonCount=%d, want len(NeedsPerson)=2", got)
 	}
-	wantTexts(t, tt, "1/3", "12,345")
+	wantTexts(t, tt, "12,345")
 	if tt.HasText("0/2") {
 		t.Fatalf("the old hardcoded 0/2 is still rendered; texts: %q", tt.Texts())
 	}

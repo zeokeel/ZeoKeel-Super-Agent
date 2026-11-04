@@ -28,6 +28,8 @@ func TestInputTrimsFullWidthSpace(t *testing.T) {
 	a := newTestApp(t, false)
 	a.cmd = cmd
 	a.draft = "\u3000\u3000"
+	_ = a
+	a.mode = "home"
 	tt := mui.NewTester(a.view, 1440, 900)
 	if err := tt.Click("发送"); err != nil {
 		t.Fatalf("click 发送: %v", err)
@@ -43,6 +45,8 @@ func TestInputTrimsEndsButKeepsTheTask(t *testing.T) {
 	a := newTestApp(t, false)
 	a.cmd = cmd
 	a.draft = " \u3000 把登录超时改成可配置 \u3000 "
+	_ = a
+	a.mode = "home"
 	tt := mui.NewTester(a.view, 1440, 900)
 	if err := tt.Click("发送"); err != nil {
 		t.Fatalf("click 发送: %v", err)

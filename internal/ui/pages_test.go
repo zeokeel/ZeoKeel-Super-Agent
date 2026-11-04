@@ -73,7 +73,7 @@ func TestSourcePageShowsFactsCursorAndActionableFailure(t *testing.T) {
 	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
 
-	click(t, tt, "连接")
+	click(t, tt, "来源")
 	wantTexts(t, tt,
 		"每个事件源各管各的账号与游标；过滤在这里，Agent 之前",
 		"GitHub", "@acme · acme/webapp", "已启用",
@@ -188,9 +188,8 @@ func TestSettingsPageFormsAndSaveBarOnlyWhenChanged(t *testing.T) {
 
 	click(t, tt, "设置")
 	wantTexts(t, tt,
-		"来自 mygo.json", "连接", "评估", "执行", "提示词", "部署",
+		"连接", "评估", "执行", "提示词", "部署",
 		"轮询间隔（秒）", "GitHub Token", "飞书订阅群", "丢弃机器人消息",
-		"每块只有一个保存条；能从默认值来的，就不做成设置项",
 	)
 	if tt.HasText("处未保存更改") {
 		t.Fatalf("a clean group must show no save bar; texts: %q", tt.Texts())

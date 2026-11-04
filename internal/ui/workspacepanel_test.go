@@ -220,10 +220,11 @@ func TestNoLegacyApprovalUI(t *testing.T) {
 			t.Fatalf("approval wording %q is still in the overview", word)
 		}
 	}
-	click(t, tt, "收件箱")
+	click(t, tt, "超级Agent")
+	tt.Frame()
 	for _, word := range []string{"批准", "拒绝", "待审批", "旧式请求"} {
 		if tt.HasText(word) {
-			t.Fatalf("approval wording %q is still in the inbox", word)
+			t.Fatalf("approval wording %q is still in the panel", word)
 		}
 	}
 }

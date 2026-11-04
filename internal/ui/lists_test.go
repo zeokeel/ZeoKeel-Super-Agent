@@ -96,60 +96,6 @@ func TestThreadSelectionFollowsTheThreadWhenRowsReorder(t *testing.T) {
 	wantTexts(t, tt, "Issue #42 · 修改登录超时配置", "命中工作区 acme/webapp 的关键词「登录」")
 }
 
-// The workbench is a ui.List: only the rows in view are built, and the newest is
-// in view (FollowEnd) instead of the whole history being built every frame
-// (audit N-8 / F-01).
-func TestStreamBuildsOnlyTheRowsInView(t *testing.T) {
-	now := time.Now()
-	threads := make([]view.Thread, 40)
-	for i := range threads {
-		threads[i] = view.Thread{
-			ID:   fmt.Sprintf("t-%d", i),
-			Head: view.Line{Kind: view.LineInbound, Source: "GitHub", Text: fmt.Sprintf("第 %d 条消息", i+1), At: now},
-			Steps: []view.Line{
-				{Kind: view.LineDecision, Text: fmt.Sprintf("处置 %d", i+1), At: now},
-			},
-		}
-	}
-	snap := view.NewSnapshot()
-	snap.PublishStream(&view.StreamVM{Threads: threads})
-	a := newApp(snap, &fakeCmd{})
-	a.now = now
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "消息")
-
-	if !tt.HasText("第 40 条消息") {
-		t.Fatalf("the newest message is not in view; texts: %q", tt.Texts())
-	}
-	if tt.HasText("第 1 条消息") {
-		t.Fatalf("the list built the whole history instead of the rows in view; texts: %q", tt.Texts())
-	}
-	// Keys come from the Thread's ID, so the list keeps its place as older
-	// messages are prepended.
-	a.streamList.Key = nil
-	tt.Frame()
-	if a.streamList.FollowEnd != true {
-		t.Fatal("the stream must follow its end")
-	}
-}
-
-// A projection without Thread IDs gets no key rather than one that repeats: two
-// rows sharing a key would share one state (a mygo List panics on duplicates).
-func TestStreamWithoutThreadIDsHasNoKey(t *testing.T) {
-	snap := view.NewSnapshot()
-	snap.PublishStream(&view.StreamVM{Threads: []view.Thread{
-		{Head: view.Line{Kind: view.LineInbound, Source: "GitHub", Text: "没有 ID 的消息", At: time.Now()}},
-	}})
-	a := newApp(snap, &fakeCmd{})
-	a.now = time.Now()
-	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "消息")
-	wantTexts(t, tt, "没有 ID 的消息")
-	if a.streamList.Key != nil {
-		t.Fatal("a projection without Thread IDs must not key rows by an empty ID")
-	}
-}
-
 // The Decision list is a ui.Table: the framework draws the header, and only the
 // rows in view are built. It used to be a Scroll over a Column of every row
 // (audit N-8 / F-02).

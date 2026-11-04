@@ -74,7 +74,7 @@ func TestTicketDetailShowsTheFullProjection(t *testing.T) {
 		"输入（2）", "登录超时应可配置", "已读", "已投递", "默认值别动",
 		"订阅线程（1）", "th-128",
 		"交付物（1）", "PR #128 草案",
-		"连接", "GitHub · Issue #42", "线程", "th-42", "发起人", "@lin",
+		"来源", "GitHub · Issue #42", "线程", "th-42", "发起人", "@lin",
 	)
 	// The one section the projection leaves empty is named, not hidden: Attention
 	// is the only nil part of this fixture.

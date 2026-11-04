@@ -176,7 +176,7 @@ func (a *App) settingsForm(c *mui.Context, g *view.SettingsGroup) {
 			// again below (the generic loop skips channel keys).
 			a.channelCards(c, g)
 			if a.channelErr != "" {
-				mui.Text(c, a.channelErr).FontSize(fs(11)).TextColor(tk.Red)
+				mui.Text(c, a.channelErr).FontSize(fs(12)).TextColor(tk.Red)
 			}
 		}
 		if g.ID == view.SettingsExecution {
@@ -307,7 +307,7 @@ func (a *App) fontScaleControl(c *mui.Context, g view.SettingsGroup) {
 		if mui.Segmented(c.Key("font-scale"), &idx, labels...).Label("界面字号").Changed() {
 			*ptr = strconv.FormatFloat(float64(scales[idx]), 'f', 1, 32)
 		}
-		mui.Text(c, "保存后按新字号重绘").FontSize(fs(10)).TextColor(tk.TextFaint)
+		mui.Text(c, "保存后按新字号重绘").FontSize(fs(12)).TextColor(tk.TextFaint)
 	})
 }
 
@@ -371,7 +371,7 @@ func (a *App) pauseControl(c *mui.Context) {
 // pauseButton is one pause/resume button; disabled when the runtime has no
 // PauseExecution, so a click can never be a silent no-op.
 func (a *App) pauseButton(c *mui.Context, label string, paused bool, wired bool) {
-	btn := mui.Button(c, label).Label(label).Height(24).FontSize(fs(13))
+	btn := mui.Button(c, label).Label(label).Height(28).FontSize(fs(13))
 	if !wired {
 		btn.Disabled(true)
 		return
@@ -418,7 +418,7 @@ func (a *App) settingField(c *mui.Context, g *view.SettingsGroup, f view.Setting
 					mui.Text(c, f.Help).FontSize(fs(12)).TextColor(tk.TextFaint)
 				}
 			})
-			if mui.Switch(c.Key("set:"+f.Key), &on).Changed() {
+			if a.dshSwitch(c, "set:"+f.Key, "", &on) {
 				*ptr = boolText(on)
 			}
 		})
@@ -434,7 +434,8 @@ func (a *App) settingField(c *mui.Context, g *view.SettingsGroup, f view.Setting
 				mui.Text(c, "· "+f.Help).FontSize(fs(12)).SingleLine().TextColor(tk.TextFaint)
 			}
 		})
-		field := mui.TextInput(c.Key("set:"+f.Key), ptr).Height(30).FontSize(fs(14))
+		field := mui.TextInput(c.Key("set:"+f.Key), ptr).Height(32).FontSize(fs(14)).
+			BorderWidth(0.5).BorderColor(tk.Border).Radius(8).Padding(0, 8)
 		if f.Kind == view.SettingSecret {
 			field.Password()
 		}
@@ -468,7 +469,7 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 				if saving {
 					label = "保存中…"
 				}
-				btn := mui.PrimaryButton(c, label).Label(label).Height(26)
+				btn := mui.PrimaryButton(c, label).Label(label).Height(28)
 				if saving {
 					btn.Disabled(true)
 				} else if btn.Clicked() {
@@ -477,7 +478,7 @@ func (a *App) settingsSaveBar(c *mui.Context, vm *view.SettingsVM, g *view.Setti
 			} else {
 				// A disabled save that explains itself when clicked: a control
 				// that silently does nothing is worse than a grey one.
-				btn := mui.Row(c).Height(26).Padding(0, 12).Radius(7).
+				btn := mui.Row(c).Height(28).Padding(0, 12).Radius(7).
 					Background(tk.SurfaceAlt).AlignItems(mui.Center).Children(func() {
 					mui.Text(c, "保存").FontSize(fs(14)).TextColor(tk.TextFaint)
 				})
@@ -520,7 +521,7 @@ func (a *App) modelTestRow(c *mui.Context) {
 			a.modelTestDetail = ""
 			startModelProbe(a)
 		}
-		mui.Text(c, "测试使用已保存的配置；改完先保存").FontSize(fs(10)).TextColor(tk.TextFaint)
+		mui.Text(c, "测试使用已保存的配置；改完先保存").FontSize(fs(12)).TextColor(tk.TextFaint)
 		if a.modelTestPending {
 			spinner(c, tk, "正在连接模型…")
 		}
@@ -536,7 +537,7 @@ func (a *App) modelTestRow(c *mui.Context) {
 		})
 	}
 	if !wired {
-		mui.Text(c, "暂时不可用：运行时还没有接入模型检查").FontSize(fs(11)).TextColor(tk.Amber)
+		mui.Text(c, "暂时不可用：运行时还没有接入模型检查").FontSize(fs(12)).TextColor(tk.Amber)
 	}
 }
 

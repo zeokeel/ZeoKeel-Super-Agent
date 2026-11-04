@@ -70,6 +70,7 @@ func TestMissingSettingsGroupAppearsAsProjectionGap(t *testing.T) {
 	})
 	a := newApp(snap, &fakeCmd{})
 	a.now = now
+	a.mode = "settings"
 	tt := mui.NewTester(a.view, 1440, 900)
 	click(t, tt, "设置")
 
@@ -82,7 +83,10 @@ func TestMissingSettingsGroupAppearsAsProjectionGap(t *testing.T) {
 	// The published group keeps its own form: no fake fields were invented.
 	a.settingsGroup = view.SettingsExecution
 	tt.Frame()
-	wantTexts(t, tt, "并发执行器", "2")
+	wantTexts(t, tt, "并发执行器")
+	if got := *a.settingsPtr(view.SettingsExecution, view.SettingField{Key: "concurrency"}); got != "2" {
+		t.Fatalf("published concurrency %q, want 2", got)
+	}
 }
 
 // The pause switch follows the projection, not the click: with the channel wired

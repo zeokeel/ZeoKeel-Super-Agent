@@ -30,14 +30,12 @@ func TestHelpOpensWithShortcutAndShowsGlossary(t *testing.T) {
 	}
 }
 
-// The status bar carries the discoverable entry, so the glossary does not depend
-// on knowing the shortcut.
-func TestHelpOpensFromTheStatusBar(t *testing.T) {
+func TestHelpOpensFromThePanel(t *testing.T) {
 	a := pageApp(t)
 	tt := mui.NewTester(a.view, 1440, 900)
-	click(t, tt, "帮助 "+helpKeyHint())
+	click(t, tt, "超级Agent")
+	click(t, tt, "术语表")
 	if !a.helpOpen {
-		t.Fatal("the status bar entry did not open the glossary")
+		t.Fatal("the panel's 术语表 button did not open the glossary")
 	}
-	wantTexts(t, tt, "名词表", "Subscription", "订阅")
 }

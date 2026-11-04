@@ -162,70 +162,59 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 	enabled := hasEnabled && settingBool(*a.settingsPtr(g.ID, enabledField))
 	check := a.checkChannelState(spec.Name)
 
-	card(c, tk, 14, func() {
-		// Header: which channel, and whether it runs.
+	// A native section: one hairline, a plain row, no card border and no chip.
+	mui.Column(c).Gap(7).Padding(2, 4, 12, 4).BorderWidth(1, 0, 0, 0).
+		BorderColor(tk.BorderSoft).Children(func() {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			mui.Icon(c, channelIcon(spec.Name)).FontSize(fs(14)).TextColor(tk.TextMuted)
 			mui.Text(c, spec.Label).FontSize(fs(15)).Bold().TextColor(tk.Text)
-			state, fg, bg := a.channelState(spec, hasEnabled, enabled, check)
-			chip(c, tk, state, fg, bg)
+			state, fg, _ := a.channelState(spec, hasEnabled, enabled, check)
+			mui.Text(c, state).FontSize(fs(12)).TextColor(fg)
 			mui.Spacer(c)
 			if hasEnabled {
 				p := a.settingsPtr(g.ID, enabledField)
 				on := settingBool(*p)
-				mui.Row(c).Gap(7).AlignItems(mui.Center).Children(func() {
-					mui.Text(c, "启用").FontSize(fs(12)).TextColor(tk.TextMuted)
-					if mui.Switch(c.Key("channel:"+spec.Name+":enabled"), &on).
-						Label("启用" + spec.Label).Changed() {
-						*p = boolText(on)
+				mui.Text(c, "启用").FontSize(fs(12)).TextColor(tk.TextMuted)
+				if a.dshSwitch(c, "channel:"+spec.Name+":enabled", "启用"+spec.Label, &on) {
+					*p = boolText(on)
+				}
+				if _, ok := a.channelValidator(); ok {
+					if b := a.outlineBtn(c, "连接向导…"); b.Label("配置连接 " + spec.Label).Clicked() {
+						a.openConnectionWizard(spec.Name)
 					}
-					if _, ok := a.channelValidator(); ok {
-						if b := mui.Button(c, "连接向导…").Label("配置连接 " + spec.Label).
-							Height(26).FontSize(fs(11)); b.Clicked() {
-							a.openConnectionWizard(spec.Name)
-						}
-					} else {
-						b := mui.Button(c, "连接向导…").Label("配置连接 " + spec.Label).
-							Height(26).FontSize(fs(11))
-						b.Disabled(true)
-						mui.Text(c, "暂时不可用：运行时还没有接入连接向导").FontSize(fs(10)).TextColor(tk.Amber)
-					}
-				})
+				} else {
+					b := a.smallOutlineBtn(c, "连接向导…")
+					b.Label("配置连接 " + spec.Label)
+					b.Disabled(true)
+					mui.Text(c, "暂时不可用：运行时还没有接入连接向导").
+						FontSize(fs(10)).TextColor(tk.Amber)
+				}
 			} else {
-				mui.Text(c, "还没有数据："+spec.EnabledKey).FontSize(fs(11)).TextColor(tk.Amber)
+				mui.Text(c, "还没有数据："+spec.EnabledKey).FontSize(fs(12)).TextColor(tk.Amber)
 			}
 		})
-
-		// One honest status line: never "监听中" for a channel that is off.
 		detail := a.channelDetail(hasEnabled, enabled, check)
 		if detail != "" {
-			mui.Text(c, detail).FontSize(fs(11)).TextColor(tk.TextMuted)
+			mui.Text(c, detail).FontSize(fs(12)).TextColor(tk.TextMuted)
 		}
-
-		// Transport.
 		a.channelTransport(c, g, spec, transportField, hasTransport, enabled)
-
-		// Credentials, in the existing save protocol.
 		for _, key := range spec.CredentialKeys {
 			f, ok := settingFieldOf(g, key)
 			if !ok {
-				mui.Text(c, "还没有数据："+key).FontSize(fs(11)).TextColor(tk.TextFaint)
+				mui.Text(c, "还没有数据："+key).FontSize(fs(12)).TextColor(tk.TextFaint)
 				continue
 			}
 			a.settingField(c, g, f)
 		}
-
 		if spec.Name == "dingtalk" {
 			a.dingtalkPauseSwitch(c, g)
 		}
-
-		// Check / authorize.
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 			label := "检查通道"
 			if check.pending {
 				label = "检查中…"
 			}
-			btn := mui.Button(c, label).Label("传输方式 " + label).Height(26).FontSize(fs(13))
+			btn := a.smallOutlineBtn(c, label)
 			if _, wired := a.channelChecker(); !wired {
 				btn.Disabled(true)
 			} else if check.pending {
@@ -233,23 +222,25 @@ func (a *App) channelCard(c *mui.Context, g *view.SettingsGroup, spec view.Chann
 			} else if btn.Clicked() {
 				a.checkChannel(spec.Name)
 			}
-			if checkedAt := check; checkedAt.authURL != "" {
-				mui.Text(c, "需要打开授权页完成授权").FontSize(fs(11)).TextColor(tk.Amber)
-				open := mui.Button(c, "打开授权页").Label("打开授权页").Height(26).FontSize(fs(13))
+			if check.authURL != "" {
+				mui.Text(c, "需要打开授权页完成授权").FontSize(fs(12)).TextColor(tk.Amber)
+				open := a.smallOutlineBtn(c, "打开授权页")
 				if open.Clicked() {
-					a.openAuthorization(checkedAt.authURL)
+					a.openAuthorization(check.authURL)
 				}
 			}
 			mui.Spacer(c)
 			if _, wired := a.channelChecker(); !wired {
-				mui.Text(c, "暂时不可用：运行时还没有接入 CheckChannel").FontSize(fs(11)).TextColor(tk.Amber)
+				mui.Text(c, "暂时不可用：运行时还没有接入 CheckChannel").
+					FontSize(fs(11)).TextColor(tk.Amber)
 			}
 		})
 		if check.authURL != "" {
-			mui.Text(c, checkedURLText(check.authURL)).FontSize(fs(10)).SingleLine().TextColor(tk.TextFaint)
+			mui.Text(c, checkedURLText(check.authURL)).FontSize(fs(12)).SingleLine().
+				TextColor(tk.TextFaint)
 		}
 		if errText := check.err; errText != "" {
-			mui.Text(c, errText).FontSize(fs(11)).TextColor(tk.Red)
+			mui.Text(c, errText).FontSize(fs(12)).TextColor(tk.Red)
 		}
 	})
 }
@@ -332,33 +323,39 @@ func (a *App) channelTransport(c *mui.Context, g *view.SettingsGroup, spec view.
 		current = *ptr
 	}
 
+	// DSH segmented filter, not a row of chip buttons.
+	labels := make([]string, 0, len(options))
+	sel := 0
+	for i, opt := range options {
+		label := opt.Label
+		if !opt.Implemented {
+			label += "（未实现）"
+		}
+		labels = append(labels, label)
+		if current == opt.ID {
+			sel = i
+		}
+	}
 	mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 		mui.Text(c, "传输方式").FontSize(fs(12)).TextColor(tk.TextMuted)
-		for _, opt := range options {
-			opt := opt
-			on := current == opt.ID
-			label := opt.Label
-			if !opt.Implemented {
-				label += "（未实现）"
+		if len(labels) > 0 {
+			seg := mui.Segmented(c.Key("transport:"+spec.Name), &sel, labels...).
+				Label("传输方式").Height(28).FontSize(12)
+			if seg.Changed() && ptr != nil && sel >= 0 && sel < len(options) &&
+				options[sel].Implemented {
+				*ptr = options[sel].ID
 			}
-			btn := mui.Button(c, label).Label("传输方式 " + label).Height(28).FontSize(fs(12))
-			if !opt.Implemented || ptr == nil {
-				btn.Disabled(true)
-			} else if btn.Clicked() {
-				*ptr = opt.ID
-			}
-			_ = on // the selected transport is shown by the card's status line
 		}
 		mui.Spacer(c)
 		switch {
 		case !hasField:
-			mui.Text(c, "还没有数据："+spec.TransportKey).FontSize(fs(11)).TextColor(tk.Amber)
+			mui.Text(c, "还没有数据："+spec.TransportKey).FontSize(fs(12)).TextColor(tk.Amber)
 		case !enabled:
-			mui.Text(c, "未启用时不连接").FontSize(fs(11)).TextColor(tk.TextFaint)
+			mui.Text(c, "未启用时不连接").FontSize(fs(12)).TextColor(tk.TextFaint)
 		}
 	})
 	if hasField && field.Help != "" {
-		mui.Text(c, field.Help).FontSize(fs(10)).TextColor(tk.TextFaint)
+		mui.Text(c, field.Help).FontSize(fs(12)).TextColor(tk.TextFaint)
 	}
 	if !hasField {
 		mui.Text(c, "以上为编译期已知的传输方式；运行时投影 "+spec.TransportKey+" 后才能选择。").

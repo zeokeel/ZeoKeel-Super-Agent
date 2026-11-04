@@ -54,7 +54,7 @@ func TestSourceChannelCards(t *testing.T) {
 	_, tt := channelApp(t, &fakeCmd{})
 	wantTexts(t, tt,
 		"IM 通道", "飞书", "钉钉",
-		"传输方式 HTTP 长轮询", "传输方式 官方长连接", "传输方式 DWS 长连接",
+		"HTTP 长轮询", "官方长连接", "DWS 长连接",
 		"飞书 App ID", "飞书 App Secret", "飞书会话 ID（逗号分隔）",
 		"钉钉 AppKey", "钉钉 AppSecret", "钉钉机器人 RobotCode",
 		"检查通道",
@@ -168,7 +168,7 @@ func TestChannelEnableUsesSaveProtocol(t *testing.T) {
 func TestChannelTransportSelectsAndSaves(t *testing.T) {
 	saver := &fakeSaver{}
 	a, tt := channelApp(t, saver)
-	click(t, tt, "传输方式 官方 Stream")
+	click(t, tt, "官方 Stream")
 	ptr := a.settingsPtr(view.SettingsSource, view.SettingField{Key: "dingtalk_transport"})
 	if *ptr != "stream" {
 		t.Fatalf("transport %q, want stream", *ptr)
@@ -201,9 +201,9 @@ func TestChannelTransportNotProjected(t *testing.T) {
 	a.sec = view.SecSettings
 	a.settingsGroup = view.SettingsSource
 	tt := mui.NewTester(a.view, 1440, 1600)
-	wantTexts(t, tt, "传输方式 官方 Stream", "还没有数据：dingtalk_transport")
+	wantTexts(t, tt, "官方 Stream", "还没有数据：dingtalk_transport")
 	// No projected key means no setting to write: clicking changes nothing.
-	click(t, tt, "传输方式 官方 Stream")
+	click(t, tt, "官方 Stream")
 	if got := a.settingsDirty(&view.SettingsGroup{ID: view.SettingsSource, Fields: []view.SettingField{
 		{Key: "dingtalk_transport", Value: "dws"},
 	}}); got != 0 {
